@@ -39,6 +39,9 @@ import picocli.CommandLine.ScopeType;
 public class Animate implements Callable<Integer> {
 
   private static final Injector INJECTOR = Guice.createInjector(Stage.PRODUCTION, new Config());
+  static final String SETUP_CONSTANTS_EVENT = "$setup_constants";
+  static final String INITIALISE_MACHINE_EVENT = "$initialise_machine";
+  static final String INITIALISATION_EVENT = "INITIALISATION";
 
   private final Api api;
   private final TraceManager traceManager;
@@ -213,28 +216,100 @@ public class Animate implements Callable<Integer> {
 
   boolean invariantViolated;
 
+  Trace initializeTrace(final StateSpace stateSpace) {
+    return initializeTrace(stateSpace, true);
+  }
+
+  Trace initializeTrace(final StateSpace stateSpace, boolean failOnInitializationError) {
+    Trace trace = new Trace(stateSpace);
+    trace.getCurrentState().exploreIfNeeded();
+    if (!trace.getCurrentState().isConstantsSetUp()) {
+      trace = initializeOnce(stateSpace, trace, failOnInitializationError, SETUP_CONSTANTS_EVENT);
+    }
+    if (invariantViolated) {
+      return trace;
+    }
+    if (!trace.getCurrentState().isInitialised()) {
+      trace =
+          initializeOnce(
+              stateSpace,
+              trace,
+              failOnInitializationError,
+              INITIALISE_MACHINE_EVENT,
+              INITIALISATION_EVENT);
+    }
+    return trace;
+  }
+
+  private Trace initializeOnce(
+      StateSpace stateSpace, Trace trace, boolean failOnInitializationError, String... eventNames) {
+    for (String eventName : eventNames) {
+      if (findInitializationTransition(trace, eventName).isEmpty()) {
+        logger.debug("Skipping unavailable initialization event {}", eventName);
+        continue;
+      }
+      try {
+        Trace initializedTrace = runInitializationEvent(trace, eventName);
+        initializedTrace.getCurrentState().exploreIfNeeded();
+        checkTraceInvariants(stateSpace, initializedTrace);
+        return initializedTrace;
+      } catch (RuntimeException e) {
+        if (failOnInitializationError) {
+          throw e;
+        }
+        logger.warn("Could not fully initialize model via {}", eventName, e);
+        System.err.println("Warning: Could not fully initialize model: " + e.getMessage());
+        return trace;
+      }
+    }
+    return trace;
+  }
+
+  Trace runInitializationEvent(Trace trace, String eventName) {
+    Transition transition =
+        findInitializationTransition(trace, eventName)
+            .orElseThrow(() -> new IllegalArgumentException("Could not execute " + eventName));
+    return trace.add(transition);
+  }
+
+  private Optional<Transition> findInitializationTransition(Trace trace, String eventName) {
+    return trace.getCurrentState().getOutTransitions().stream()
+        .filter(transition -> eventName.equals(transition.getName()))
+        .findFirst();
+  }
+
+  boolean checkTraceInvariants(StateSpace stateSpace, Trace trace) {
+    if (!checkInv || trace.getCurrentState().isInvariantOk()) {
+      return false;
+    }
+
+    List<String> inv = findViolatedInvariants(stateSpace, trace.getCurrentState());
+    System.err.println("Error: violated invariants:\n\t - " + String.join("\n\t - ", inv));
+    invariantViolated = true;
+    return true;
+  }
+
   public Trace start(final StateSpace stateSpace) {
     stateSpace.startTransaction();
-    Trace trace = new Trace(stateSpace);
     invariantViolated = false;
 
     try {
+      Trace trace = initializeTrace(stateSpace);
       System.out.println("Animation steps:");
-      for (int i = 0; i < steps; i++) {
-        Trace newTrace = trace.anyEvent(null);
-        if (newTrace == trace) {
-          System.err.println("Error: Can't find an event to execute from this state (deadlock)");
-          break;
-        }
-        trace = newTrace;
+      if (!invariantViolated && !checkTraceInvariants(stateSpace, trace)) {
+        for (int i = 0; i < steps; i++) {
+          Trace newTrace = trace.anyEvent(null);
+          if (newTrace == trace) {
+            System.err.println("Error: Can't find an event to execute from this state (deadlock)");
+            break;
+          }
+          trace = newTrace;
 
-        Transition transition = trace.getCurrent().getTransition().evaluate(FormulaExpand.EXPAND);
-        System.out.println(transition.getPrettyRep());
-        if (checkInv && !trace.getCurrentState().isInvariantOk()) {
-          List<String> inv = findViolatedInvariants(stateSpace, trace.getCurrentState());
-          System.err.println("Error: violated invariants:\n\t - " + String.join("\n\t - ", inv));
-          invariantViolated = true;
-          break;
+          Transition transition = trace.getCurrent().getTransition().evaluate(FormulaExpand.EXPAND);
+          System.out.println(transition.getPrettyRep());
+          if (checkTraceInvariants(stateSpace, trace)) {
+            break;
+          }
         }
       }
       System.out.println();
@@ -242,11 +317,10 @@ public class Animate implements Callable<Integer> {
       System.out.println("Current state:\n" + trace.getCurrentState().getStateRep());
       System.out.println();
       printCoverage(stateSpace);
+      return trace;
     } finally {
       stateSpace.endTransaction();
     }
-
-    return trace;
   }
 
   @Override

@@ -79,8 +79,8 @@ public class ModelAnimationTest {
       int successfulSteps = 0;
       for (int i = 0; i < ANIMATION_STEPS; i++) {
         try {
-          Trace newTrace = trace.anyOperation(null);
-          if (newTrace != null && !newTrace.equals(trace)) {
+          Trace newTrace = trace.anyEvent(null);
+          if (newTrace != trace) {
             trace = newTrace;
             successfulSteps++;
           } else {
@@ -117,8 +117,8 @@ public class ModelAnimationTest {
       int steps = Math.min(5, ANIMATION_STEPS);
       for (int i = 0; i < steps; i++) {
         try {
-          Trace newTrace = trace.anyOperation(null);
-          if (newTrace != null && !newTrace.equals(trace)) {
+          Trace newTrace = trace.anyEvent(null);
+          if (newTrace != trace) {
             trace = newTrace;
 
             // Check if current state has invariant violations
