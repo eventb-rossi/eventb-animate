@@ -13,9 +13,9 @@
   before_script:
     - |
       if [ "$ANIMATE_VERSION" = "latest" ]; then
-        url="https://github.com/evdenis/animate/releases/latest/download/animate.jar"
+        url="https://github.com/eventb-rossi/animate/releases/latest/download/animate.jar"
       else
-        url="https://github.com/evdenis/animate/releases/download/${ANIMATE_VERSION}/animate.jar"
+        url="https://github.com/eventb-rossi/animate/releases/download/${ANIMATE_VERSION}/animate.jar"
       fi
       curl -sL --fail -o /tmp/animate.jar "$url"
   script:
