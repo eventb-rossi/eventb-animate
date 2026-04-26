@@ -23,9 +23,6 @@ class InfoCommand implements Callable<Integer> {
   private static final ch.qos.logback.classic.Logger logger =
       (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(InfoCommand.class);
 
-  private static final String SETUP_CONSTANTS_EVENT = "$setup_constants";
-  private static final String INITIALISE_MACHINE_EVENT = "$initialise_machine";
-
   @ParentCommand Animate parent;
 
   @Option(
@@ -72,21 +69,12 @@ class InfoCommand implements Callable<Integer> {
       if (hasVisualizationCmd) {
         logger.info("Initializing model");
         stateSpace.startTransaction();
-        Trace trace = new Trace(stateSpace);
-
-        // Initialize model - some models don't have constants
+        Trace trace;
         try {
-          trace = trace.execute(SETUP_CONSTANTS_EVENT);
-        } catch (IllegalArgumentException e) {
-          // No constants to set up, continue
-          logger.debug("No setup_constants event available");
+          trace = parent.initializeTrace(stateSpace, false);
+        } finally {
+          stateSpace.endTransaction();
         }
-        try {
-          trace = trace.execute(INITIALISE_MACHINE_EVENT);
-        } catch (Exception e) {
-          System.err.println("Warning: Could not fully initialize model: " + e.getMessage());
-        }
-        stateSpace.endTransaction();
 
         err |= saveVisualization("machine_hierarchy", machine, trace);
         err |= saveVisualization("event_hierarchy", events, trace);
