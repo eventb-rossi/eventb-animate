@@ -9,9 +9,7 @@ import de.prob.scripting.Api;
 import de.prob.statespace.StateSpace;
 import de.prob.statespace.Trace;
 import java.io.File;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -43,30 +41,7 @@ public class ModelAnimationTest {
 
   @Parameters(name = "{0}")
   public static Collection<Object[]> getModels() {
-    List<Object[]> models = new ArrayList<>();
-
-    // Find all .bum files in test resources
-    File resourcesDir = new File("src/test/resources/models");
-    if (resourcesDir.exists()) {
-      findBumFiles(resourcesDir, models, "");
-    }
-
-    return models;
-  }
-
-  private static void findBumFiles(File dir, List<Object[]> models, String prefix) {
-    File[] files = dir.listFiles();
-    if (files == null) return;
-
-    for (File file : files) {
-      if (file.isDirectory()) {
-        String newPrefix = prefix.isEmpty() ? file.getName() : prefix + "/" + file.getName();
-        findBumFiles(file, models, newPrefix);
-      } else if (file.getName().endsWith(".bum")) {
-        String modelName = prefix + "/" + file.getName();
-        models.add(new Object[] {modelName, file});
-      }
-    }
+    return TestModels.allModels();
   }
 
   @Test
