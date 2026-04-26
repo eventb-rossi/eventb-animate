@@ -10,6 +10,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import org.slf4j.LoggerFactory;
@@ -24,10 +25,6 @@ class ModelResolver {
       (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(ModelResolver.class);
 
   private Path tempDir;
-
-  Path resolve(Path model) throws IOException {
-    return resolve(model, null);
-  }
 
   Path resolve(Path model, String machineName) throws IOException {
     if (Files.isDirectory(model)) {
@@ -84,6 +81,7 @@ class ModelResolver {
     if (bumFiles.size() == 1) {
       return bumFiles.get(0);
     }
+    validateUniqueMachineNames(bumFiles, source);
     Path selected = findMostRefinedBum(bumFiles, source);
     logger.info(
         "Multiple .bum files found, auto-selected most refined: {}", selected.getFileName());
@@ -93,10 +91,47 @@ class ModelResolver {
   private Path findByName(List<Path> bumFiles, String machineName, String source)
       throws IOException {
     String target = machineName + ".bum";
-    return bumFiles.stream()
-        .filter(p -> p.getFileName().toString().equals(target))
-        .findFirst()
-        .orElseThrow(() -> new IOException("Machine '" + machineName + "' not found in " + source));
+    List<Path> matches =
+        bumFiles.stream()
+            .filter(p -> machineFileName(p).equals(target))
+            .sorted()
+            .collect(Collectors.toList());
+    if (matches.isEmpty()) {
+      throw new IOException("Machine '" + machineName + "' not found in " + source);
+    }
+    if (matches.size() > 1) {
+      throw new IOException(
+          "Machine '"
+              + machineName
+              + "' is ambiguous in "
+              + source
+              + ": "
+              + matches.stream().map(Path::toString).collect(Collectors.joining(", ")));
+    }
+    return matches.get(0);
+  }
+
+  private void validateUniqueMachineNames(List<Path> bumFiles, String source) throws IOException {
+    Map<String, List<Path>> filesByName =
+        bumFiles.stream()
+            .collect(
+                Collectors.groupingBy(this::machineFileName, TreeMap::new, Collectors.toList()));
+    List<String> duplicates =
+        filesByName.entrySet().stream()
+            .filter(entry -> entry.getValue().size() > 1)
+            .map(
+                entry ->
+                    entry.getKey()
+                        + " -> "
+                        + entry.getValue().stream()
+                            .map(Path::toString)
+                            .sorted()
+                            .collect(Collectors.joining(", ")))
+            .collect(Collectors.toList());
+    if (!duplicates.isEmpty()) {
+      throw new IOException(
+          "Duplicate machine names found in " + source + ": " + String.join("; ", duplicates));
+    }
   }
 
   private Path findMostRefinedBum(List<Path> bumFiles, String source) throws IOException {
@@ -104,13 +139,11 @@ class ModelResolver {
     Map<String, Path> pathByName = new HashMap<>();
 
     for (Path bumFile : bumFiles) {
-      String fileName = bumFile.getFileName().toString();
-      String machineName = fileName.substring(0, fileName.length() - ".bum".length());
+      String machineName = machineName(bumFile);
       pathByName.put(machineName, bumFile);
 
       try {
-        Document doc =
-            DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(bumFile.toFile());
+        Document doc = newDocumentBuilderFactory().newDocumentBuilder().parse(bumFile.toFile());
         NodeList refines = doc.getElementsByTagName("org.eventb.core.refinesMachine");
         if (refines.getLength() > 0) {
           Element refEl = (Element) refines.item(0);
@@ -142,6 +175,31 @@ class ModelResolver {
     }
 
     return pathByName.get(leaves.get(0));
+  }
+
+  private DocumentBuilderFactory newDocumentBuilderFactory() throws ParserConfigurationException {
+    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+    factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+    factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+    factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+    factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+    factory.setXIncludeAware(false);
+    factory.setExpandEntityReferences(false);
+    return factory;
+  }
+
+  private String machineFileName(Path bumFile) {
+    Path fileName = bumFile.getFileName();
+    if (fileName == null) {
+      throw new IllegalArgumentException("Machine path must include a file name: " + bumFile);
+    }
+    return fileName.toString();
+  }
+
+  private String machineName(Path bumFile) {
+    String fileName = machineFileName(bumFile);
+    return fileName.substring(0, fileName.length() - ".bum".length());
   }
 
   void cleanupTempDir() {
