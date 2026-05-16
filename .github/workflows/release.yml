@@ -9,6 +9,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
       - name: Checkout
@@ -38,15 +39,20 @@ jobs:
               --status success \
               --json databaseId \
               --jq '.[0].databaseId')
+
             if [ -n "$run_id" ]; then
-              echo "Found successful build run: $run_id"
+              echo "Found successful Build and Test run: $run_id"
               gh run download "$run_id" --name animate.jar
               exit 0
             fi
-            echo "Attempt $attempt/15: waiting for build to complete..."
+
+            echo "Attempt $attempt/15: no successful Build and Test run found yet..."
             sleep 30
           done
-          echo "ERROR: No successful build found for commit ${{ github.sha }} after 15 attempts"
+
+          echo "::error::No successful Build and Test run found for commit ${{ github.sha }}."
+          echo "::error::Push the branch and wait for Build and Test to pass before pushing the release tag."
+          echo "::error::Then rerun this Release workflow or push the release tag."
           exit 1
 
       - name: Rename JAR
