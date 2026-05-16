@@ -10,7 +10,7 @@ public class VersionCheckScriptTest {
   @Test
   public void testVersionCheckScriptPassesForCurrentRelease() throws Exception {
     Process process =
-        new ProcessBuilder("bash", "scripts/check-version.sh", "v4.1")
+        new ProcessBuilder("bash", "scripts/check-version.sh", "v4.2")
             .redirectErrorStream(true)
             .start();
 

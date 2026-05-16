@@ -15,7 +15,7 @@ apply plugin: 'application'
 apply plugin: 'com.diffplug.spotless'
 apply plugin: 'com.github.spotbugs'
 
-version = '4.1'
+version = '4.2'
 
 java {
 	toolchain {

@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [4.2] - 2026-05-16
+
+### Features
+
+- Add --machine flag to select specific machine from zip/directory
+
+### Bug Fixes
+
+- Initialize models before animation and info export
+- Return non-zero for imperfect trace replay
+- Reject ambiguous and unsafe model archives
+
+### Testing
+
+- Extract shared Event-B model fixture discovery
+
+### Dependencies
+
+- Bump com.diffplug.spotless:spotless-plugin-gradle
+- Bump gradle-wrapper from 9.4.0 to 9.4.1
+- Bump gradle/actions from 5 to 6
+- Bump com.diffplug.spotless:spotless-plugin-gradle
+- Bump gradle-wrapper from 9.4.1 to 9.5.1
+- Bump com.github.spotbugs.snom:spotbugs-gradle-plugin
+
+### CI/CD
+
+- Add retry loop when downloading build artifact in release
+- Improve GitHub release page with title and note categories
+- Integrate git-cliff for changelog and release notes
+
+### Miscellaneous
+
+- Validate explicit README version references
+
 ## [4.1] - 2026-03-20
 
 ### Features
@@ -212,5 +247,4 @@ All notable changes to this project will be documented in this file.
 ### Build
 
 - Update wrapper properties
-
 
