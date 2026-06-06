@@ -27,8 +27,8 @@ for expected in "${EXPECTED_README_REFERENCES[@]}"; do
   fi
 done
 
-README_TAGS=$(grep -oE 'v[0-9]+\.[0-9]+' README.md | sort -u || true)
-STALE_TAGS=$(printf '%s\n' "$README_TAGS" | grep -vx "$TAG" || true)
+README_TAGS=$(grep -oE 'v[0-9]+\.[0-9]+(\.[0-9]+)?' README.md | sort -u || true)
+STALE_TAGS=$(printf '%s\n' "$README_TAGS" | grep -vxF -- "$TAG" || true)
 if [ -n "$STALE_TAGS" ]; then
   echo "ERROR: README.md contains stale version tags:"
   printf '  %s\n' $STALE_TAGS
