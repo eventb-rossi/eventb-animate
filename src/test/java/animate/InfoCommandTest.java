@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 
 import com.google.inject.Guice;
 import com.google.inject.Injector;
+import com.google.inject.Provider;
 import com.google.inject.Stage;
 import de.prob.check.tracereplay.json.TraceManager;
 import de.prob.scripting.Api;
@@ -23,7 +24,7 @@ public class InfoCommandTest {
     Injector injector = Guice.createInjector(Stage.PRODUCTION, new Config());
     FailingInitializationAnimate animate =
         new FailingInitializationAnimate(
-            injector.getInstance(Api.class), injector.getInstance(TraceManager.class));
+            injector.getProvider(Api.class), injector.getProvider(TraceManager.class));
     animate.model = Paths.get("src/test/resources/models/base-model/M1.bum");
     animate.steps = 1;
     animate.size = 4;
@@ -56,7 +57,7 @@ public class InfoCommandTest {
 
   private static final class FailingInitializationAnimate extends Animate {
 
-    FailingInitializationAnimate(Api api, TraceManager traceManager) {
+    FailingInitializationAnimate(Provider<Api> api, Provider<TraceManager> traceManager) {
       super(api, traceManager);
     }
 

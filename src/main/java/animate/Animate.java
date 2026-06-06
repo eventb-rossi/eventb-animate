@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger;
 import com.google.inject.Guice;
 import com.google.inject.Inject;
 import com.google.inject.Injector;
+import com.google.inject.Provider;
 import com.google.inject.Stage;
 import de.prob.animator.command.ComputeCoverageCommand;
 import de.prob.animator.command.ComputeCoverageCommand.ComputeCoverageResult;
@@ -38,13 +39,14 @@ import picocli.CommandLine.ScopeType;
     subcommands = {CommandLine.HelpCommand.class, ReplayCommand.class, InfoCommand.class})
 public class Animate implements Callable<Integer> {
 
-  private static final Injector INJECTOR = Guice.createInjector(Stage.PRODUCTION, new Config());
   static final String SETUP_CONSTANTS_EVENT = "$setup_constants";
   static final String INITIALISE_MACHINE_EVENT = "$initialise_machine";
   static final String INITIALISATION_EVENT = "INITIALISATION";
 
-  private final Api api;
-  private final TraceManager traceManager;
+  // Providers keep construction cheap: resolving Api installs the ProB CLI
+  // binaries, which --version/--help invocations should never pay for.
+  private final Provider<Api> api;
+  private final Provider<TraceManager> traceManager;
   final ModelResolver modelResolver = new ModelResolver();
   private String probVersionString;
 
@@ -92,7 +94,7 @@ public class Animate implements Callable<Integer> {
   boolean debug;
 
   @Inject
-  public Animate(Api api, TraceManager traceManager) {
+  public Animate(Provider<Api> api, Provider<TraceManager> traceManager) {
     this.api = api;
     this.traceManager = traceManager;
   }
@@ -184,7 +186,7 @@ public class Animate implements Callable<Integer> {
     Path resolvedModel = modelResolver.resolve(model, machineName);
     String resolvedMachineName = resolvedModel.getFileName().toString().replaceFirst("\\.bum$", "");
     System.out.println("Machine: " + resolvedMachineName);
-    StateSpace stateSpace = api.eventb_load(resolvedModel.toString(), prefs);
+    StateSpace stateSpace = api.get().eventb_load(resolvedModel.toString(), prefs);
 
     GetVersionCommand version = new GetVersionCommand();
     stateSpace.execute(version);
@@ -343,7 +345,7 @@ public class Animate implements Callable<Integer> {
         logger.info("Saving animation trace to {}", jsonTrace);
 
         try {
-          traceManager.save(jsonTrace, abstractJsonFile);
+          traceManager.get().save(jsonTrace, abstractJsonFile);
         } catch (IOException e) {
           logger.error("Error saving trace", e);
           System.err.println("Error saving trace: " + e.getMessage());
@@ -358,9 +360,26 @@ public class Animate implements Callable<Integer> {
     }
   }
 
+  static final class LazyGuiceFactory implements CommandLine.IFactory {
+    private Injector injector;
+
+    @Override
+    public <K> K create(Class<K> cls) throws Exception {
+      try {
+        return CommandLine.defaultFactory().create(cls);
+      } catch (Exception e) {
+        if (injector == null) {
+          // DEVELOPMENT keeps singletons lazy: ProB's CLI binaries are only
+          // installed when a model is actually loaded, not for --version/--help.
+          injector = Guice.createInjector(Stage.DEVELOPMENT, new Config());
+        }
+        return injector.getInstance(cls);
+      }
+    }
+  }
+
   public static int execute(String[] args) {
-    Animate m = INJECTOR.getInstance(Animate.class);
-    return new CommandLine(m).execute(args);
+    return new CommandLine(Animate.class, new LazyGuiceFactory()).execute(args);
   }
 
   public static void main(String[] args) {
