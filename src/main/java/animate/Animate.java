@@ -57,6 +57,10 @@ public class Animate implements Callable<Integer> {
   final ModelResolver modelResolver = new ModelResolver();
   private String probVersionString;
 
+  // Animation outcome, reset by start(); package-visible for tests.
+  boolean invariantViolated;
+  boolean deadlocked;
+
   private static final Logger logger = (Logger) LoggerFactory.getLogger(Animate.class);
 
   public static class VersionProvider implements CommandLine.IVersionProvider {
@@ -254,9 +258,6 @@ public class Animate implements Callable<Integer> {
       modelResolver.cleanupTempDir();
     }
   }
-
-  boolean invariantViolated;
-  boolean deadlocked;
 
   Trace initializeTrace(final StateSpace stateSpace) {
     return initializeTrace(stateSpace, true);
