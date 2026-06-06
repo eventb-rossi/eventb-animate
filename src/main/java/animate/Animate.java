@@ -168,7 +168,7 @@ public class Animate implements Callable<Integer> {
     return violatedInvariants;
   }
 
-  private void validateInput() throws IllegalArgumentException {
+  private void validateInput() {
     if (model == null) {
       throw new IllegalArgumentException("Model file is required");
     }
@@ -217,7 +217,7 @@ public class Animate implements Callable<Integer> {
     GetVersionCommand version = new GetVersionCommand();
     stateSpace.execute(version);
     probVersionString = version.getVersionString();
-    logger.info("ProB Version: " + probVersionString + "\n");
+    logger.info("ProB Version: {}", probVersionString);
 
     return stateSpace;
   }
