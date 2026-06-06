@@ -1,19 +1,11 @@
-buildscript {
-	repositories {
-		mavenCentral()
-		gradlePluginPortal()
-	}
-	dependencies {
-		classpath 'com.diffplug.spotless:spotless-plugin-gradle:8.6.0'
-		classpath 'com.github.spotbugs.snom:spotbugs-gradle-plugin:6.5.5'
-	}
+plugins {
+	id 'java'
+	id 'eclipse'
+	id 'application'
+	id 'com.diffplug.spotless' version '8.6.0'
+	id 'com.github.spotbugs' version '6.5.5'
+	id 'com.gradleup.shadow' version '9.4.2'
 }
-
-apply plugin: 'java'
-apply plugin: 'eclipse'
-apply plugin: 'application'
-apply plugin: 'com.diffplug.spotless'
-apply plugin: 'com.github.spotbugs'
 
 version = '4.2'
 
@@ -64,17 +56,25 @@ test {
 	}
 }
 
+// The fat jar is built by Shadow so duplicate META-INF/services entries are
+// merged instead of silently dropped; the plain jar is disabled so that
+// build/libs/eventb-animate-*.jar matches exactly one (runnable) artifact.
 jar {
-	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+	// Disabled, but keeps a distinct classifier so its declared output does not
+	// overlap with shadowJar's; the manifest below is inherited by shadowJar.
+	enabled = false
+	archiveClassifier = 'plain'
 	manifest {
 		attributes(
 			'Main-Class': 'animate.Animate',
 			'Implementation-Version': project.version
 		)
 	}
-	from configurations.runtimeClasspath.elements.map { elements ->
-		elements.collect { it.asFile.isDirectory() ? it.asFile : zipTree(it.asFile) }
-	}
+}
+
+shadowJar {
+	archiveClassifier = ''
+	mergeServiceFiles()
 }
 
 spotbugs {
