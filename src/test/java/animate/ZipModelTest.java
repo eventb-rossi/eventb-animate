@@ -55,7 +55,6 @@ public class ZipModelTest {
       try {
         System.setOut(new PrintStream(outContent));
         int exitCode = Animate.execute(new String[] {"--steps", "3", zipFile.toString()});
-        System.setOut(originalOut);
 
         assertEquals("Exit code should be 0", 0, exitCode);
         assertTrue(
@@ -78,7 +77,6 @@ public class ZipModelTest {
     try {
       System.setOut(new PrintStream(outContent));
       int exitCode = Animate.execute(new String[] {"--steps", "3", dir.toString()});
-      System.setOut(originalOut);
 
       assertEquals("Exit code should be 0 (auto-selected most refined machine)", 0, exitCode);
       assertTrue("Output should contain animation information", outContent.toString().length() > 0);
