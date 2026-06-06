@@ -238,6 +238,7 @@ public class Animate implements Callable<Integer> {
   }
 
   boolean invariantViolated;
+  boolean deadlocked;
 
   Trace initializeTrace(final StateSpace stateSpace) {
     return initializeTrace(stateSpace, true);
@@ -315,6 +316,7 @@ public class Animate implements Callable<Integer> {
   public Trace start(final StateSpace stateSpace) {
     stateSpace.startTransaction();
     invariantViolated = false;
+    deadlocked = false;
 
     try {
       Trace trace = initializeTrace(stateSpace);
@@ -324,6 +326,7 @@ public class Animate implements Callable<Integer> {
           Trace newTrace = trace.anyEvent(null);
           if (newTrace == trace) {
             System.err.println("Error: Can't find an event to execute from this state (deadlock)");
+            deadlocked = true;
             break;
           }
           trace = newTrace;
@@ -374,7 +377,7 @@ public class Animate implements Callable<Integer> {
         }
       }
 
-      return invariantViolated ? 1 : 0;
+      return invariantViolated || deadlocked ? 1 : 0;
     } finally {
       stateSpace.kill();
       modelResolver.cleanupTempDir();
