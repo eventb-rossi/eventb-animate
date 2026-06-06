@@ -67,7 +67,10 @@ test {
 jar {
 	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 	manifest {
-		attributes('Main-Class': 'animate.Animate')
+		attributes(
+			'Main-Class': 'animate.Animate',
+			'Implementation-Version': project.version
+		)
 	}
 	from configurations.runtimeClasspath.elements.map { elements ->
 		elements.collect { it.asFile.isDirectory() ? it.asFile : zipTree(it.asFile) }

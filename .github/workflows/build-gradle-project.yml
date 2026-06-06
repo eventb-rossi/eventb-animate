@@ -36,6 +36,12 @@ jobs:
     - name: Build and Test
       run: ./gradlew build --no-daemon
 
+    - name: Verify jar version
+      run: |
+        expected=$(sed -n "s/^version = '\([^']*\)'$/\1/p" build.gradle)
+        actual=$(java -jar build/libs/animate-*.jar --version)
+        test "$actual" = "animate $expected"
+
     - name: Upload test results
       if: always()
       uses: actions/upload-artifact@v7

@@ -34,8 +34,9 @@ import picocli.CommandLine.ScopeType;
 
 @Command(
     name = "animate",
+    mixinStandardHelpOptions = true,
     sortOptions = false,
-    version = "animate @VERSION@",
+    versionProvider = Animate.VersionProvider.class,
     subcommands = {CommandLine.HelpCommand.class, ReplayCommand.class, InfoCommand.class})
 public class Animate implements Callable<Integer> {
 
@@ -51,6 +52,15 @@ public class Animate implements Callable<Integer> {
   private String probVersionString;
 
   private static final Logger logger = (Logger) LoggerFactory.getLogger(Animate.class);
+
+  public static class VersionProvider implements CommandLine.IVersionProvider {
+    @Override
+    public String[] getVersion() {
+      Package pkg = Animate.class.getPackage();
+      String version = pkg == null ? null : pkg.getImplementationVersion();
+      return new String[] {"animate " + (version == null || version.isBlank() ? "dev" : version)};
+    }
+  }
 
   @Parameters(description = "path to model.bum or .zip file", scope = ScopeType.INHERIT)
   Path model;
