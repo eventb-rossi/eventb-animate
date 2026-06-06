@@ -142,12 +142,19 @@ class ModelResolver {
     Map<String, String> refinesTarget = new HashMap<>();
     Map<String, Path> pathByName = new HashMap<>();
 
+    DocumentBuilderFactory factory;
+    try {
+      factory = newDocumentBuilderFactory();
+    } catch (ParserConfigurationException e) {
+      throw new IOException("Failed to configure XML parser", e);
+    }
+
     for (Path bumFile : bumFiles) {
       String machineName = machineName(bumFile);
       pathByName.put(machineName, bumFile);
 
       try {
-        Document doc = newDocumentBuilderFactory().newDocumentBuilder().parse(bumFile.toFile());
+        Document doc = factory.newDocumentBuilder().parse(bumFile.toFile());
         NodeList refines = doc.getElementsByTagName("org.eventb.core.refinesMachine");
         if (refines.getLength() > 0) {
           Element refEl = (Element) refines.item(0);
