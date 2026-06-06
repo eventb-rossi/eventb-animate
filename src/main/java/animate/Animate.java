@@ -338,8 +338,8 @@ public class Animate implements Callable<Integer> {
 
     try {
       Trace trace = initializeTrace(stateSpace);
-      System.out.println("Animation steps:");
       if (!invariantViolated && !checkTraceInvariants(stateSpace, trace)) {
+        System.out.println("Animation steps:");
         for (int i = 0; i < steps; i++) {
           Trace newTrace = trace.anyEvent(null);
           if (newTrace == trace) {
