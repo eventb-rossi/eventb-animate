@@ -38,6 +38,16 @@ A command-line tool for animating Event-B models using the ProB model checker.
 - `--save <file.json>` - Save animation trace to JSON file
 - `--debug` - Enable debug logging
 
+### Exit Codes
+
+`eventb-animate` exits non-zero on failure, so CI jobs fail automatically:
+
+- `0` - success
+- `1` - the model could not be loaded, the animation hit a deadlock (a state
+  with no enabled events, including legitimate terminal states), an invariant
+  was violated (with `-i/--invariants`), a trace replay was not perfect
+  (`replay`), or a conversion or its post-check failed (`convert`)
+
 ### Commands
 
 #### Replay a Trace
@@ -61,7 +71,10 @@ Export options:
 
 ## CI Integration
 
-Use `eventb-animate` in your CI pipelines without building from source.
+Use `eventb-animate` in your CI pipelines without building from source. The
+job fails when the run exits non-zero (see [Exit Codes](#exit-codes)) — note
+that an animation reaching a deadlocked or terminal state counts as a failure;
+pick `steps` low enough for models that legitimately terminate.
 
 ### GitHub Actions
 
