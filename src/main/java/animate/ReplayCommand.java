@@ -28,28 +28,24 @@ class ReplayCommand implements Callable<Integer> {
 
   @Override
   public Integer call() {
-    StateSpace stateSpace = parent.initAndLoadModel();
-    if (stateSpace == null) return 1;
+    return parent.withStateSpace(this::replay);
+  }
 
+  private int replay(StateSpace stateSpace) {
+    System.out.println("Starting trace replay. Use --debug to view steps.");
+    ReplayedTrace trace;
     try {
-      System.out.println("Starting trace replay. Use --debug to view steps.");
-      ReplayedTrace trace;
-      try {
-        trace = TraceReplay.replayTraceFile(stateSpace, jsonTrace);
-      } catch (Exception e) {
-        logger.error("Error replaying trace", e);
-        System.err.println("Error replaying trace: " + e.getMessage());
-        return 1;
-      }
-      System.out.println("Trace replay status: " + trace.getReplayStatus());
-      if (trace.getReplayStatus() != TraceReplayStatus.PERFECT) {
-        printReplayDiagnostics(trace);
-      }
-      return exitCodeFor(trace);
-    } finally {
-      stateSpace.kill();
-      parent.modelResolver.cleanupTempDir();
+      trace = TraceReplay.replayTraceFile(stateSpace, jsonTrace);
+    } catch (Exception e) {
+      logger.error("Error replaying trace", e);
+      System.err.println("Error replaying trace: " + e.getMessage());
+      return 1;
     }
+    System.out.println("Trace replay status: " + trace.getReplayStatus());
+    if (trace.getReplayStatus() != TraceReplayStatus.PERFECT) {
+      printReplayDiagnostics(trace);
+    }
+    return exitCodeFor(trace);
   }
 
   static int exitCodeFor(ReplayedTrace trace) {

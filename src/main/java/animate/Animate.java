@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.Callable;
+import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.slf4j.LoggerFactory;
@@ -237,6 +238,23 @@ public class Animate implements Callable<Integer> {
     }
   }
 
+  /**
+   * Loads the model and runs {@code body} with the resulting StateSpace, guaranteeing ProB shutdown
+   * and temp-directory cleanup. Returns 1 if the model could not be loaded.
+   */
+  int withStateSpace(ToIntFunction<StateSpace> body) {
+    StateSpace stateSpace = initAndLoadModel();
+    if (stateSpace == null) {
+      return 1;
+    }
+    try {
+      return body.applyAsInt(stateSpace);
+    } finally {
+      stateSpace.kill();
+      modelResolver.cleanupTempDir();
+    }
+  }
+
   boolean invariantViolated;
   boolean deadlocked;
 
@@ -351,37 +369,33 @@ public class Animate implements Callable<Integer> {
 
   @Override
   public Integer call() {
-    StateSpace stateSpace = initAndLoadModel();
-    if (stateSpace == null) return 1;
+    return withStateSpace(this::animate);
+  }
 
-    try {
-      Trace trace = start(stateSpace);
+  private int animate(StateSpace stateSpace) {
+    Trace trace = start(stateSpace);
 
-      if (jsonTrace != null) {
-        JsonMetadata metadata =
-            new JsonMetadataBuilder("Trace", 6)
-                .withSavedNow()
-                .withCreator("eventb-animate")
-                .withProBCliVersion(probVersionString)
-                .withModelName(Objects.toString(stateSpace.getMainComponent(), "unknown"))
-                .build();
-        TraceJsonFile abstractJsonFile = new TraceJsonFile(trace, metadata);
-        logger.info("Saving animation trace to {}", jsonTrace);
+    if (jsonTrace != null) {
+      JsonMetadata metadata =
+          new JsonMetadataBuilder("Trace", 6)
+              .withSavedNow()
+              .withCreator("eventb-animate")
+              .withProBCliVersion(probVersionString)
+              .withModelName(Objects.toString(stateSpace.getMainComponent(), "unknown"))
+              .build();
+      TraceJsonFile abstractJsonFile = new TraceJsonFile(trace, metadata);
+      logger.info("Saving animation trace to {}", jsonTrace);
 
-        try {
-          traceManager.get().save(jsonTrace, abstractJsonFile);
-        } catch (IOException e) {
-          logger.error("Error saving trace", e);
-          System.err.println("Error saving trace: " + e.getMessage());
-          return 1;
-        }
+      try {
+        traceManager.get().save(jsonTrace, abstractJsonFile);
+      } catch (IOException e) {
+        logger.error("Error saving trace", e);
+        System.err.println("Error saving trace: " + e.getMessage());
+        return 1;
       }
-
-      return invariantViolated || deadlocked ? 1 : 0;
-    } finally {
-      stateSpace.kill();
-      modelResolver.cleanupTempDir();
     }
+
+    return invariantViolated || deadlocked ? 1 : 0;
   }
 
   static final class LazyGuiceFactory implements CommandLine.IFactory {

@@ -54,49 +54,45 @@ class InfoCommand implements Callable<Integer> {
 
   @Override
   public Integer call() {
+    return parent.withStateSpace(this::dumpInfo);
+  }
+
+  private int dumpInfo(StateSpace stateSpace) {
     int err = 0;
 
-    StateSpace stateSpace = parent.initAndLoadModel();
-    if (stateSpace == null) return 1;
+    boolean hasVisualizationCmd =
+        machine != null || events != null || properties != null || invariant != null;
 
-    try {
-      boolean hasVisualizationCmd =
-          machine != null || events != null || properties != null || invariant != null;
-
-      if (hasVisualizationCmd) {
-        logger.info("Initializing model");
-        stateSpace.startTransaction();
-        Trace trace;
-        try {
-          trace = parent.initializeTrace(stateSpace, false);
-        } finally {
-          stateSpace.endTransaction();
-        }
-
-        err |= saveVisualization("machine_hierarchy", machine, trace);
-        err |= saveVisualization("event_hierarchy", events, trace);
-        err |= saveVisualization("properties", properties, trace);
-        err |= saveVisualization("invariant", invariant, trace);
+    if (hasVisualizationCmd) {
+      logger.info("Initializing model");
+      stateSpace.startTransaction();
+      Trace trace;
+      try {
+        trace = parent.initializeTrace(stateSpace, false);
+      } finally {
+        stateSpace.endTransaction();
       }
 
-      if (eventb != null) {
-        logger.info("Saving B model to {}", eventb);
-        try {
-          EventBPackageWriter.write(stateSpace, eventb);
-        } catch (IOException e) {
-          logger.error("Error saving model", e);
-          System.err.println("Error saving model: " + e.getMessage());
-          err = 1;
-        }
-      }
+      err |= saveVisualization("machine_hierarchy", machine, trace);
+      err |= saveVisualization("event_hierarchy", events, trace);
+      err |= saveVisualization("properties", properties, trace);
+      err |= saveVisualization("invariant", invariant, trace);
+    }
 
-      if (!hasVisualizationCmd && eventb == null) {
-        EventBModel model = (EventBModel) stateSpace.getModel();
-        System.out.print(model.calculateDependencies().getGraph());
+    if (eventb != null) {
+      logger.info("Saving B model to {}", eventb);
+      try {
+        EventBPackageWriter.write(stateSpace, eventb);
+      } catch (IOException e) {
+        logger.error("Error saving model", e);
+        System.err.println("Error saving model: " + e.getMessage());
+        err = 1;
       }
-    } finally {
-      stateSpace.kill();
-      parent.modelResolver.cleanupTempDir();
+    }
+
+    if (!hasVisualizationCmd && eventb == null) {
+      EventBModel model = (EventBModel) stateSpace.getModel();
+      System.out.print(model.calculateDependencies().getGraph());
     }
 
     return err;
