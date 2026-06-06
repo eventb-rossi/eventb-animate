@@ -232,7 +232,8 @@ class ConvertCommand implements Callable<Integer> {
   private record CheckMode(CheckKind kind, int modelCheckStates) {
 
     static CheckMode parse(String value) {
-      if (value == null || value.equals("none")) {
+      // value is never null: --check has defaultValue = "none".
+      if (value.equals("none")) {
         return new CheckMode(CheckKind.NONE, 0);
       }
       if (value.equals("init")) {
