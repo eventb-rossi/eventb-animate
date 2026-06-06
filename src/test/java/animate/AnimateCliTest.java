@@ -33,8 +33,13 @@ public class AnimateCliTest {
     TestCli.Result result = TestCli.execute("--steps", "5", modelFile.getAbsolutePath());
 
     assertTrue("Output should contain animation information", result.output().length() > 0);
-    assertEquals("Exit code should be 0", 0, result.exitCode());
-    System.out.println("  ✓ CLI animation completed");
+    // A random walk may legitimately run out of enabled events, which the CLI
+    // reports as a deadlock and exits 1; only that non-zero outcome is allowed.
+    boolean deadlocked = result.exitCode() == 1 && result.output().contains("deadlock");
+    assertTrue(
+        "Exit code should be 0, or 1 for a reported deadlock:\n" + result.output(),
+        result.exitCode() == 0 || deadlocked);
+    System.out.println("  ✓ CLI animation completed (exit code: " + result.exitCode() + ")");
   }
 
   @Test(timeout = 30000)
