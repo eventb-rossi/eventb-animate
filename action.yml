@@ -61,9 +61,9 @@ runs:
         VERSION: ${{ inputs.version }}
       run: |
         if [ "$VERSION" = "latest" ]; then
-          url="https://github.com/evdenis/animate/releases/latest/download/animate.jar"
+          url="https://github.com/eventb-rossi/animate/releases/latest/download/animate.jar"
         else
-          url="https://github.com/evdenis/animate/releases/download/${VERSION}/animate.jar"
+          url="https://github.com/eventb-rossi/animate/releases/download/${VERSION}/animate.jar"
         fi
         curl -sL --fail -o "${{ runner.temp }}/animate.jar" "$url"
 
