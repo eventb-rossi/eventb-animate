@@ -49,40 +49,24 @@ public class ZipModelTest {
     Path zipFile = createTestZip(sourceDir);
 
     try {
-      ByteArrayOutputStream outContent = new ByteArrayOutputStream();
-      PrintStream originalOut = System.out;
+      TestCli.Result result = TestCli.execute("--steps", "3", zipFile.toString());
 
-      try {
-        System.setOut(new PrintStream(outContent));
-        int exitCode = Animate.execute(new String[] {"--steps", "3", zipFile.toString()});
-
-        assertEquals("Exit code should be 0", 0, exitCode);
-        assertTrue(
-            "Output should contain animation information", outContent.toString().length() > 0);
-      } finally {
-        System.setOut(originalOut);
-      }
+      assertEquals("Exit code should be 0", 0, result.exitCode());
+      assertTrue("Output should contain animation information", result.output().length() > 0);
     } finally {
       Files.deleteIfExists(zipFile);
     }
   }
 
   @Test(timeout = 60000)
-  public void testDirectoryWithMultipleBumFiles() throws Exception {
+  public void testDirectoryWithMultipleBumFiles() {
     Path dir = Paths.get("src/test/resources/models/cars-on-bridge");
 
-    ByteArrayOutputStream outContent = new ByteArrayOutputStream();
-    PrintStream originalOut = System.out;
+    TestCli.Result result = TestCli.execute("--steps", "3", dir.toString());
 
-    try {
-      System.setOut(new PrintStream(outContent));
-      int exitCode = Animate.execute(new String[] {"--steps", "3", dir.toString()});
-
-      assertEquals("Exit code should be 0 (auto-selected most refined machine)", 0, exitCode);
-      assertTrue("Output should contain animation information", outContent.toString().length() > 0);
-    } finally {
-      System.setOut(originalOut);
-    }
+    assertEquals(
+        "Exit code should be 0 (auto-selected most refined machine)", 0, result.exitCode());
+    assertTrue("Output should contain animation information", result.output().length() > 0);
   }
 
   @Test(timeout = 30000)
@@ -97,8 +81,8 @@ public class ZipModelTest {
         zos.closeEntry();
       }
 
-      int exitCode = Animate.execute(new String[] {zipFile.toString()});
-      assertEquals("Exit code should be 1 for zip with no .bum file", 1, exitCode);
+      TestCli.Result result = TestCli.execute(zipFile.toString());
+      assertEquals("Exit code should be 1 for zip with no .bum file", 1, result.exitCode());
     } finally {
       Files.deleteIfExists(zipFile);
     }

@@ -4,8 +4,6 @@ import static org.junit.Assert.*;
 
 import de.prob.check.tracereplay.ReplayedTrace;
 import de.prob.check.tracereplay.TraceReplayStatus;
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -19,28 +17,19 @@ public class ReplayCommandTest {
     Path model = Paths.get("src/test/resources/models/binary-search/M3.bum");
     Path traceFile = Files.createTempFile("animate-trace-", ".json");
 
-    ByteArrayOutputStream outContent = new ByteArrayOutputStream();
-    PrintStream originalOut = System.out;
-
     try {
-      System.setOut(new PrintStream(outContent));
+      TestCli.Result saveResult =
+          TestCli.execute("--steps", "3", "--save", traceFile.toString(), model.toString());
+      assertEquals("Saving trace should succeed", 0, saveResult.exitCode());
 
-      int saveExitCode =
-          Animate.execute(
-              new String[] {"--steps", "3", "--save", traceFile.toString(), model.toString()});
-      assertEquals("Saving trace should succeed", 0, saveExitCode);
+      TestCli.Result replayResult =
+          TestCli.execute("replay", "-t", traceFile.toString(), model.toString());
 
-      outContent.reset();
-      int replayExitCode =
-          Animate.execute(new String[] {"replay", "-t", traceFile.toString(), model.toString()});
-      String output = outContent.toString();
-
-      assertEquals("Replay should succeed", 0, replayExitCode);
+      assertEquals("Replay should succeed", 0, replayResult.exitCode());
       assertTrue(
           "Replay output should include the final status",
-          output.contains("Trace replay status: PERFECT"));
+          replayResult.output().contains("Trace replay status: PERFECT"));
     } finally {
-      System.setOut(originalOut);
       Files.deleteIfExists(traceFile);
     }
   }
