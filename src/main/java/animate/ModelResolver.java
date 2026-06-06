@@ -64,7 +64,11 @@ class ModelResolver {
   private Path resolveDirectory(Path dir, String machineName) throws IOException {
     List<Path> bumFiles;
     try (var stream = Files.walk(dir)) {
-      bumFiles = stream.filter(p -> p.toString().endsWith(".bum")).collect(Collectors.toList());
+      bumFiles =
+          stream
+              .filter(p -> p.toString().endsWith(".bum"))
+              .filter(Files::isRegularFile)
+              .collect(Collectors.toList());
     }
 
     return selectBumFile(bumFiles, machineName, "directory: " + dir);

@@ -70,6 +70,22 @@ public class ModelResolverTest {
   }
 
   @Test
+  public void testDirectoryNamedLikeMachineIsIgnored() throws Exception {
+    Path root = Files.createTempDirectory("animate-bum-dir-");
+    try {
+      Files.createDirectories(root.resolve("Decoy.bum"));
+      Path machine = root.resolve("Real.bum");
+      writeMachine(machine, "<org.eventb.core.machineFile/>");
+
+      Path resolved = new ModelResolver().resolve(root, null);
+
+      assertEquals("Only the regular .bum file should be selected", machine, resolved);
+    } finally {
+      deleteRecursively(root);
+    }
+  }
+
+  @Test
   public void testSelectMachineByNameIgnoresUnrelatedDuplicates() throws Exception {
     Path root = Files.createTempDirectory("animate-machine-select-dir-");
     try {
