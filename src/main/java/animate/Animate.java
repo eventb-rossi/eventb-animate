@@ -254,9 +254,14 @@ public class Animate implements Callable<Integer> {
     try {
       return body.applyAsInt(stateSpace);
     } finally {
-      stateSpace.kill();
-      modelResolver.cleanupTempDir();
+      releaseStateSpace(stateSpace);
     }
+  }
+
+  /** Shuts down the ProB instance and removes any extracted temp directory. */
+  void releaseStateSpace(StateSpace stateSpace) {
+    stateSpace.kill();
+    modelResolver.cleanupTempDir();
   }
 
   Trace initializeTrace(final StateSpace stateSpace) {

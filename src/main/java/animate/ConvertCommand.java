@@ -130,8 +130,7 @@ class ConvertCommand implements Callable<Integer> {
       logger.info("Wrote intermediate ProB Event-B package to {}", eventbPackage);
       return eventbPackage;
     } finally {
-      stateSpace.kill();
-      parent.modelResolver.cleanupTempDir();
+      parent.releaseStateSpace(stateSpace);
     }
   }
 
