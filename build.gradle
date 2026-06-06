@@ -77,6 +77,14 @@ shadowJar {
 	mergeServiceFiles()
 }
 
+// Only the shadow jar is consumed (CI verifies and uploads build/libs/*.jar);
+// the distribution archives are ~100 MB each, and the plain ones cannot even
+// run with the jar task disabled. Keep all of them out of assemble.
+distZip.enabled = false
+distTar.enabled = false
+shadowDistZip.enabled = false
+shadowDistTar.enabled = false
+
 spotbugs {
 	effort = 'max'
 	reportLevel = 'medium'
