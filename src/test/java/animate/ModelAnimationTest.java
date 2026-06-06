@@ -55,7 +55,6 @@ public class ModelAnimationTest {
 
     try {
       Trace trace = new Trace(stateSpace);
-      assertNotNull("Initial trace should be created", trace);
 
       // Verify we can get the initial state
       assertNotNull("Current state should exist", trace.getCurrentState());
@@ -97,43 +96,7 @@ public class ModelAnimationTest {
 
       System.out.println("  ✓ Performed " + successfulSteps + " animation steps");
 
-      // At minimum, we should be able to create the initial trace
-      assertTrue("Should be able to create initial trace", trace != null);
-    } finally {
-      stateSpace.kill();
-    }
-  }
-
-  @Test
-  public void testInvariantChecking() throws Exception {
-    System.out.println("Testing invariant checking for: " + modelName);
-
-    StateSpace stateSpace = api.eventb_load(modelFile.getAbsolutePath());
-
-    try {
-      Trace trace = new Trace(stateSpace);
-
-      // Perform a few animation steps and check invariants
-      int steps = Math.min(5, ANIMATION_STEPS);
-      for (int i = 0; i < steps; i++) {
-        try {
-          Trace newTrace = trace.anyEvent(null);
-          if (newTrace != trace) {
-            trace = newTrace;
-
-            // Check if current state has invariant violations
-            // (ProB automatically checks invariants during state space exploration)
-            assertNotNull("Current state should exist", trace.getCurrentState());
-          } else {
-            break;
-          }
-        } catch (Exception e) {
-          // Expected for some models
-          break;
-        }
-      }
-
-      System.out.println("  ✓ Invariant checking completed");
+      assertNotNull("Current state should exist after animation", trace.getCurrentState());
     } finally {
       stateSpace.kill();
     }
