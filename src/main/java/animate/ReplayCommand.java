@@ -58,8 +58,9 @@ class ReplayCommand implements Callable<Integer> {
         .filter(message -> message != null && !message.isBlank())
         .forEach(message -> System.err.println("Replay error: " + message));
 
-    for (int i = 0; i < trace.getTransitionErrorMessages().size(); i++) {
-      for (String message : trace.getTransitionErrorMessages().get(i)) {
+    var transitionErrors = trace.getTransitionErrorMessages();
+    for (int i = 0; i < transitionErrors.size(); i++) {
+      for (String message : transitionErrors.get(i)) {
         if (message != null && !message.isBlank()) {
           System.err.println("Replay step " + (i + 1) + ": " + message);
         }
