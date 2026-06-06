@@ -3,11 +3,8 @@ package animate;
 import com.google.common.io.MoreFiles;
 import de.prob.animator.domainobjects.DotVisualizationCommand;
 import de.prob.model.eventb.EventBModel;
-import de.prob.model.eventb.translate.EventBModelTranslator;
-import de.prob.prolog.output.PrologTermOutput;
 import de.prob.statespace.StateSpace;
 import de.prob.statespace.Trace;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -85,7 +82,7 @@ class InfoCommand implements Callable<Integer> {
       if (eventb != null) {
         logger.info("Saving B model to {}", eventb);
         try {
-          eventbSave(stateSpace, eventb.toString());
+          EventBPackageWriter.write(stateSpace, eventb);
         } catch (IOException e) {
           logger.error("Error saving model", e);
           System.err.println("Error saving model: " + e.getMessage());
@@ -119,19 +116,5 @@ class InfoCommand implements Callable<Integer> {
       return 1;
     }
     return 0;
-  }
-
-  // Same as api.eventb_save, but pretty-printed
-  private void eventbSave(final StateSpace s, final String path) throws IOException {
-    final EventBModelTranslator translator = new EventBModelTranslator((EventBModel) s.getModel());
-
-    try (final FileOutputStream fos = new FileOutputStream(path)) {
-      final PrologTermOutput pto = new PrologTermOutput(fos, true);
-      pto.openTerm("package");
-      translator.printProlog(pto);
-      pto.closeTerm();
-      pto.fullstop();
-      pto.flush();
-    }
   }
 }

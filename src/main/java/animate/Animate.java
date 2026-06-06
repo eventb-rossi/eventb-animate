@@ -37,7 +37,12 @@ import picocli.CommandLine.ScopeType;
     mixinStandardHelpOptions = true,
     sortOptions = false,
     versionProvider = Animate.VersionProvider.class,
-    subcommands = {CommandLine.HelpCommand.class, ReplayCommand.class, InfoCommand.class})
+    subcommands = {
+      CommandLine.HelpCommand.class,
+      ReplayCommand.class,
+      InfoCommand.class,
+      ConvertCommand.class
+    })
 public class Animate implements Callable<Integer> {
 
   static final String SETUP_CONSTANTS_EVENT = "$setup_constants";
@@ -109,6 +114,10 @@ public class Animate implements Callable<Integer> {
   public Animate(Provider<Api> api, Provider<TraceManager> traceManager) {
     this.api = api;
     this.traceManager = traceManager;
+  }
+
+  Api api() {
+    return api.get();
   }
 
   private void printCoverage(StateSpace stateSpace) {
