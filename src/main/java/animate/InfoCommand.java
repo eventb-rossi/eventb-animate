@@ -8,6 +8,7 @@ import de.prob.statespace.Trace;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Locale;
 import java.util.concurrent.Callable;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -105,7 +106,7 @@ class InfoCommand implements Callable<Integer> {
     if (path == null) return 0;
     logger.info("Saving {} to {}", name, path);
     DotVisualizationCommand cmd = DotVisualizationCommand.getByName(name, trace);
-    String extension = MoreFiles.getFileExtension(path);
+    String extension = MoreFiles.getFileExtension(path).toLowerCase(Locale.ROOT);
     if (extension.equals("dot")) {
       cmd.visualizeAsDotToFile(path, new ArrayList<>());
     } else if (extension.equals("svg")) {
