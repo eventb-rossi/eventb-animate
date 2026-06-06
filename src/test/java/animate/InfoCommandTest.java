@@ -33,7 +33,7 @@ public class InfoCommandTest {
     command.parent = animate;
 
     Path machineGraph = Files.createTempFile("animate-info-", ".dot");
-    command.machine = machineGraph;
+    command.machineGraph = machineGraph;
 
     ByteArrayOutputStream errContent = new ByteArrayOutputStream();
     PrintStream originalErr = System.err;

@@ -53,10 +53,10 @@ A command-line tool for animating Event-B models using the ProB model checker.
 ```
 
 Export options:
-- `-m, --machine <file>` - Save machine hierarchy graph (.dot or .svg)
+- `--machine-graph <file>` - Save machine hierarchy graph (.dot or .svg)
 - `-e, --events <file>` - Save events hierarchy graph (.dot or .svg)
 - `-p, --properties <file>` - Save properties graph (.dot or .svg)
-- `-i, --invariant <file>` - Save invariant graph (.dot or .svg)
+- `--invariant-graph <file>` - Save invariant graph (.dot or .svg)
 - `-b, --bmodel <file>` - Dump prolog model to .eventb file
 
 ## CI Integration

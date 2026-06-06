@@ -22,11 +22,14 @@ class InfoCommand implements Callable<Integer> {
 
   @ParentCommand Animate parent;
 
+  // No short flags for the two options below: at the top level -m/--machine
+  // selects a machine by name and -i/--invariants toggles invariant checking,
+  // so reusing those letters here for graph files invited confusion.
   @Option(
-      names = {"-m", "--machine"},
+      names = "--machine-graph",
       paramLabel = "machine.dot",
       description = "save machine hierarchy graph in dot or svg")
-  Path machine;
+  Path machineGraph;
 
   @Option(
       names = {"-e", "--events"},
@@ -41,10 +44,10 @@ class InfoCommand implements Callable<Integer> {
   Path properties;
 
   @Option(
-      names = {"-i", "--invariant"},
+      names = "--invariant-graph",
       paramLabel = "invariant.dot",
       description = "save invariant graph in dot or svg")
-  Path invariant;
+  Path invariantGraph;
 
   @Option(
       names = {"-b", "--bmodel"},
@@ -61,7 +64,7 @@ class InfoCommand implements Callable<Integer> {
     int err = 0;
 
     boolean hasVisualizationCmd =
-        machine != null || events != null || properties != null || invariant != null;
+        machineGraph != null || events != null || properties != null || invariantGraph != null;
 
     if (hasVisualizationCmd) {
       logger.info("Initializing model");
@@ -73,10 +76,10 @@ class InfoCommand implements Callable<Integer> {
         stateSpace.endTransaction();
       }
 
-      err |= saveVisualization("machine_hierarchy", machine, trace);
+      err |= saveVisualization("machine_hierarchy", machineGraph, trace);
       err |= saveVisualization("event_hierarchy", events, trace);
       err |= saveVisualization("properties", properties, trace);
-      err |= saveVisualization("invariant", invariant, trace);
+      err |= saveVisualization("invariant", invariantGraph, trace);
     }
 
     if (eventb != null) {
