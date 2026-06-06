@@ -363,7 +363,7 @@ public class Animate implements Callable<Integer> {
                 .withSavedNow()
                 .withCreator("eventb-animate")
                 .withProBCliVersion(probVersionString)
-                .withModelName(stateSpace.getMainComponent().toString())
+                .withModelName(Objects.toString(stateSpace.getMainComponent(), "unknown"))
                 .build();
         TraceJsonFile abstractJsonFile = new TraceJsonFile(trace, metadata);
         logger.info("Saving animation trace to {}", jsonTrace);
