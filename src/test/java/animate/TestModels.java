@@ -30,7 +30,12 @@ final class TestModels {
         filteredModels.add(model);
       }
     }
-    return filteredModels.isEmpty() ? allModels() : filteredModels;
+    if (filteredModels.isEmpty()) {
+      throw new IllegalStateException(
+          "No main models matched under src/test/resources/models;"
+              + " update the filter in TestModels.mainModels");
+    }
+    return filteredModels;
   }
 
   private static void findBumFiles(File dir, List<Object[]> models, String prefix) {
