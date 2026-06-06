@@ -14,10 +14,10 @@ if [ "$GRADLE_VERSION" != "$TAG_VERSION" ]; then
 fi
 
 EXPECTED_README_REFERENCES=(
-  "- uses: eventb-rossi/animate@${TAG}"
+  "- uses: eventb-rossi/eventb-animate@${TAG}"
   "    version: '${TAG}'"
-  "  - remote: 'https://raw.githubusercontent.com/eventb-rossi/animate/${TAG}/.gitlab-ci-template.yml'"
-  "| \`ANIMATE_VERSION\` | Release version tag (e.g., \`${TAG}\`) | \`latest\` |"
+  "  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/${TAG}/.gitlab-ci-template.yml'"
+  "| \`EVENTB_ANIMATE_VERSION\` | Release version tag (e.g., \`${TAG}\`) | \`latest\` |"
 )
 
 for expected in "${EXPECTED_README_REFERENCES[@]}"; do

@@ -33,7 +33,7 @@ import picocli.CommandLine.Parameters;
 import picocli.CommandLine.ScopeType;
 
 @Command(
-    name = "animate",
+    name = "eventb-animate",
     mixinStandardHelpOptions = true,
     sortOptions = false,
     versionProvider = Animate.VersionProvider.class,
@@ -58,7 +58,9 @@ public class Animate implements Callable<Integer> {
     public String[] getVersion() {
       Package pkg = Animate.class.getPackage();
       String version = pkg == null ? null : pkg.getImplementationVersion();
-      return new String[] {"animate " + (version == null || version.isBlank() ? "dev" : version)};
+      return new String[] {
+        "eventb-animate " + (version == null || version.isBlank() ? "dev" : version)
+      };
     }
   }
 
@@ -347,7 +349,7 @@ public class Animate implements Callable<Integer> {
         JsonMetadata metadata =
             new JsonMetadataBuilder("Trace", 6)
                 .withSavedNow()
-                .withCreator("animate")
+                .withCreator("eventb-animate")
                 .withProBCliVersion(probVersionString)
                 .withModelName(stateSpace.getMainComponent().toString())
                 .build();

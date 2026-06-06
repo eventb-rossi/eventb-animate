@@ -1,4 +1,4 @@
-# Animate
+# Event-B Animate
 
 A command-line tool for animating Event-B models using the ProB model checker.
 
@@ -61,12 +61,12 @@ Export options:
 
 ## CI Integration
 
-Use `animate` in your CI pipelines without building from source.
+Use `eventb-animate` in your CI pipelines without building from source.
 
 ### GitHub Actions
 
 ```yaml
-- uses: eventb-rossi/animate@v4.2
+- uses: eventb-rossi/eventb-animate@v4.2
   with:
     model-path: 'path/to/model.bum'
 ```
@@ -90,21 +90,21 @@ Use `animate` in your CI pipelines without building from source.
 
 ```yaml
 # Check invariants with 20 steps
-- uses: eventb-rossi/animate@v4.2
+- uses: eventb-rossi/eventb-animate@v4.2
   with:
     model-path: 'path/to/model.bum'
     steps: 20
     invariants: true
 
 # Replay a trace
-- uses: eventb-rossi/animate@v4.2
+- uses: eventb-rossi/eventb-animate@v4.2
   with:
     model-path: 'models/system.bum'
     command: 'replay'
     trace: 'tests/trace.json'
 
 # Pin to a specific release
-- uses: eventb-rossi/animate@v4.2
+- uses: eventb-rossi/eventb-animate@v4.2
   with:
     model-path: 'path/to/model.bum'
     version: 'v4.2'
@@ -112,60 +112,60 @@ Use `animate` in your CI pipelines without building from source.
 
 ### GitLab CI
 
-Include the reusable template and extend the `.animate` hidden job:
+Include the reusable template and extend the `.eventb-animate` hidden job:
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/eventb-rossi/animate/v4.2/.gitlab-ci-template.yml'
+  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v4.2/.gitlab-ci-template.yml'
 
 animate-model:
-  extends: .animate
+  extends: .eventb-animate
   variables:
-    ANIMATE_MODEL_PATH: 'path/to/model.bum'
+    EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
 ```
 
 #### Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ANIMATE_MODEL_PATH` | Path to model `.bum`, `.zip`, or directory (required) | `''` |
-| `ANIMATE_COMMAND` | Subcommand: `animate` or `replay` | `animate` |
-| `ANIMATE_STEPS` | Number of random animation steps (animate) | `''` |
-| `ANIMATE_SIZE` | Default size for ProB sets (animate) | `''` |
-| `ANIMATE_INVARIANTS` | Check invariants during animation (animate) | `false` |
-| `ANIMATE_SAVE` | Save animation trace to JSON file (animate) | `''` |
-| `ANIMATE_TRACE` | Path to JSON trace file (replay, required) | `''` |
-| `ANIMATE_ARGS` | Extra args appended to the assembled command | `''` |
-| `ANIMATE_VERSION` | Release version tag (e.g., `v4.2`) | `latest` |
+| `EVENTB_ANIMATE_MODEL_PATH` | Path to model `.bum`, `.zip`, or directory (required) | `''` |
+| `EVENTB_ANIMATE_COMMAND` | Subcommand: `animate` or `replay` | `animate` |
+| `EVENTB_ANIMATE_STEPS` | Number of random animation steps (animate) | `''` |
+| `EVENTB_ANIMATE_SIZE` | Default size for ProB sets (animate) | `''` |
+| `EVENTB_ANIMATE_INVARIANTS` | Check invariants during animation (animate) | `false` |
+| `EVENTB_ANIMATE_SAVE` | Save animation trace to JSON file (animate) | `''` |
+| `EVENTB_ANIMATE_TRACE` | Path to JSON trace file (replay, required) | `''` |
+| `EVENTB_ANIMATE_ARGS` | Extra args appended to the assembled command | `''` |
+| `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v4.2`) | `latest` |
 
 #### Examples
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/eventb-rossi/animate/v4.2/.gitlab-ci-template.yml'
+  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v4.2/.gitlab-ci-template.yml'
 
 # Check invariants with 20 steps
 animate-check:
-  extends: .animate
+  extends: .eventb-animate
   variables:
-    ANIMATE_MODEL_PATH: 'path/to/model.bum'
-    ANIMATE_STEPS: '20'
-    ANIMATE_INVARIANTS: 'true'
+    EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
+    EVENTB_ANIMATE_STEPS: '20'
+    EVENTB_ANIMATE_INVARIANTS: 'true'
 
 # Replay a trace
 animate-replay:
-  extends: .animate
+  extends: .eventb-animate
   variables:
-    ANIMATE_MODEL_PATH: 'models/system.bum'
-    ANIMATE_COMMAND: 'replay'
-    ANIMATE_TRACE: 'tests/trace.json'
+    EVENTB_ANIMATE_MODEL_PATH: 'models/system.bum'
+    EVENTB_ANIMATE_COMMAND: 'replay'
+    EVENTB_ANIMATE_TRACE: 'tests/trace.json'
 
 # Pin to a specific release
 animate-pinned:
-  extends: .animate
+  extends: .eventb-animate
   variables:
-    ANIMATE_MODEL_PATH: 'path/to/model.bum'
-    ANIMATE_VERSION: 'v4.2'
+    EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
+    EVENTB_ANIMATE_VERSION: 'v4.2'
 ```
 
 ## License

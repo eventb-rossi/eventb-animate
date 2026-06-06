@@ -39,8 +39,8 @@ jobs:
     - name: Verify jar version
       run: |
         expected=$(sed -n "s/^version = '\([^']*\)'$/\1/p" build.gradle)
-        actual=$(java -jar build/libs/animate-*.jar --version)
-        test "$actual" = "animate $expected"
+        actual=$(java -jar build/libs/eventb-animate-*.jar --version)
+        test "$actual" = "eventb-animate $expected"
 
     - name: Upload test results
       if: always()
@@ -60,5 +60,5 @@ jobs:
       if: success()
       uses: actions/upload-artifact@v7
       with:
-        name: animate.jar
-        path: build/libs/animate-*.jar
+        name: eventb-animate.jar
+        path: build/libs/eventb-animate-*.jar
