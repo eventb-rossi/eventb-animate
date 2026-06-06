@@ -45,14 +45,10 @@ public class AnimateCliTest {
       String output = outContent.toString();
       assertTrue("Output should contain animation information", output.length() > 0);
       assertEquals("Exit code should be 0", 0, exitCode);
-
+    } finally {
       System.setOut(originalOut);
-      System.out.println("  ✓ CLI animation completed");
-    } catch (Exception e) {
-      System.setOut(originalOut);
-      System.err.println("  ✗ Animation failed: " + e.getMessage());
-      throw e;
     }
+    System.out.println("  ✓ CLI animation completed");
   }
 
   @Test(timeout = 30000)
@@ -62,25 +58,22 @@ public class AnimateCliTest {
     ByteArrayOutputStream outContent = new ByteArrayOutputStream();
     PrintStream originalOut = System.out;
 
+    int exitCode;
     try {
       System.setOut(new PrintStream(outContent));
 
       String[] args = {"--steps", "5", "--invariants", modelFile.getAbsolutePath()};
 
-      int exitCode = Animate.execute(args);
+      exitCode = Animate.execute(args);
 
       String output = outContent.toString();
       assertTrue("Output should contain animation information", output.length() > 0);
       assertTrue(
           "Exit code should be 0 (no violation) or 1 (invariant violated)",
           exitCode == 0 || exitCode == 1);
-
+    } finally {
       System.setOut(originalOut);
-      System.out.println("  ✓ Invariant checking completed (exit code: " + exitCode + ")");
-    } catch (Exception e) {
-      System.setOut(originalOut);
-      System.err.println("  ✗ Invariant checking failed: " + e.getMessage());
-      throw e;
     }
+    System.out.println("  ✓ Invariant checking completed (exit code: " + exitCode + ")");
   }
 }
