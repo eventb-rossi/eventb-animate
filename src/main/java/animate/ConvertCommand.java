@@ -25,6 +25,7 @@ import picocli.CommandLine.ParentCommand;
     name = "convert",
     description = "Convert an Event-B model to a Classical B machine",
     mixinStandardHelpOptions = true,
+    sortOptions = false,
     versionProvider = Animate.VersionProvider.class)
 class ConvertCommand implements Callable<Integer> {
 

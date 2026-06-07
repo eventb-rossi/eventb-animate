@@ -16,6 +16,7 @@ import picocli.CommandLine.ParentCommand;
     name = "replay",
     description = "Replay json trace",
     mixinStandardHelpOptions = true,
+    sortOptions = false,
     versionProvider = Animate.VersionProvider.class)
 class ReplayCommand implements Callable<Integer> {
 

@@ -24,6 +24,27 @@ public class CliHelpTest {
   }
 
   @Test
+  public void testInfoHelpListsOptionsInDeclarationOrder() {
+    TestCli.Result result = TestCli.execute("info", "--help");
+
+    // The README documents the options in declaration order, and the top-level
+    // help already uses it; alphabetical sorting would put -b first. Skip the
+    // synopsis, which stays alphabetical like the top-level command's.
+    String output = result.output();
+    output = output.substring(output.indexOf("Dump information about the model"));
+    String[] expectedOrder = {
+      "--machine-graph", "--events", "--properties", "--invariant-graph", "--bmodel"
+    };
+    for (int i = 1; i < expectedOrder.length; i++) {
+      String previous = expectedOrder[i - 1];
+      String current = expectedOrder[i];
+      assertTrue(
+          previous + " should be listed before " + current + ":\n" + output,
+          output.indexOf(previous) < output.indexOf(current));
+    }
+  }
+
+  @Test
   public void testVersionPrintsToolVersionOnEverySubcommand() {
     for (String subcommand : SUBCOMMANDS) {
       TestCli.Result result = TestCli.execute(subcommand, "--version");

@@ -19,6 +19,7 @@ import picocli.CommandLine.ParentCommand;
     name = "info",
     description = "Dump information about the model",
     mixinStandardHelpOptions = true,
+    sortOptions = false,
     versionProvider = Animate.VersionProvider.class)
 class InfoCommand implements Callable<Integer> {
 
