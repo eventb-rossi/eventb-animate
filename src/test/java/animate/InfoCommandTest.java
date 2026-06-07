@@ -19,6 +19,20 @@ import org.junit.Test;
 
 public class InfoCommandTest {
 
+  @Test(timeout = 30000)
+  public void testUnsupportedGraphExtensionFailsWithCleanError() {
+    TestCli.Result result =
+        TestCli.execute(
+            "info", "--events", "graph.png", "src/test/resources/models/base-model/M1.bum");
+
+    assertEquals("Unsupported extension should exit 1:\n" + result.output(), 1, result.exitCode());
+    assertTrue(
+        "Error should use the standard prefix and name the path:\n" + result.output(),
+        result
+            .output()
+            .contains("Error: unsupported extension for graph.png (expected .dot or .svg)"));
+  }
+
   @Test
   public void testVisualizationStillSavesWhenInitializationRaises() throws Exception {
     Injector injector = Guice.createInjector(Stage.PRODUCTION, new Config());

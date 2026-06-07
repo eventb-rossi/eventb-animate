@@ -117,7 +117,7 @@ class InfoCommand implements Callable<Integer> {
     } else if (extension.equals("svg")) {
       cmd.visualizeAsSvgToFile(path, new ArrayList<>());
     } else {
-      System.err.println("Unknown extension " + extension);
+      System.err.println("Error: unsupported extension for " + path + " (expected .dot or .svg)");
       return 1;
     }
     return 0;
