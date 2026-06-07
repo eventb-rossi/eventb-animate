@@ -61,11 +61,14 @@ class InfoCommand implements Callable<Integer> {
       description = "dump prolog model to .eventb file")
   Path eventb;
 
+  @Option(names = "--force", description = "overwrite existing output files")
+  boolean force;
+
   @Override
   public Integer call() {
     try {
       validateOutputs();
-    } catch (IllegalArgumentException e) {
+    } catch (IllegalArgumentException | IOException e) {
       System.err.println("Error: " + e.getMessage());
       return 1;
     }
@@ -73,7 +76,7 @@ class InfoCommand implements Callable<Integer> {
   }
 
   /** Rejects bad output paths before they cost a full ProB model load. */
-  private void validateOutputs() {
+  private void validateOutputs() throws IOException {
     for (Path path : new Path[] {machineGraph, eventGraph, propertyGraph, invariantGraph}) {
       if (path == null) {
         continue;
@@ -83,6 +86,10 @@ class InfoCommand implements Callable<Integer> {
         throw new IllegalArgumentException(
             "unsupported extension for " + path + " (expected .dot or .svg)");
       }
+      Animate.validateWritableOutput(path, "Output", force);
+    }
+    if (eventb != null) {
+      Animate.validateWritableOutput(eventb, "Output", force);
     }
   }
 

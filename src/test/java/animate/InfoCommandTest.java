@@ -38,18 +38,71 @@ public class InfoCommandTest {
   }
 
   @Test(timeout = 30000)
-  public void testGraphWriteFailureReportsCleanError() {
-    TestCli.Result result =
-        TestCli.execute(
-            "info",
-            "--event-graph",
-            "/nonexistent-dir/graph.dot",
-            "src/test/resources/models/base-model/M1.bum");
+  public void testGraphWriteFailureReportsCleanError() throws Exception {
+    // A directory named like the output passes the upfront validation with
+    // --force but fails when the visualization is written.
+    Path unwritable = Files.createTempDirectory("animate-info-").resolve("graph.dot");
+    Files.createDirectories(unwritable);
+    try {
+      TestCli.Result result =
+          TestCli.execute(
+              "info",
+              "--event-graph",
+              unwritable.toString(),
+              "--force",
+              "src/test/resources/models/base-model/M1.bum");
 
-    assertEquals("Unwritable graph path should exit 1:\n" + result.output(), 1, result.exitCode());
-    assertTrue(
-        "Write failure should be reported with a clean message:\n" + result.output(),
-        result.output().contains("Error saving event_hierarchy to /nonexistent-dir/graph.dot:"));
+      assertEquals(
+          "Unwritable graph path should exit 1:\n" + result.output(), 1, result.exitCode());
+      assertTrue(
+          "Write failure should be reported with a clean message:\n" + result.output(),
+          result.output().contains("Error saving event_hierarchy to " + unwritable + ":"));
+    } finally {
+      Files.deleteIfExists(unwritable);
+      Files.deleteIfExists(unwritable.getParent());
+    }
+  }
+
+  @Test(timeout = 30000)
+  public void testExistingOutputRequiresForce() throws Exception {
+    Path existing = Files.createTempFile("animate-info-", ".dot");
+    try {
+      TestCli.Result result =
+          TestCli.execute(
+              "info",
+              "--event-graph",
+              existing.toString(),
+              "src/test/resources/models/base-model/M1.bum");
+
+      assertEquals("Existing output should exit 1:\n" + result.output(), 1, result.exitCode());
+      assertTrue(
+          "Error should point at --force:\n" + result.output(),
+          result.output().contains("already exists, use --force to overwrite: " + existing));
+      assertFalse(
+          "Validation should fail before the model is loaded:\n" + result.output(),
+          result.output().contains("Machine:"));
+    } finally {
+      Files.deleteIfExists(existing);
+    }
+  }
+
+  @Test(timeout = 30000)
+  public void testForceOverwritesExistingOutput() throws Exception {
+    Path existing = Files.createTempFile("animate-info-", ".dot");
+    try {
+      TestCli.Result result =
+          TestCli.execute(
+              "info",
+              "--machine-graph",
+              existing.toString(),
+              "--force",
+              "src/test/resources/models/base-model/M1.bum");
+
+      assertEquals("--force should allow overwriting:\n" + result.output(), 0, result.exitCode());
+      assertTrue("Graph should be written", Files.size(existing) > 0);
+    } finally {
+      Files.deleteIfExists(existing);
+    }
   }
 
   @Test
@@ -66,6 +119,8 @@ public class InfoCommandTest {
     command.parent = animate;
 
     Path machineGraph = Files.createTempFile("animate-info-", ".dot");
+    // Reserve the name only: info refuses to overwrite existing files without --force.
+    Files.delete(machineGraph);
     command.machineGraph = machineGraph;
 
     ByteArrayOutputStream errContent = new ByteArrayOutputStream();

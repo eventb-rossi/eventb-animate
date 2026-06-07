@@ -52,7 +52,7 @@ class ConvertCommand implements Callable<Integer> {
     try {
       CheckMode checkMode = CheckMode.parse(check);
       normalizePositionalArguments();
-      validateWritableOutput(output, "Output");
+      Animate.validateWritableOutput(output, "Output", force);
 
       boolean inputIsPackage = isProBEventBPackage(parent.model);
       Path eventbPackage = inputIsPackage ? parent.model : writeEventBPackage();
@@ -108,16 +108,6 @@ class ConvertCommand implements Callable<Integer> {
         || name.endsWith(".zip")
         || name.endsWith(".eventb")
         || Files.isDirectory(path);
-  }
-
-  private void validateWritableOutput(Path path, String label) throws IOException {
-    if (Files.exists(path) && !force) {
-      throw new IOException(label + " already exists, use --force to overwrite: " + path);
-    }
-    Path parentDir = path.toAbsolutePath().getParent();
-    if (parentDir != null) {
-      Files.createDirectories(parentDir);
-    }
   }
 
   private Path writeEventBPackage() throws IOException {

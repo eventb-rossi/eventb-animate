@@ -68,6 +68,7 @@ Export options:
 - `--property-graph <file>` - Save properties graph (.dot or .svg)
 - `--invariant-graph <file>` - Save invariant graph (.dot or .svg)
 - `-b, --bmodel <file>` - Dump prolog model to .eventb file
+- `--force` - Overwrite existing output files
 
 ## CI Integration
 

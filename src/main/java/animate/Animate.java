@@ -189,6 +189,21 @@ public class Animate implements Callable<Integer> {
     }
   }
 
+  /**
+   * Refuses to overwrite {@code path} unless {@code force} is set, and creates missing parent
+   * directories so the later write only has to deal with the file itself. Shared by the subcommands
+   * so every output file follows the same overwrite policy.
+   */
+  static void validateWritableOutput(Path path, String label, boolean force) throws IOException {
+    if (Files.exists(path) && !force) {
+      throw new IOException(label + " already exists, use --force to overwrite: " + path);
+    }
+    Path parentDir = path.toAbsolutePath().getParent();
+    if (parentDir != null) {
+      Files.createDirectories(parentDir);
+    }
+  }
+
   private StateSpace loadModel() throws IOException {
     validateInput();
 
