@@ -12,7 +12,11 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
 
-@Command(name = "replay", description = "Replay json trace")
+@Command(
+    name = "replay",
+    description = "Replay json trace",
+    mixinStandardHelpOptions = true,
+    versionProvider = Animate.VersionProvider.class)
 class ReplayCommand implements Callable<Integer> {
 
   private static final Logger logger = (Logger) LoggerFactory.getLogger(ReplayCommand.class);

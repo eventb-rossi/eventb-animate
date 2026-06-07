@@ -15,7 +15,11 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
 
-@Command(name = "info", description = "Dump information about the model")
+@Command(
+    name = "info",
+    description = "Dump information about the model",
+    mixinStandardHelpOptions = true,
+    versionProvider = Animate.VersionProvider.class)
 class InfoCommand implements Callable<Integer> {
 
   private static final ch.qos.logback.classic.Logger logger =
