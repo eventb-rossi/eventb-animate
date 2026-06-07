@@ -1,6 +1,7 @@
 package animate;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.google.inject.Guice;
@@ -31,6 +32,9 @@ public class InfoCommandTest {
         result
             .output()
             .contains("Error: unsupported extension for graph.png (expected .dot or .svg)"));
+    assertFalse(
+        "Validation should fail before the model is loaded:\n" + result.output(),
+        result.output().contains("Machine:"));
   }
 
   @Test(timeout = 30000)

@@ -63,7 +63,27 @@ class InfoCommand implements Callable<Integer> {
 
   @Override
   public Integer call() {
+    try {
+      validateOutputs();
+    } catch (IllegalArgumentException e) {
+      System.err.println("Error: " + e.getMessage());
+      return 1;
+    }
     return parent.withStateSpace(this::dumpInfo);
+  }
+
+  /** Rejects bad output paths before they cost a full ProB model load. */
+  private void validateOutputs() {
+    for (Path path : new Path[] {machineGraph, eventGraph, propertyGraph, invariantGraph}) {
+      if (path == null) {
+        continue;
+      }
+      String extension = MoreFiles.getFileExtension(path).toLowerCase(Locale.ROOT);
+      if (!extension.equals("dot") && !extension.equals("svg")) {
+        throw new IllegalArgumentException(
+            "unsupported extension for " + path + " (expected .dot or .svg)");
+      }
+    }
   }
 
   private int dumpInfo(StateSpace stateSpace) {
@@ -113,11 +133,8 @@ class InfoCommand implements Callable<Integer> {
   private int saveVisualization(String name, Path path, Trace trace) {
     if (path == null) return 0;
     logger.info("Saving {} to {}", name, path);
+    // validateOutputs already rejected anything that is not .dot or .svg.
     String extension = MoreFiles.getFileExtension(path).toLowerCase(Locale.ROOT);
-    if (!extension.equals("dot") && !extension.equals("svg")) {
-      System.err.println("Error: unsupported extension for " + path + " (expected .dot or .svg)");
-      return 1;
-    }
     try {
       DotVisualizationCommand cmd = DotVisualizationCommand.getByName(name, trace);
       if (extension.equals("dot")) {
