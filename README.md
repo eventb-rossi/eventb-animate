@@ -9,11 +9,11 @@ A command-line tool for animating Event-B models using the ProB model checker.
 - Coverage analysis
 - Trace saving and replay in JSON format
 - Model visualization export (machine hierarchy, events, properties, invariants)
+- Conversion of Event-B models to Classical B machines
 
 ## Requirements
 
 - Java 21 or later
-- Gradle
 
 ## Building
 
@@ -21,22 +21,32 @@ A command-line tool for animating Event-B models using the ProB model checker.
 ./gradlew build
 ```
 
+The build produces a self-contained jar at `build/libs/eventb-animate-<version>.jar`.
+The `eventb-animate` command used below stands for `java -jar` on that file (or a
+wrapper script around it).
+
 ## Usage
 
 ### Basic Animation
 
 ```bash
-./gradlew run --args="path/to/model.bum"
+eventb-animate path/to/model.bum
 ```
+
+The model path may also be a `.zip` archive or a Rodin project directory; the
+most refined machine is auto-selected unless `-m/--machine` says otherwise.
 
 ### Options
 
 - `-s, --steps <n>` - Number of random animation steps (default: 5)
 - `-z, --size <n>` - Default size for ProB sets (default: 4)
 - `-i, --invariants` - Check invariants during animation
+- `-m, --machine <name>` - Machine to animate (default: auto-select most refined)
 - `--perf` - Print ProB performance information
 - `--save <file.json>` - Save animation trace to JSON file
 - `--debug` - Enable debug logging
+- `-h, --help` - Show help (also available on every subcommand)
+- `-V, --version` - Print the release version
 
 ### Exit Codes
 
@@ -53,13 +63,13 @@ A command-line tool for animating Event-B models using the ProB model checker.
 #### Replay a Trace
 
 ```bash
-./gradlew run --args="replay -t path/to/trace.json path/to/model.bum"
+eventb-animate replay -t path/to/trace.json path/to/model.bum
 ```
 
 #### Model Information
 
 ```bash
-./gradlew run --args="info path/to/model.bum"
+eventb-animate info path/to/model.bum
 ```
 
 Export options:
@@ -68,6 +78,22 @@ Export options:
 - `--property-graph <file>` - Save properties graph (.dot or .svg)
 - `--invariant-graph <file>` - Save invariant graph (.dot or .svg)
 - `-b, --bmodel <file>` - Dump prolog model to .eventb file
+- `--force` - Overwrite existing output files
+
+#### Convert to Classical B
+
+```bash
+eventb-animate convert output.mch path/to/model.bum
+```
+
+Translates the Event-B model into a Classical B machine (`.mch`). A `.eventb`
+prolog package (as produced by `info --bmodel`) is also accepted as input.
+
+Options:
+- `--check <mode>` - Optional post-conversion validation (default: `none`):
+  - `init` - load the converted machine with ProB and initialise it
+  - `mc:N` - model-check the converted machine (deadlocks and invariants),
+    exploring up to `N` states
 - `--force` - Overwrite existing output files
 
 ## CI Integration
@@ -80,7 +106,7 @@ pick `steps` low enough for models that legitimately terminate.
 ### GitHub Actions
 
 ```yaml
-- uses: eventb-rossi/eventb-animate@v4.2
+- uses: eventb-rossi/eventb-animate@v5.0
   with:
     model-path: 'path/to/model.bum'
 ```
@@ -97,31 +123,31 @@ pick `steps` low enough for models that legitimately terminate.
 | `save` | Save animation trace to JSON file (animate) | No | — |
 | `trace` | Path to JSON trace file (replay, required) | No | — |
 | `args` | Extra args appended to the assembled command | No | — |
-| `version` | Release version tag (e.g., `v4.2`) | No | `latest` |
+| `version` | Release version tag (e.g., `v5.0`) | No | `latest` |
 | `java-version` | Java version to use (must be 21 or later) | No | `21` |
 
 #### Examples
 
 ```yaml
 # Check invariants with 20 steps
-- uses: eventb-rossi/eventb-animate@v4.2
+- uses: eventb-rossi/eventb-animate@v5.0
   with:
     model-path: 'path/to/model.bum'
     steps: 20
     invariants: true
 
 # Replay a trace
-- uses: eventb-rossi/eventb-animate@v4.2
+- uses: eventb-rossi/eventb-animate@v5.0
   with:
     model-path: 'models/system.bum'
     command: 'replay'
     trace: 'tests/trace.json'
 
 # Pin to a specific release
-- uses: eventb-rossi/eventb-animate@v4.2
+- uses: eventb-rossi/eventb-animate@v5.0
   with:
     model-path: 'path/to/model.bum'
-    version: 'v4.2'
+    version: 'v5.0'
 ```
 
 ### GitLab CI
@@ -130,7 +156,7 @@ Include the reusable template and extend the `.eventb-animate` hidden job:
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v4.2/.gitlab-ci-template.yml'
+  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v5.0/.gitlab-ci-template.yml'
 
 animate-model:
   extends: .eventb-animate
@@ -150,13 +176,13 @@ animate-model:
 | `EVENTB_ANIMATE_SAVE` | Save animation trace to JSON file (animate) | `''` |
 | `EVENTB_ANIMATE_TRACE` | Path to JSON trace file (replay, required) | `''` |
 | `EVENTB_ANIMATE_ARGS` | Extra args appended to the assembled command | `''` |
-| `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v4.2`) | `latest` |
+| `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v5.0`) | `latest` |
 
 #### Examples
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v4.2/.gitlab-ci-template.yml'
+  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v5.0/.gitlab-ci-template.yml'
 
 # Check invariants with 20 steps
 animate-check:
@@ -179,7 +205,7 @@ animate-pinned:
   extends: .eventb-animate
   variables:
     EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
-    EVENTB_ANIMATE_VERSION: 'v4.2'
+    EVENTB_ANIMATE_VERSION: 'v5.0'
 ```
 
 ## License

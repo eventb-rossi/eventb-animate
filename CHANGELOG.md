@@ -2,6 +2,74 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.0] - 2026-06-07
+
+### Features
+
+- Add --version flag reporting the release version
+- Add convert subcommand translating Event-B models to Classical B
+
+### Bug Fixes
+
+- Update download URLs after repository move to eventb-rossi
+- Remove setup-java gradle cache conflicting with setup-gradle
+- Exit with code 1 when animation hits a deadlock
+- Handle patch-version tags in check-version.sh stale check
+- Ignore directories named *.bum when resolving models
+- Avoid NPE when saving a trace without a main component
+- Print the animation steps header only when steps actually run
+- Accept uppercase dot/svg extensions for info visualizations
+- Support --help and --version on every subcommand
+- List subcommand options in declaration order in help
+- Use the standard error prefix for unsupported graph extensions
+- Report graph write failures cleanly instead of a stack trace
+- Rename --events/--properties to --event-graph/--property-graph
+- Validate graph extensions before loading the model
+- Refuse to overwrite info outputs without --force
+
+### Refactoring
+
+- Rename project to eventb-animate
+- Extract shared StateSpace lifecycle into withStateSpace
+- Rename colliding info options to --machine-graph/--invariant-graph
+- Create the XML parser factory once per refinement scan
+- Declare animation outcome fields with the other instance state
+- Tidy validateInput signature and version logging
+- Drop unreachable null check in CheckMode.parse
+- Fetch transition error messages once in printReplayDiagnostics
+- Share the StateSpace teardown between withStateSpace and convert
+
+### Documentation
+
+- Document exit codes and the deadlock failure contract
+
+### Testing
+
+- Restore System.out in AnimateCliTest with try/finally
+- Derive the release tag in VersionCheckScriptTest from build.gradle
+- Drop redundant System.out restore inside ZipModelTest try blocks
+- Remove no-op assertions and duplicate test from ModelAnimationTest
+- Fail loudly when no main test models match the filter
+- Extract shared TestCli helper for CLI runs with captured output
+- Allow a reported deadlock exit in testAnimateWithSteps
+- Assert the deadlock outcome on the command instance, not output text
+
+### Dependencies
+
+- Bump com.diffplug.spotless:spotless-plugin-gradle
+- Bump com.github.spotbugs.snom:spotbugs-gradle-plugin
+- Bump ch.qos.logback:logback-classic from 1.5.32 to 1.5.34
+- Bump com.diffplug.spotless:spotless-plugin-gradle
+
+### Build
+
+- Assemble the fat jar with Shadow and adopt the plugins DSL
+- Stop assembling the unused distribution archives
+
+### Performance
+
+- Defer Guice injector and ProB setup until actually needed
+
 ## [4.2] - 2026-05-16
 
 ### Features
@@ -32,6 +100,7 @@ All notable changes to this project will be documented in this file.
 - Add retry loop when downloading build artifact in release
 - Improve GitHub release page with title and note categories
 - Integrate git-cliff for changelog and release notes
+- Run build workflow for release tags
 
 ### Miscellaneous
 
@@ -246,4 +315,5 @@ All notable changes to this project will be documented in this file.
 ### Build
 
 - Update wrapper properties
+
 
