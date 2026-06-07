@@ -23,7 +23,7 @@ public class InfoCommandTest {
   public void testUnsupportedGraphExtensionFailsWithCleanError() {
     TestCli.Result result =
         TestCli.execute(
-            "info", "--events", "graph.png", "src/test/resources/models/base-model/M1.bum");
+            "info", "--event-graph", "graph.png", "src/test/resources/models/base-model/M1.bum");
 
     assertEquals("Unsupported extension should exit 1:\n" + result.output(), 1, result.exitCode());
     assertTrue(
@@ -38,7 +38,7 @@ public class InfoCommandTest {
     TestCli.Result result =
         TestCli.execute(
             "info",
-            "--events",
+            "--event-graph",
             "/nonexistent-dir/graph.dot",
             "src/test/resources/models/base-model/M1.bum");
 

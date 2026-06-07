@@ -28,9 +28,9 @@ class InfoCommand implements Callable<Integer> {
 
   @ParentCommand Animate parent;
 
-  // No short flags for the two options below: at the top level -m/--machine
-  // selects a machine by name and -i/--invariants toggles invariant checking,
-  // so reusing those letters here for graph files invited confusion.
+  // The graph options are long-only: at the top level -m/--machine selects a
+  // machine by name and -i/--invariants toggles invariant checking, so short
+  // letters for graph files invited confusion.
   @Option(
       names = "--machine-graph",
       paramLabel = "machine.dot",
@@ -38,16 +38,16 @@ class InfoCommand implements Callable<Integer> {
   Path machineGraph;
 
   @Option(
-      names = {"-e", "--events"},
+      names = "--event-graph",
       paramLabel = "events.dot",
       description = "save events hierarchy graph in dot or svg")
-  Path events;
+  Path eventGraph;
 
   @Option(
-      names = {"-p", "--properties"},
+      names = "--property-graph",
       paramLabel = "properties.dot",
       description = "save properties graph in dot or svg")
-  Path properties;
+  Path propertyGraph;
 
   @Option(
       names = "--invariant-graph",
@@ -70,7 +70,10 @@ class InfoCommand implements Callable<Integer> {
     int err = 0;
 
     boolean hasVisualizationCmd =
-        machineGraph != null || events != null || properties != null || invariantGraph != null;
+        machineGraph != null
+            || eventGraph != null
+            || propertyGraph != null
+            || invariantGraph != null;
 
     if (hasVisualizationCmd) {
       logger.info("Initializing model");
@@ -83,8 +86,8 @@ class InfoCommand implements Callable<Integer> {
       }
 
       err |= saveVisualization("machine_hierarchy", machineGraph, trace);
-      err |= saveVisualization("event_hierarchy", events, trace);
-      err |= saveVisualization("properties", properties, trace);
+      err |= saveVisualization("event_hierarchy", eventGraph, trace);
+      err |= saveVisualization("properties", propertyGraph, trace);
       err |= saveVisualization("invariant", invariantGraph, trace);
     }
 

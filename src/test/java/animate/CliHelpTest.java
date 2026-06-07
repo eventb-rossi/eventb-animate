@@ -33,7 +33,7 @@ public class CliHelpTest {
     String output = result.output();
     output = output.substring(output.indexOf("Dump information about the model"));
     String[] expectedOrder = {
-      "--machine-graph", "--events", "--properties", "--invariant-graph", "--bmodel"
+      "--machine-graph", "--event-graph", "--property-graph", "--invariant-graph", "--bmodel"
     };
     for (int i = 1; i < expectedOrder.length; i++) {
       String previous = expectedOrder[i - 1];
