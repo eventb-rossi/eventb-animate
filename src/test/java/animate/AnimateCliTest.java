@@ -35,7 +35,7 @@ public class AnimateCliTest {
     assertTrue("Output should contain animation information", result.output().length() > 0);
     // A random walk may legitimately run out of enabled events, which the CLI
     // reports as a deadlock and exits 1; only that non-zero outcome is allowed.
-    boolean deadlocked = result.exitCode() == 1 && result.output().contains("deadlock");
+    boolean deadlocked = result.exitCode() == 1 && result.command().deadlocked;
     assertTrue(
         "Exit code should be 0, or 1 for a reported deadlock:\n" + result.output(),
         result.exitCode() == 0 || deadlocked);

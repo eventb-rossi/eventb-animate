@@ -422,8 +422,13 @@ public class Animate implements Callable<Integer> {
     }
   }
 
+  // Package-visible so tests can inspect the command instance after a run.
+  static CommandLine commandLine() {
+    return new CommandLine(Animate.class, new LazyGuiceFactory());
+  }
+
   public static int execute(String[] args) {
-    return new CommandLine(Animate.class, new LazyGuiceFactory()).execute(args);
+    return commandLine().execute(args);
   }
 
   public static void main(String[] args) {

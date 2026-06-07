@@ -3,11 +3,13 @@ package animate;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import picocli.CommandLine;
 
 /** Runs the CLI with System.out and System.err captured and restored afterwards. */
 final class TestCli {
 
-  record Result(int exitCode, String output) {}
+  /** {@code command} is the executed top-level instance, for asserting on its outcome fields. */
+  record Result(int exitCode, String output, Animate command) {}
 
   private TestCli() {}
 
@@ -18,8 +20,10 @@ final class TestCli {
     try (PrintStream stream = new PrintStream(captured, true, StandardCharsets.UTF_8)) {
       System.setOut(stream);
       System.setErr(stream);
-      int exitCode = Animate.execute(args);
-      return new Result(exitCode, captured.toString(StandardCharsets.UTF_8));
+      CommandLine commandLine = Animate.commandLine();
+      int exitCode = commandLine.execute(args);
+      return new Result(
+          exitCode, captured.toString(StandardCharsets.UTF_8), commandLine.getCommand());
     } finally {
       System.setOut(originalOut);
       System.setErr(originalErr);
