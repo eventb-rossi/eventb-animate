@@ -33,6 +33,21 @@ public class InfoCommandTest {
             .contains("Error: unsupported extension for graph.png (expected .dot or .svg)"));
   }
 
+  @Test(timeout = 30000)
+  public void testGraphWriteFailureReportsCleanError() {
+    TestCli.Result result =
+        TestCli.execute(
+            "info",
+            "--events",
+            "/nonexistent-dir/graph.dot",
+            "src/test/resources/models/base-model/M1.bum");
+
+    assertEquals("Unwritable graph path should exit 1:\n" + result.output(), 1, result.exitCode());
+    assertTrue(
+        "Write failure should be reported with a clean message:\n" + result.output(),
+        result.output().contains("Error saving event_hierarchy to /nonexistent-dir/graph.dot:"));
+  }
+
   @Test
   public void testVisualizationStillSavesWhenInitializationRaises() throws Exception {
     Injector injector = Guice.createInjector(Stage.PRODUCTION, new Config());

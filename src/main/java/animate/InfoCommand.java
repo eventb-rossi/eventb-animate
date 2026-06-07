@@ -110,14 +110,21 @@ class InfoCommand implements Callable<Integer> {
   private int saveVisualization(String name, Path path, Trace trace) {
     if (path == null) return 0;
     logger.info("Saving {} to {}", name, path);
-    DotVisualizationCommand cmd = DotVisualizationCommand.getByName(name, trace);
     String extension = MoreFiles.getFileExtension(path).toLowerCase(Locale.ROOT);
-    if (extension.equals("dot")) {
-      cmd.visualizeAsDotToFile(path, new ArrayList<>());
-    } else if (extension.equals("svg")) {
-      cmd.visualizeAsSvgToFile(path, new ArrayList<>());
-    } else {
+    if (!extension.equals("dot") && !extension.equals("svg")) {
       System.err.println("Error: unsupported extension for " + path + " (expected .dot or .svg)");
+      return 1;
+    }
+    try {
+      DotVisualizationCommand cmd = DotVisualizationCommand.getByName(name, trace);
+      if (extension.equals("dot")) {
+        cmd.visualizeAsDotToFile(path, new ArrayList<>());
+      } else {
+        cmd.visualizeAsSvgToFile(path, new ArrayList<>());
+      }
+    } catch (RuntimeException e) {
+      logger.error("Error saving {} to {}", name, path, e);
+      System.err.println("Error saving " + name + " to " + path + ": " + e.getMessage());
       return 1;
     }
     return 0;
