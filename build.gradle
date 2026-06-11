@@ -106,7 +106,7 @@ tasks.register('lint') {
 	description = 'Run formatting check and static analysis'
 }
 
-tasks.register('installGitHooks', Copy) {
+tasks.register('setupGitHooks', Copy) {
 	group = 'setup'
 	description = 'Install git hooks from hooks/ directory'
 	from('hooks/')
