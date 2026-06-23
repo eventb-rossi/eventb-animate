@@ -15,6 +15,49 @@ A command-line tool for animating Event-B models using the ProB model checker.
 
 - Java 21 or later
 
+## Installation
+
+### Homebrew (macOS / Linux)
+
+```bash
+brew tap eventb-rossi/tap
+brew install eventb-animate
+```
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add eventb https://github.com/eventb-rossi/scoop-eventb
+scoop install eventb/eventb-animate
+```
+
+### APT (Ubuntu / Debian)
+
+```bash
+curl -fsSL https://eventb-rossi.github.io/apt/KEY.gpg \
+  | sudo gpg --dearmor -o /etc/apt/keyrings/eventb.gpg
+. /etc/os-release
+echo "deb [signed-by=/etc/apt/keyrings/eventb.gpg] https://eventb-rossi.github.io/apt ${VERSION_CODENAME} main" \
+  | sudo tee /etc/apt/sources.list.d/eventb.list
+sudo apt update
+sudo apt install eventb-animate
+```
+
+### Copr (Fedora / RHEL)
+
+```bash
+sudo dnf copr enable @eventb-rossi/eventb-copr
+sudo dnf install eventb-animate
+```
+
+### Gentoo
+
+```bash
+eselect repository enable eventb-rossi
+emaint sync -r eventb-rossi
+emerge sci-mathematics/eventb-animate
+```
+
 ## Building
 
 ```bash
