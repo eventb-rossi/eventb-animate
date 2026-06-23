@@ -62,3 +62,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create ${{ github.ref_name }} eventb-animate.jar --notes-file RELEASE_NOTES.md --title "Event-B Animate ${{ github.ref_name }}"
+
+  # Tell the eventb-rossi packaging repos a new release exists, so their
+  # version-check workflows run immediately instead of waiting for the daily cron.
+  # This must be a job in this tag-triggered workflow (not a `release:` listener):
+  # the release above is created with GITHUB_TOKEN, which never fires further
+  # workflow runs. See eventb-rossi/release-automation for the reusable workflow.
+  notify-downstream:
+    needs: [release]
+    uses: eventb-rossi/release-automation/.github/workflows/notify-downstream.yml@main
+    with:
+      tool: eventb-animate
+      version: ${{ github.ref_name }}
+    secrets:
+      dispatch-token: ${{ secrets.VERSION_BUMP_TOKEN }}
