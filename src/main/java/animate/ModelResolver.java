@@ -58,7 +58,7 @@ class ModelResolver {
       }
     }
 
-    return selectBumFile(bumFiles, machineName, "zip archive: " + model);
+    return selectBumFile(bumFiles, tempDirectory, machineName, "zip archive: " + model);
   }
 
   private Path resolveDirectory(Path dir, String machineName) throws IOException {
@@ -71,35 +71,96 @@ class ModelResolver {
               .collect(Collectors.toList());
     }
 
-    return selectBumFile(bumFiles, machineName, "directory: " + dir);
+    return selectBumFile(bumFiles, dir, machineName, "directory: " + dir);
   }
 
-  private Path selectBumFile(List<Path> bumFiles, String machineName, String source)
+  private Path selectBumFile(List<Path> bumFiles, Path root, String machineName, String source)
       throws IOException {
     if (bumFiles.isEmpty()) {
       throw new IOException("No .bum file found in " + source);
     }
+
+    // A Rodin "Archive File" export can bundle several self-contained projects, each under its own
+    // top-level directory and free to reuse component basenames (M0.bum, ...). Group machines by
+    // project so selection and refinement analysis never cross project boundaries.
+    Map<String, List<Path>> byProject = groupByProject(bumFiles, root);
+
     if (machineName != null) {
-      return findByName(bumFiles, machineName, source);
+      return findByName(byProject, machineName, source);
     }
-    if (bumFiles.size() == 1) {
-      return bumFiles.get(0);
+
+    if (byProject.size() > 1) {
+      throw new IOException(
+          source
+              + " contains "
+              + byProject.size()
+              + " projects; select one with -m <project>/<machine>. Available: "
+              + describeProjects(byProject));
     }
-    validateUniqueMachineNames(bumFiles, source);
-    Path selected = findMostRefinedBum(bumFiles, source);
+
+    return autoSelect(byProject.values().iterator().next(), source);
+  }
+
+  /**
+   * Returns the project's only machine, or the leaf of its refinement chain when there are many.
+   */
+  private Path autoSelect(List<Path> project, String source) throws IOException {
+    if (project.size() == 1) {
+      return project.get(0);
+    }
+    validateUniqueMachineNames(project, source);
+    Path selected = findMostRefinedBum(project, source);
     logger.info(
         "Multiple .bum files found, auto-selected most refined: {}", selected.getFileName());
     return selected;
   }
 
-  private Path findByName(List<Path> bumFiles, String machineName, String source)
+  /**
+   * Groups machines by their project, identified by the top-level path segment relative to {@code
+   * root}. Machines sitting directly at the root form the single "" (root) project, mirroring how a
+   * flat archive holds one project.
+   *
+   * <p>The project key is the archive's top-level directory name, deliberately <em>not</em> the
+   * {@code <name>} from a Rodin {@code .project} descriptor that the sibling tools (rossi,
+   * eventb-checker) read. The reason is purpose: those tools validate every project and report on
+   * it, so they want the authoritative project name; this tool only resolves one machine to
+   * animate, and the key doubles as the {@code -m <project>/<machine>} selector the user types. The
+   * user navigates by the layout they see in the archive, so the visible directory name is the
+   * least surprising thing to type — keying on an internal {@code .project} name could force them
+   * to type a string that never appears as a path. Loading needs no project name either: ProB
+   * resolves a machine's sees/refines from its own directory. The trade-off is that for an export
+   * whose directory name differs from its {@code .project} name, this tool and its siblings will
+   * refer to the same project by different identifiers.
+   */
+  private Map<String, List<Path>> groupByProject(List<Path> bumFiles, Path root) {
+    Map<String, List<Path>> byProject = new TreeMap<>();
+    for (Path bumFile : bumFiles) {
+      Path rel = root.relativize(bumFile);
+      String prefix = rel.getNameCount() > 1 ? rel.getName(0).toString() : "";
+      byProject.computeIfAbsent(prefix, k -> new ArrayList<>()).add(bumFile);
+    }
+    return byProject;
+  }
+
+  private Path findByName(Map<String, List<Path>> byProject, String machineName, String source)
       throws IOException {
-    String target = machineName + ".bum";
-    List<Path> matches =
-        bumFiles.stream()
-            .filter(p -> machineFileName(p).equals(target))
-            .sorted()
-            .collect(Collectors.toList());
+    int slash = machineName.indexOf('/');
+    if (slash >= 0) {
+      String projectKey = machineName.substring(0, slash);
+      String bareName = machineName.substring(slash + 1);
+      List<Path> project = resolveProject(byProject, projectKey, source);
+      String label = "project " + projectLabel(projectKey);
+      // "-m <project>/" with no machine means: auto-select the most refined machine in that
+      // project.
+      return bareName.isEmpty()
+          ? autoSelect(project, label)
+          : findByNameInList(project, bareName, label);
+    }
+
+    // Bare name: accept it only when it identifies a single machine across every project.
+    List<Path> allMachines =
+        byProject.values().stream().flatMap(List::stream).collect(Collectors.toList());
+    List<Path> matches = machinesNamed(allMachines, machineName);
     if (matches.isEmpty()) {
       throw new IOException("Machine '" + machineName + "' not found in " + source);
     }
@@ -107,12 +168,95 @@ class ModelResolver {
       throw new IOException(
           "Machine '"
               + machineName
-              + "' is ambiguous in "
+              + "' is ambiguous across projects in "
               + source
+              + "; qualify it as -m <project>/<machine>: "
+              + qualifiedNames(byProject, machineName));
+    }
+    return matches.get(0);
+  }
+
+  /**
+   * Resolves the machines of the requested project. A single-project source has no project
+   * directory of its own (its files sit at the root, keyed by ""), so the documented {@code
+   * <project>/<machine>} form is accepted whatever prefix the user supplied rather than rejected as
+   * an unknown project.
+   */
+  private List<Path> resolveProject(
+      Map<String, List<Path>> byProject, String projectKey, String source) throws IOException {
+    List<Path> project = byProject.get(projectKey);
+    if (project != null) {
+      return project;
+    }
+    if (byProject.size() == 1) {
+      return byProject.values().iterator().next();
+    }
+    throw new IOException(
+        "Project '"
+            + projectKey
+            + "' not found in "
+            + source
+            + ". Available projects: "
+            + byProject.keySet().stream()
+                .map(ModelResolver::projectLabel)
+                .collect(Collectors.joining(", ")));
+  }
+
+  /** Returns the .bum files named {@code machineName}, sorted by path. */
+  private List<Path> machinesNamed(List<Path> bumFiles, String machineName) {
+    String target = machineName + ".bum";
+    return bumFiles.stream()
+        .filter(p -> machineFileName(p).equals(target))
+        .sorted()
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * Renders the projects that hold {@code machineName} as the {@code project/machine} hint form.
+   */
+  private String qualifiedNames(Map<String, List<Path>> byProject, String machineName) {
+    String target = machineName + ".bum";
+    return byProject.entrySet().stream()
+        .filter(entry -> entry.getValue().stream().anyMatch(p -> machineFileName(p).equals(target)))
+        // Render the form the user can actually retry with: the root project takes no prefix.
+        .map(entry -> entry.getKey().isEmpty() ? machineName : entry.getKey() + "/" + machineName)
+        .collect(Collectors.joining(", "));
+  }
+
+  private Path findByNameInList(List<Path> bumFiles, String machineName, String label)
+      throws IOException {
+    List<Path> matches = machinesNamed(bumFiles, machineName);
+    if (matches.isEmpty()) {
+      throw new IOException("Machine '" + machineName + "' not found in " + label);
+    }
+    if (matches.size() > 1) {
+      throw new IOException(
+          "Machine '"
+              + machineName
+              + "' is ambiguous in "
+              + label
               + ": "
               + matches.stream().map(Path::toString).collect(Collectors.joining(", ")));
     }
     return matches.get(0);
+  }
+
+  private String describeProjects(Map<String, List<Path>> byProject) {
+    return byProject.entrySet().stream()
+        .map(
+            entry ->
+                projectLabel(entry.getKey())
+                    + " -> ["
+                    + entry.getValue().stream()
+                        .map(this::machineName)
+                        .sorted()
+                        .collect(Collectors.joining(", "))
+                    + "]")
+        .collect(Collectors.joining("; "));
+  }
+
+  private static String projectLabel(String prefix) {
+    return prefix.isEmpty() ? "(root)" : prefix;
   }
 
   private void validateUniqueMachineNames(List<Path> bumFiles, String source) throws IOException {

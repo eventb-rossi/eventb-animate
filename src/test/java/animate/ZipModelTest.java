@@ -43,6 +43,65 @@ public class ZipModelTest {
     return zipFile;
   }
 
+  /**
+   * Bundles several Rodin project directories into one archive, each under its own top-level dir.
+   */
+  private static Path createMultiProjectZip(Path... sourceDirs) throws IOException {
+    Path zipFile = Files.createTempFile("animate-multiproject-", ".zip");
+    try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipFile))) {
+      for (Path sourceDir : sourceDirs) {
+        Files.walkFileTree(
+            sourceDir,
+            new SimpleFileVisitor<Path>() {
+              @Override
+              public FileVisitResult visitFile(Path file, BasicFileAttributes attrs)
+                  throws IOException {
+                String entryName = sourceDir.getParent().relativize(file).toString();
+                zos.putNextEntry(new ZipEntry(entryName));
+                Files.copy(file, zos);
+                zos.closeEntry();
+                return FileVisitResult.CONTINUE;
+              }
+            });
+      }
+    }
+    return zipFile;
+  }
+
+  @Test(timeout = 30000)
+  public void testMultiProjectArchiveRequiresMachineSelection() throws Exception {
+    Path zipFile =
+        createMultiProjectZip(
+            Paths.get("src/test/resources/models/base-model"),
+            Paths.get("src/test/resources/models/file-system"));
+    try {
+      TestCli.Result result = TestCli.execute("--steps", "3", zipFile.toString());
+
+      assertEquals(
+          "Exit code should be 1 when the archive bundles multiple projects", 1, result.exitCode());
+    } finally {
+      Files.deleteIfExists(zipFile);
+    }
+  }
+
+  @Test(timeout = 30000)
+  public void testMultiProjectArchiveSelectsByProjectQualifiedMachine() throws Exception {
+    Path zipFile =
+        createMultiProjectZip(
+            Paths.get("src/test/resources/models/base-model"),
+            Paths.get("src/test/resources/models/file-system"));
+    try {
+      TestCli.Result result =
+          TestCli.execute("--steps", "3", "-m", "base-model/M1", zipFile.toString());
+
+      assertEquals(
+          "Exit code should be 0 (machine selected from the named project)", 0, result.exitCode());
+      assertTrue("Output should contain animation information", result.output().length() > 0);
+    } finally {
+      Files.deleteIfExists(zipFile);
+    }
+  }
+
   @Test(timeout = 30000)
   public void testAnimateFromZip() throws Exception {
     Path sourceDir = Paths.get("src/test/resources/models/base-model");

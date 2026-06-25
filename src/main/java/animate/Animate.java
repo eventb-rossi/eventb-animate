@@ -99,8 +99,11 @@ public class Animate implements Callable<Integer> {
 
   @Option(
       names = {"-m", "--machine"},
-      paramLabel = "<name>",
-      description = "machine to animate (default: auto-select most refined)")
+      paramLabel = "[<project>/]<name>",
+      description =
+          "machine to animate (default: auto-select most refined). For a multi-project archive,"
+              + " qualify with the project as <project>/<machine>, or <project>/ to auto-select the"
+              + " most refined machine within that project")
   String machineName;
 
   @Option(

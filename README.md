@@ -79,12 +79,21 @@ eventb-animate path/to/model.bum
 The model path may also be a `.zip` archive or a Rodin project directory; the
 most refined machine is auto-selected unless `-m/--machine` says otherwise.
 
+A Rodin archive exported via Eclipse's *Archive File* wizard may bundle several
+projects, each under its own top-level directory. When the archive holds more
+than one project, name the machine you want with its project prefix, for example
+`-m MyProject/M2`. Use `-m MyProject/` (project prefix only) to auto-select the
+most refined machine within that project. A bare `-m M2` still works when the
+machine name is unique across all projects.
+
 ### Options
 
 - `-s, --steps <n>` - Number of random animation steps (default: 5)
 - `-z, --size <n>` - Default size for ProB sets (default: 4)
 - `-i, --invariants` - Check invariants during animation
-- `-m, --machine <name>` - Machine to animate (default: auto-select most refined)
+- `-m, --machine [<project>/]<name>` - Machine to animate (default: auto-select
+  most refined); add a `<project>/` prefix to pick a machine in a specific
+  project of a multi-project archive
 - `--perf` - Print ProB performance information
 - `--save <file.json>` - Save animation trace to JSON file
 - `--debug` - Enable debug logging
