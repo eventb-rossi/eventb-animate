@@ -158,7 +158,7 @@ pick `steps` low enough for models that legitimately terminate.
 ### GitHub Actions
 
 ```yaml
-- uses: eventb-rossi/eventb-animate@v5.0
+- uses: eventb-rossi/eventb-animate@v5.1
   with:
     model-path: 'path/to/model.bum'
 ```
@@ -175,31 +175,31 @@ pick `steps` low enough for models that legitimately terminate.
 | `save` | Save animation trace to JSON file (animate) | No | — |
 | `trace` | Path to JSON trace file (replay, required) | No | — |
 | `args` | Extra args appended to the assembled command | No | — |
-| `version` | Release version tag (e.g., `v5.0`) | No | `latest` |
+| `version` | Release version tag (e.g., `v5.1`) | No | `latest` |
 | `java-version` | Java version to use (must be 21 or later) | No | `21` |
 
 #### Examples
 
 ```yaml
 # Check invariants with 20 steps
-- uses: eventb-rossi/eventb-animate@v5.0
+- uses: eventb-rossi/eventb-animate@v5.1
   with:
     model-path: 'path/to/model.bum'
     steps: 20
     invariants: true
 
 # Replay a trace
-- uses: eventb-rossi/eventb-animate@v5.0
+- uses: eventb-rossi/eventb-animate@v5.1
   with:
     model-path: 'models/system.bum'
     command: 'replay'
     trace: 'tests/trace.json'
 
 # Pin to a specific release
-- uses: eventb-rossi/eventb-animate@v5.0
+- uses: eventb-rossi/eventb-animate@v5.1
   with:
     model-path: 'path/to/model.bum'
-    version: 'v5.0'
+    version: 'v5.1'
 ```
 
 ### GitLab CI
@@ -208,7 +208,7 @@ Include the reusable template and extend the `.eventb-animate` hidden job:
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v5.0/.gitlab-ci-template.yml'
+  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v5.1/.gitlab-ci-template.yml'
 
 animate-model:
   extends: .eventb-animate
@@ -228,13 +228,13 @@ animate-model:
 | `EVENTB_ANIMATE_SAVE` | Save animation trace to JSON file (animate) | `''` |
 | `EVENTB_ANIMATE_TRACE` | Path to JSON trace file (replay, required) | `''` |
 | `EVENTB_ANIMATE_ARGS` | Extra args appended to the assembled command | `''` |
-| `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v5.0`) | `latest` |
+| `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v5.1`) | `latest` |
 
 #### Examples
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v5.0/.gitlab-ci-template.yml'
+  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v5.1/.gitlab-ci-template.yml'
 
 # Check invariants with 20 steps
 animate-check:
@@ -257,7 +257,7 @@ animate-pinned:
   extends: .eventb-animate
   variables:
     EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
-    EVENTB_ANIMATE_VERSION: 'v5.0'
+    EVENTB_ANIMATE_VERSION: 'v5.1'
 ```
 
 ## License

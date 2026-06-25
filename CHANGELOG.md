@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.1] - 2026-06-25
+
+### Features
+
+- Support multi-project Rodin archives
+
+### Refactoring
+
+- Rename installGitHooks task to setupGitHooks
+
+### Documentation
+
+- Add installation instructions for package managers
+
+### Dependencies
+
+- Bump com.github.spotbugs from 6.5.5 to 6.5.6
+- Bump com.diffplug.spotless from 8.6.0 to 8.7.0
+- Bump actions/checkout from 6 to 7
+- Bump com.github.spotbugs from 6.5.6 to 6.5.8
+- Bump ch.qos.logback:logback-classic from 1.5.34 to 1.5.35
+- Bump gradle-wrapper from 9.5.1 to 9.6.0
+
+### CI/CD
+
+- Notify packaging repos on release via repository_dispatch
+
 ## [5.0] - 2026-06-07
 
 ### Features
