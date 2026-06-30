@@ -31,6 +31,21 @@ scoop bucket add eventb https://github.com/eventb-rossi/scoop-eventb
 scoop install eventb/eventb-animate
 ```
 
+### Windows (standalone, no Java needed)
+
+These bundle their own Java runtime, so the *Java 21 or later* requirement above
+does **not** apply to them. Download from the latest release:
+
+- **Installer** —
+  [`eventb-animate.msi`](https://github.com/eventb-rossi/eventb-animate/releases/latest/download/eventb-animate.msi):
+  double-click to install (Program Files + an *Event-B Animate* Start Menu group).
+  The installer does **not** add the tool to `PATH` — for that, use Scoop above or
+  the portable ZIP below.
+- **Portable** —
+  [`eventb-animate-win-x64.zip`](https://github.com/eventb-rossi/eventb-animate/releases/latest/download/eventb-animate-win-x64.zip):
+  extract anywhere and run `eventb-animate.exe`; add its folder to `PATH` to call
+  `eventb-animate` from any directory.
+
 ### APT (Ubuntu / Debian)
 
 ```bash

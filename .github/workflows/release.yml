@@ -63,6 +63,77 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release create ${{ github.ref_name }} eventb-animate.jar --notes-file RELEASE_NOTES.md --title "Event-B Animate ${{ github.ref_name }}"
 
+  # Build self-contained Windows artifacts (bundled JRE, no Java required) with
+  # jpackage and attach them to the release created above. Needs [release] so the
+  # GitHub Release exists before `gh release upload`. A failure here leaves the
+  # release intact with the jar; just re-run this job to add the Windows assets.
+  windows-installer:
+    needs: [release]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Build fat jar
+        run: ./gradlew shadowJar --no-daemon
+
+      - name: Stage jar and resolve version
+        shell: pwsh
+        run: |
+          $ver = "${{ github.ref_name }}".TrimStart('v')
+          "APP_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+          New-Item -ItemType Directory staging | Out-Null
+          Copy-Item build/libs/eventb-animate-*.jar staging/eventb-animate.jar
+
+      # Build the app-image once; the ZIP and the MSI are both derived from it.
+      # --add-modules ALL-MODULE-PATH bundles the full runtime so the reflection-
+      # heavy ProB2/Groovy/Jackson stack cannot hit a missing JDK module at runtime.
+      # --win-console keeps the launcher a console app so CLI output is visible.
+      - name: Build app-image (jpackage)
+        run: >
+          jpackage --type app-image --name eventb-animate
+          --input staging --main-jar eventb-animate.jar --main-class animate.Animate
+          --app-version ${{ env.APP_VERSION }} --add-modules ALL-MODULE-PATH
+          --win-console --vendor "Event-B Rossi"
+          --description "Animate Event-B models using the ProB model checker"
+          --dest dist
+
+      - name: Package portable ZIP
+        shell: pwsh
+        run: Compress-Archive -Path dist/eventb-animate -DestinationPath eventb-animate-win-x64.zip
+
+      # jpackage on JDK 21 needs WiX 3.x (candle.exe/light.exe); it does not
+      # support WiX 4/5. windows-latest usually ships WiX 3.14, but pin it here so
+      # the MSI build does not depend on the runner image shipping it.
+      - name: Ensure WiX 3.x
+        run: choco install wixtoolset --version 3.14.0 -y --no-progress
+
+      - name: Build MSI installer (jpackage)
+        run: >
+          jpackage --type msi --app-image dist/eventb-animate
+          --name eventb-animate --app-version ${{ env.APP_VERSION }}
+          --win-menu --win-menu-group "Event-B Animate" --dest msi
+
+      - name: Normalize MSI name
+        shell: pwsh
+        run: Copy-Item msi/eventb-animate-*.msi eventb-animate.msi
+
+      - name: Upload Windows assets to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload ${{ github.ref_name }} eventb-animate-win-x64.zip eventb-animate.msi --clobber
+
   # Tell the eventb-rossi packaging repos a new release exists, so their
   # version-check workflows run immediately instead of waiting for the daily cron.
   # This must be a job in this tag-triggered workflow (not a `release:` listener):
