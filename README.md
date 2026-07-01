@@ -1,13 +1,13 @@
 # Event-B Animate
 
-A command-line tool for animating Event-B models using the ProB model checker.
+A command-line tool for model-checking Event-B models using ProB.
 
 ## Features
 
-- Random animation of Event-B models
-- Invariant checking during animation
+- Exhaustive bounded model-checking of Event-B models (deadlocks and invariants),
+  working at any refinement level
 - Coverage analysis
-- Trace saving and replay in JSON format
+- Counterexample trace saving and replay in JSON format
 - Model visualization export (machine hierarchy, events, properties, invariants)
 - Conversion of Event-B models to Classical B machines
 
@@ -85,11 +85,18 @@ wrapper script around it).
 
 ## Usage
 
-### Basic Animation
+### Model Checking
 
 ```bash
 eventb-animate path/to/model.bum
 ```
+
+This exhaustively model-checks the machine for invariant violations and
+deadlocks, exploring the full state space for the current set sizes (`-z`). Use
+`--states N` to stop after `N` states instead. The check works at every
+refinement level: ProB loads the native Event-B state space, so variables that
+were data-refined away in later machines are still initialised from their
+witnesses/gluing.
 
 The model path may also be a `.zip` archive or a Rodin project directory; the
 most refined machine is auto-selected unless `-m/--machine` says otherwise.
@@ -103,14 +110,15 @@ machine name is unique across all projects.
 
 ### Options
 
-- `-s, --steps <n>` - Number of random animation steps (default: 5)
 - `-z, --size <n>` - Default size for ProB sets (default: 4)
-- `-i, --invariants` - Check invariants during animation
-- `-m, --machine [<project>/]<name>` - Machine to animate (default: auto-select
-  most refined); add a `<project>/` prefix to pick a machine in a specific
-  project of a multi-project archive
+- `--states <N>` - Bound model-checking to at most `N` explored states (default:
+  exhaustive)
+- `-m, --machine [<project>/]<name>` - Machine to model-check (default:
+  auto-select most refined); add a `<project>/` prefix to pick a machine in a
+  specific project of a multi-project archive
 - `--perf` - Print ProB performance information
-- `--save <file.json>` - Save animation trace to JSON file
+- `--save <file.json>` - Save the counterexample trace to a JSON file when a
+  violation is found
 - `--debug` - Enable debug logging
 - `-h, --help` - Show help (also available on every subcommand)
 - `-V, --version` - Print the release version
@@ -119,11 +127,14 @@ machine name is unique across all projects.
 
 `eventb-animate` exits non-zero on failure, so CI jobs fail automatically:
 
-- `0` - success
-- `1` - the model could not be loaded, the animation hit a deadlock (a state
-  with no enabled events, including legitimate terminal states), an invariant
-  was violated (with `-i/--invariants`), a trace replay was not perfect
-  (`replay`), or a conversion or its post-check failed (`convert`)
+- `0` - success: no invariant violation or deadlock was found (either the full
+  state space was explored, or the `--states` limit was reached without a
+  violation)
+- `1` - the model could not be loaded, an invariant was violated, a deadlock was
+  reached (a state with no enabled events, including legitimate terminal states),
+  a trace replay was not perfect (`replay`), or a conversion failed (`convert`)
+- `2` - model-checking could not complete (for example it was interrupted), so
+  nothing was proven -- distinct from a real violation
 
 ### Commands
 
@@ -144,7 +155,6 @@ Export options:
 - `--event-graph <file>` - Save events hierarchy graph (.dot or .svg)
 - `--property-graph <file>` - Save properties graph (.dot or .svg)
 - `--invariant-graph <file>` - Save invariant graph (.dot or .svg)
-- `-b, --bmodel <file>` - Dump prolog model to .eventb file
 - `--force` - Overwrite existing output files
 
 #### Convert to Classical B
@@ -153,22 +163,22 @@ Export options:
 eventb-animate convert output.mch path/to/model.bum
 ```
 
-Translates the Event-B model into a Classical B machine (`.mch`). A `.eventb`
-prolog package (as produced by `info --bmodel`) is also accepted as input.
+Translates the Event-B model into a Classical B machine (`.mch`). A ProB Event-B
+`.eventb` prolog package is also accepted as input.
+
+To model-check a model, run `eventb-animate <model>` directly (see [Model
+Checking](#model-checking)); that checks the native Event-B state space and works
+at every refinement level, unlike checking a flattened `.mch`.
 
 Options:
-- `--check <mode>` - Optional post-conversion validation (default: `none`):
-  - `init` - load the converted machine with ProB and initialise it
-  - `mc:N` - model-check the converted machine (deadlocks and invariants),
-    exploring up to `N` states
 - `--force` - Overwrite existing output files
 
 ## CI Integration
 
 Use `eventb-animate` in your CI pipelines without building from source. The
 job fails when the run exits non-zero (see [Exit Codes](#exit-codes)) — note
-that an animation reaching a deadlocked or terminal state counts as a failure;
-pick `steps` low enough for models that legitimately terminate.
+that model-checking reports a deadlock (a state with no enabled events, including
+a legitimate terminal state) as a failure.
 
 ### GitHub Actions
 
@@ -183,11 +193,10 @@ pick `steps` low enough for models that legitimately terminate.
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `model-path` | Path to model `.bum`, `.zip`, or directory | Yes | — |
-| `command` | Subcommand: `animate` or `replay` | No | `animate` |
-| `steps` | Number of random animation steps (animate) | No | — |
-| `size` | Default size for ProB sets (animate) | No | — |
-| `invariants` | Check invariants during animation (animate) | No | `false` |
-| `save` | Save animation trace to JSON file (animate) | No | — |
+| `command` | Subcommand: `check` (model-check) or `replay` | No | `check` |
+| `size` | Default size for ProB sets (check) | No | — |
+| `states` | Bound model-checking to N states; omit for exhaustive (check) | No | — |
+| `save` | Save the counterexample trace to JSON when a violation is found (check) | No | — |
 | `trace` | Path to JSON trace file (replay, required) | No | — |
 | `args` | Extra args appended to the assembled command | No | — |
 | `version` | Release version tag (e.g., `v5.1`) | No | `latest` |
@@ -196,12 +205,11 @@ pick `steps` low enough for models that legitimately terminate.
 #### Examples
 
 ```yaml
-# Check invariants with 20 steps
+# Model-check, bounded to 50000 states
 - uses: eventb-rossi/eventb-animate@v5.1
   with:
     model-path: 'path/to/model.bum'
-    steps: 20
-    invariants: true
+    states: 50000
 
 # Replay a trace
 - uses: eventb-rossi/eventb-animate@v5.1
@@ -236,11 +244,10 @@ animate-model:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `EVENTB_ANIMATE_MODEL_PATH` | Path to model `.bum`, `.zip`, or directory (required) | `''` |
-| `EVENTB_ANIMATE_COMMAND` | Subcommand: `animate` or `replay` | `animate` |
-| `EVENTB_ANIMATE_STEPS` | Number of random animation steps (animate) | `''` |
-| `EVENTB_ANIMATE_SIZE` | Default size for ProB sets (animate) | `''` |
-| `EVENTB_ANIMATE_INVARIANTS` | Check invariants during animation (animate) | `false` |
-| `EVENTB_ANIMATE_SAVE` | Save animation trace to JSON file (animate) | `''` |
+| `EVENTB_ANIMATE_COMMAND` | Subcommand: `check` (model-check) or `replay` | `check` |
+| `EVENTB_ANIMATE_SIZE` | Default size for ProB sets (check) | `''` |
+| `EVENTB_ANIMATE_STATES` | Bound model-checking to N states; omit for exhaustive (check) | `''` |
+| `EVENTB_ANIMATE_SAVE` | Save the counterexample trace to JSON when a violation is found (check) | `''` |
 | `EVENTB_ANIMATE_TRACE` | Path to JSON trace file (replay, required) | `''` |
 | `EVENTB_ANIMATE_ARGS` | Extra args appended to the assembled command | `''` |
 | `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v5.1`) | `latest` |
@@ -251,13 +258,12 @@ animate-model:
 include:
   - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v5.1/.gitlab-ci-template.yml'
 
-# Check invariants with 20 steps
-animate-check:
+# Model-check, bounded to 50000 states
+model-check:
   extends: .eventb-animate
   variables:
     EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
-    EVENTB_ANIMATE_STEPS: '20'
-    EVENTB_ANIMATE_INVARIANTS: 'true'
+    EVENTB_ANIMATE_STATES: '50000'
 
 # Replay a trace
 animate-replay:
