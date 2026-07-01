@@ -75,7 +75,7 @@ public class ZipModelTest {
             Paths.get("src/test/resources/models/base-model"),
             Paths.get("src/test/resources/models/file-system"));
     try {
-      TestCli.Result result = TestCli.execute("--steps", "3", zipFile.toString());
+      TestCli.Result result = TestCli.execute(zipFile.toString());
 
       assertEquals(
           "Exit code should be 1 when the archive bundles multiple projects", 1, result.exitCode());
@@ -92,11 +92,9 @@ public class ZipModelTest {
             Paths.get("src/test/resources/models/file-system"));
     try {
       TestCli.Result result =
-          TestCli.execute("--steps", "3", "-m", "base-model/M1", zipFile.toString());
+          TestCli.execute("--states", "100", "-m", "base-model/M1", zipFile.toString());
 
-      assertEquals(
-          "Exit code should be 0 (machine selected from the named project)", 0, result.exitCode());
-      assertTrue("Output should contain animation information", result.output().length() > 0);
+      TestCli.assertModelChecked(result, "The project-qualified machine");
     } finally {
       Files.deleteIfExists(zipFile);
     }
@@ -108,10 +106,9 @@ public class ZipModelTest {
     Path zipFile = createTestZip(sourceDir);
 
     try {
-      TestCli.Result result = TestCli.execute("--steps", "3", zipFile.toString());
+      TestCli.Result result = TestCli.execute("--states", "100", zipFile.toString());
 
-      assertEquals("Exit code should be 0", 0, result.exitCode());
-      assertTrue("Output should contain animation information", result.output().length() > 0);
+      TestCli.assertModelChecked(result, "The model from the zip");
     } finally {
       Files.deleteIfExists(zipFile);
     }
@@ -121,11 +118,9 @@ public class ZipModelTest {
   public void testDirectoryWithMultipleBumFiles() {
     Path dir = Paths.get("src/test/resources/models/cars-on-bridge");
 
-    TestCli.Result result = TestCli.execute("--steps", "3", dir.toString());
+    TestCli.Result result = TestCli.execute("--states", "100", dir.toString());
 
-    assertEquals(
-        "Exit code should be 0 (auto-selected most refined machine)", 0, result.exitCode());
-    assertTrue("Output should contain animation information", result.output().length() > 0);
+    TestCli.assertModelChecked(result, "The most refined machine");
   }
 
   @Test(timeout = 30000)

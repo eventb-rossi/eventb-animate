@@ -26,33 +26,18 @@ public class AnimateCliTest {
     return TestModels.mainModels();
   }
 
-  @Test(timeout = 30000) // 30 second timeout per test
-  public void testAnimateWithSteps() {
-    System.out.println("Testing CLI animation for: " + modelName);
+  @Test(timeout = 60000)
+  public void testModelCheck() {
+    System.out.println("Model checking: " + modelName);
 
-    TestCli.Result result = TestCli.execute("--steps", "5", modelFile.getAbsolutePath());
+    TestCli.Result result = TestCli.execute("--states", "500", modelFile.getAbsolutePath());
 
-    assertTrue("Output should contain animation information", result.output().length() > 0);
-    // A random walk may legitimately run out of enabled events, which the CLI
-    // reports as a deadlock and exits 1; only that non-zero outcome is allowed.
-    boolean deadlocked = result.exitCode() == 1 && result.command().deadlocked;
-    assertTrue(
-        "Exit code should be 0, or 1 for a reported deadlock:\n" + result.output(),
-        result.exitCode() == 0 || deadlocked);
-    System.out.println("  ✓ CLI animation completed (exit code: " + result.exitCode() + ")");
-  }
-
-  @Test(timeout = 30000)
-  public void testAnimateWithInvariants() {
-    System.out.println("Testing CLI with invariant checking for: " + modelName);
-
-    TestCli.Result result =
-        TestCli.execute("--steps", "5", "--invariants", modelFile.getAbsolutePath());
-
-    assertTrue("Output should contain animation information", result.output().length() > 0);
-    assertTrue(
-        "Exit code should be 0 (no violation) or 1 (invariant violated)",
-        result.exitCode() == 0 || result.exitCode() == 1);
-    System.out.println("  ✓ Invariant checking completed (exit code: " + result.exitCode() + ")");
+    // base-model/M1 reaches an invariant violation (exit 1); the others check clean (exit 0).
+    TestCli.assertModelChecked(result, "Model " + modelName);
+    assertFalse(
+        "Native Event-B model-checking must not hit the Classical-B init error:\n"
+            + result.output(),
+        result.output().contains("may not initialise"));
+    System.out.println("  ✓ Model checking completed (exit code: " + result.exitCode() + ")");
   }
 }

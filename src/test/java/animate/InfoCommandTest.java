@@ -112,7 +112,6 @@ public class InfoCommandTest {
         new FailingInitializationAnimate(
             injector.getProvider(Api.class), injector.getProvider(TraceManager.class));
     animate.model = Paths.get("src/test/resources/models/base-model/M1.bum");
-    animate.steps = 1;
     animate.size = 4;
 
     InfoCommand command = new InfoCommand();

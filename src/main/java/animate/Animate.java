@@ -11,6 +11,11 @@ import de.prob.animator.command.ComputeCoverageCommand;
 import de.prob.animator.command.ComputeCoverageCommand.ComputeCoverageResult;
 import de.prob.animator.command.GetVersionCommand;
 import de.prob.animator.domainobjects.*;
+import de.prob.check.ConsistencyChecker;
+import de.prob.check.IModelCheckingResult;
+import de.prob.check.ModelCheckLimitReached;
+import de.prob.check.ModelCheckOk;
+import de.prob.check.ModelCheckingOptions;
 import de.prob.check.tracereplay.json.TraceManager;
 import de.prob.check.tracereplay.json.storage.TraceJsonFile;
 import de.prob.json.JsonMetadata;
@@ -24,8 +29,6 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.function.ToIntFunction;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -35,6 +38,7 @@ import picocli.CommandLine.ScopeType;
 
 @Command(
     name = "eventb-animate",
+    description = "Model-check an Event-B model (deadlocks and invariants) using ProB",
     mixinStandardHelpOptions = true,
     sortOptions = false,
     versionProvider = Animate.VersionProvider.class,
@@ -57,10 +61,6 @@ public class Animate implements Callable<Integer> {
   final ModelResolver modelResolver = new ModelResolver();
   private String probVersionString;
 
-  // Animation outcome, reset by start(); package-visible for tests.
-  boolean invariantViolated;
-  boolean deadlocked;
-
   private static final Logger logger = (Logger) LoggerFactory.getLogger(Animate.class);
 
   public static class VersionProvider implements CommandLine.IVersionProvider {
@@ -78,21 +78,19 @@ public class Animate implements Callable<Integer> {
   Path model;
 
   @Option(
-      names = {"-s", "--steps"},
-      defaultValue = "5",
-      description = "number of random steps (default: ${DEFAULT-VALUE})")
-  int steps;
-
-  @Option(
       names = {"-z", "--size"},
       defaultValue = "4",
-      description = "default size for ProB sets (default: ${DEFAULT-VALUE})")
+      description = "default size for ProB sets (default: ${DEFAULT-VALUE})",
+      scope = ScopeType.INHERIT)
   int size;
 
+  // -1 (the field default, applied both by picocli and by direct construction in tests) means no
+  // limit -- ConsistencyChecker explores the full state space.
   @Option(
-      names = {"-i", "--invariants"},
-      description = "check invariants (default: ${DEFAULT-VALUE})")
-  boolean checkInv;
+      names = "--states",
+      paramLabel = "N",
+      description = "bound model-checking to at most N explored states (default: exhaustive)")
+  int states = -1;
 
   @Option(names = "--perf", description = "print ProB performance info (default: ${DEFAULT-VALUE})")
   boolean perf;
@@ -101,15 +99,16 @@ public class Animate implements Callable<Integer> {
       names = {"-m", "--machine"},
       paramLabel = "[<project>/]<name>",
       description =
-          "machine to animate (default: auto-select most refined). For a multi-project archive,"
+          "machine to model-check (default: auto-select most refined). For a multi-project archive,"
               + " qualify with the project as <project>/<machine>, or <project>/ to auto-select the"
-              + " most refined machine within that project")
+              + " most refined machine within that project",
+      scope = ScopeType.INHERIT)
   String machineName;
 
   @Option(
       names = "--save",
       paramLabel = "trace.json",
-      description = "save animation trace in json to a file")
+      description = "save the counterexample trace in json to a file (when a violation is found)")
   Path jsonTrace;
 
   @Option(
@@ -122,10 +121,6 @@ public class Animate implements Callable<Integer> {
   public Animate(Provider<Api> api, Provider<TraceManager> traceManager) {
     this.api = api;
     this.traceManager = traceManager;
-  }
-
-  Api api() {
-    return api.get();
   }
 
   private void printCoverage(StateSpace stateSpace) {
@@ -144,33 +139,6 @@ public class Animate implements Callable<Integer> {
     }
   }
 
-  private List<String> findViolatedInvariants(StateSpace stateSpace, State state) {
-    Object mainComponent = stateSpace.getMainComponent();
-    if (mainComponent == null) {
-      logger.warn("Main component is null, cannot check invariants");
-      return Collections.emptyList();
-    }
-    if (!(mainComponent instanceof EventBMachine)) {
-      logger.warn(
-          "Main component is not an EventBMachine: {}, cannot check invariants",
-          mainComponent.getClass().getName());
-      return Collections.emptyList();
-    }
-
-    List<IEvalElement> invariants =
-        ((EventBMachine) mainComponent)
-            .getAllInvariants().stream().map(i -> i.getPredicate()).collect(Collectors.toList());
-    List<AbstractEvalResult> results = state.eval(invariants);
-
-    List<String> violatedInvariants =
-        IntStream.range(0, results.size())
-            .filter(i -> results.get(i) != EvalResult.TRUE)
-            .mapToObj(i -> invariants.get(i).toString())
-            .collect(Collectors.toList());
-
-    return violatedInvariants;
-  }
-
   private void validateInput() {
     if (model == null) {
       throw new IllegalArgumentException("Model file is required");
@@ -184,11 +152,13 @@ public class Animate implements Callable<Integer> {
     if (!Files.isReadable(model)) {
       throw new IllegalArgumentException("Model path is not readable: " + model);
     }
-    if (steps <= 0) {
-      throw new IllegalArgumentException("Number of steps must be positive, got: " + steps);
-    }
     if (size <= 0) {
       throw new IllegalArgumentException("Default set size must be positive, got: " + size);
+    }
+    if (states == 0 || states < -1) {
+      throw new IllegalArgumentException(
+          "--states must be a positive number of states (or omitted for an exhaustive check), got: "
+              + states);
     }
   }
 
@@ -282,33 +252,22 @@ public class Animate implements Callable<Integer> {
     modelResolver.cleanupTempDir();
   }
 
-  Trace initializeTrace(final StateSpace stateSpace) {
-    return initializeTrace(stateSpace, true);
-  }
-
   Trace initializeTrace(final StateSpace stateSpace, boolean failOnInitializationError) {
     Trace trace = new Trace(stateSpace);
     trace.getCurrentState().exploreIfNeeded();
     if (!trace.getCurrentState().isConstantsSetUp()) {
-      trace = initializeOnce(stateSpace, trace, failOnInitializationError, SETUP_CONSTANTS_EVENT);
-    }
-    if (invariantViolated) {
-      return trace;
+      trace = initializeOnce(trace, failOnInitializationError, SETUP_CONSTANTS_EVENT);
     }
     if (!trace.getCurrentState().isInitialised()) {
       trace =
           initializeOnce(
-              stateSpace,
-              trace,
-              failOnInitializationError,
-              INITIALISE_MACHINE_EVENT,
-              INITIALISATION_EVENT);
+              trace, failOnInitializationError, INITIALISE_MACHINE_EVENT, INITIALISATION_EVENT);
     }
     return trace;
   }
 
   private Trace initializeOnce(
-      StateSpace stateSpace, Trace trace, boolean failOnInitializationError, String... eventNames) {
+      Trace trace, boolean failOnInitializationError, String... eventNames) {
     for (String eventName : eventNames) {
       if (findInitializationTransition(trace, eventName).isEmpty()) {
         logger.debug("Skipping unavailable initialization event {}", eventName);
@@ -317,7 +276,6 @@ public class Animate implements Callable<Integer> {
       try {
         Trace initializedTrace = runInitializationEvent(trace, eventName);
         initializedTrace.getCurrentState().exploreIfNeeded();
-        checkTraceInvariants(stateSpace, initializedTrace);
         return initializedTrace;
       } catch (RuntimeException e) {
         if (failOnInitializationError) {
@@ -344,82 +302,99 @@ public class Animate implements Callable<Integer> {
         .findFirst();
   }
 
-  boolean checkTraceInvariants(StateSpace stateSpace, Trace trace) {
-    if (!checkInv || trace.getCurrentState().isInvariantOk()) {
-      return false;
-    }
-
-    List<String> inv = findViolatedInvariants(stateSpace, trace.getCurrentState());
-    System.err.println("Error: violated invariants:\n\t - " + String.join("\n\t - ", inv));
-    invariantViolated = true;
-    return true;
-  }
-
-  public Trace start(final StateSpace stateSpace) {
-    stateSpace.startTransaction();
-    invariantViolated = false;
-    deadlocked = false;
-
-    try {
-      Trace trace = initializeTrace(stateSpace);
-      if (!invariantViolated && !checkTraceInvariants(stateSpace, trace)) {
-        System.out.println("Animation steps:");
-        for (int i = 0; i < steps; i++) {
-          Trace newTrace = trace.anyEvent(null);
-          if (newTrace == trace) {
-            System.err.println("Error: Can't find an event to execute from this state (deadlock)");
-            deadlocked = true;
-            break;
-          }
-          trace = newTrace;
-
-          Transition transition = trace.getCurrent().getTransition().evaluate(FormulaExpand.EXPAND);
-          System.out.println(transition.getPrettyRep());
-          if (checkTraceInvariants(stateSpace, trace)) {
-            break;
-          }
-        }
-      }
-      System.out.println();
-
-      System.out.println("Current state:\n" + trace.getCurrentState().getStateRep());
-      System.out.println();
-      printCoverage(stateSpace);
-      return trace;
-    } finally {
-      stateSpace.endTransaction();
-    }
-  }
-
   @Override
   public Integer call() {
-    return withStateSpace(this::animate);
+    return withStateSpace(this::runModelCheck);
   }
 
-  private int animate(StateSpace stateSpace) {
-    Trace trace = start(stateSpace);
-
-    if (jsonTrace != null) {
-      JsonMetadata metadata =
-          new JsonMetadataBuilder("Trace", 6)
-              .withSavedNow()
-              .withCreator("eventb-animate")
-              .withProBCliVersion(probVersionString)
-              .withModelName(Objects.toString(stateSpace.getMainComponent(), "unknown"))
-              .build();
-      TraceJsonFile abstractJsonFile = new TraceJsonFile(trace, metadata);
-      logger.info("Saving animation trace to {}", jsonTrace);
-
-      try {
-        traceManager.get().save(jsonTrace, abstractJsonFile);
-      } catch (IOException e) {
-        logger.debug("Error saving trace", e);
-        System.err.println("Error saving trace: " + e.getMessage());
-        return 1;
-      }
+  private int runModelCheck(StateSpace stateSpace) {
+    ModelCheckingOptions options =
+        new ModelCheckingOptions().checkDeadlocks(true).checkInvariantViolations(true);
+    if (states > 0) {
+      options = options.stateLimit(states);
     }
 
-    return invariantViolated || deadlocked ? 1 : 0;
+    System.out.println("Model checking...");
+    IModelCheckingResult result = new ConsistencyChecker(stateSpace, options).call();
+
+    if (result instanceof ModelCheckOk || result instanceof ModelCheckLimitReached) {
+      System.out.println(
+          result instanceof ModelCheckOk
+              ? "No invariant violation or deadlock found (full state space explored)."
+              : "No invariant violation or deadlock found up to "
+                  + states
+                  + " states (limit reached; not an exhaustive check).");
+      printCoverage(stateSpace);
+      return 0;
+    }
+
+    if (result instanceof ITraceDescription) {
+      // A real counterexample: an invariant violation or a reachable deadlock.
+      System.err.println("Error: " + result.getMessage());
+      Trace counterexample = ((ITraceDescription) result).getTrace(stateSpace);
+      printViolatedInvariants(stateSpace, counterexample.getCurrentState());
+      printCounterexample(counterexample);
+      if (jsonTrace != null) {
+        saveTrace(counterexample, stateSpace);
+      }
+      return 1;
+    }
+
+    // Neither a clean result nor a counterexample: the check did not complete
+    // (e.g. interrupted or errored), so nothing was proven. Report it distinctly
+    // rather than as a violation, and exit 2 to keep it separate from a real one.
+    System.err.println("Model checking did not complete: " + result.getMessage());
+    return 2;
+  }
+
+  private void printViolatedInvariants(StateSpace stateSpace, State state) {
+    // Deadlock counterexamples still satisfy the invariant, so only enumerate
+    // predicates when the reported state actually breaks one.
+    if (state.isInvariantOk()
+        || !(stateSpace.getMainComponent() instanceof EventBMachine machine)) {
+      return;
+    }
+    List<IEvalElement> invariants = new ArrayList<>();
+    for (var invariant : machine.getAllInvariants()) {
+      invariants.add(invariant.getPredicate());
+    }
+    List<AbstractEvalResult> results = state.eval(invariants);
+    List<String> violated = new ArrayList<>();
+    for (int i = 0; i < results.size(); i++) {
+      if (results.get(i) != EvalResult.TRUE) {
+        violated.add(invariants.get(i).toString());
+      }
+    }
+    if (!violated.isEmpty()) {
+      System.err.println("Violated invariants:\n\t - " + String.join("\n\t - ", violated));
+    }
+  }
+
+  private void printCounterexample(Trace trace) {
+    System.out.println("Counterexample trace:");
+    for (Transition transition : trace.getTransitionList()) {
+      System.out.println("\t" + transition.evaluate(FormulaExpand.EXPAND).getPrettyRep());
+    }
+    System.out.println();
+    System.out.println("Violating state:\n" + trace.getCurrentState().getStateRep());
+  }
+
+  private void saveTrace(Trace trace, StateSpace stateSpace) {
+    JsonMetadata metadata =
+        new JsonMetadataBuilder("Trace", 6)
+            .withSavedNow()
+            .withCreator("eventb-animate")
+            .withProBCliVersion(probVersionString)
+            .withModelName(Objects.toString(stateSpace.getMainComponent(), "unknown"))
+            .build();
+    TraceJsonFile traceJsonFile = new TraceJsonFile(trace, metadata);
+    logger.info("Saving counterexample trace to {}", jsonTrace);
+    try {
+      traceManager.get().save(jsonTrace, traceJsonFile);
+    } catch (IOException e) {
+      logger.debug("Error saving trace", e);
+      System.err.println("Error saving trace: " + e.getMessage());
+    }
   }
 
   static final class LazyGuiceFactory implements CommandLine.IFactory {
