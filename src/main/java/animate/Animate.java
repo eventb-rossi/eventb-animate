@@ -450,6 +450,14 @@ public class Animate implements Callable<Integer> {
   }
 
   public static void main(String[] args) {
+    // Reuse a persistent ProB home (~/.prob/prob2-<version>) instead of extracting ProB's CLI
+    // binaries to a fresh temp dir every run. The default per-run temp dir is deleted on JVM
+    // shutdown, which fails on Windows because probcli.exe is still locked -- leaking a prob-java*
+    // dir each run. A static home avoids the temp dir entirely (and skips re-extraction on launch).
+    // Respect an explicit override if the user set the property themselves.
+    if (System.getProperty("prob.home.temp") == null) {
+      System.setProperty("prob.home.temp", "false");
+    }
     System.exit(execute(args));
   }
 }
