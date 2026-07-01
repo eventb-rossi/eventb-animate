@@ -1,7 +1,6 @@
 package animate;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -19,8 +18,7 @@ public class ConvertCommandTest {
     Path outputDir = Files.createTempDirectory("animate-convert-test-");
     Path output = outputDir.resolve("M0.mch");
 
-    TestCli.Result result =
-        TestCli.execute("convert", MODEL.toString(), output.toString(), "--check", "init");
+    TestCli.Result result = TestCli.execute("convert", MODEL.toString(), output.toString());
 
     assertEquals("Conversion should succeed:\n" + result.output(), 0, result.exitCode());
     assertTrue("Output machine should exist", Files.isRegularFile(output));
@@ -42,17 +40,5 @@ public class ConvertCommandTest {
     assertEquals(
         "Existing output should fail without --force:\n" + result.output(), 1, result.exitCode());
     assertEquals("existing", Files.readString(output, StandardCharsets.UTF_8));
-  }
-
-  @Test
-  public void rejectsInvalidCheckModeBeforeWritingOutput() throws Exception {
-    Path outputDir = Files.createTempDirectory("animate-convert-invalid-check-");
-    Path output = outputDir.resolve("M0.mch");
-
-    TestCli.Result result =
-        TestCli.execute("convert", MODEL.toString(), output.toString(), "--check", "mc:0");
-
-    assertEquals("Invalid check mode should fail:\n" + result.output(), 1, result.exitCode());
-    assertFalse("Output should not be written", Files.exists(output));
   }
 }

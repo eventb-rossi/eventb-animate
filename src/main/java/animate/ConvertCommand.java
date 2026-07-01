@@ -1,14 +1,7 @@
 package animate;
 
-import de.prob.check.ConsistencyChecker;
-import de.prob.check.IModelCheckingResult;
-import de.prob.check.ModelCheckLimitReached;
-import de.prob.check.ModelCheckOk;
-import de.prob.check.ModelCheckingOptions;
 import de.prob.cli.Installer;
 import de.prob.cli.OsSpecificInfo;
-import de.prob.statespace.StateSpace;
-import de.prob.statespace.Trace;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -40,17 +33,9 @@ class ConvertCommand implements Callable<Integer> {
   @Option(names = "--force", description = "overwrite existing output files")
   boolean force;
 
-  @Option(
-      names = "--check",
-      defaultValue = "none",
-      paramLabel = "none|init|mc:N",
-      description = "optional post-conversion validation (default: ${DEFAULT-VALUE})")
-  String check;
-
   @Override
   public Integer call() {
     try {
-      CheckMode checkMode = CheckMode.parse(check);
       normalizePositionalArguments();
       Animate.validateWritableOutput(output, "Output", force);
 
@@ -69,11 +54,6 @@ class ConvertCommand implements Callable<Integer> {
       if (!Files.isRegularFile(output) || Files.size(output) == 0) {
         System.err.println("Error: conversion did not create a non-empty output file: " + output);
         return 1;
-      }
-
-      int checkExit = runCheck(checkMode);
-      if (checkExit != 0) {
-        return checkExit;
       }
 
       System.out.println("Wrote Classical B machine: " + output);
@@ -166,83 +146,5 @@ class ConvertCommand implements Callable<Integer> {
       System.err.print(processOutput);
     }
     return exitCode;
-  }
-
-  // The ProB kernel parses Classical B in-process, so validating the generated
-  // machine needs no external probcli (the packaged binary lacks the B parser).
-  private int runCheck(CheckMode checkMode) throws IOException {
-    if (checkMode.kind() == CheckKind.NONE) {
-      return 0;
-    }
-
-    logger.info("Validating generated machine ({})", check);
-    StateSpace stateSpace = null;
-    try {
-      stateSpace = parent.api().b_load(output.toString());
-      String failure = checkFailure(stateSpace, checkMode);
-      if (failure != null) {
-        System.err.println("Post-conversion check failed: " + failure);
-        return 1;
-      }
-      return 0;
-    } catch (RuntimeException e) {
-      logger.debug("Post-conversion check failed", e);
-      System.err.println("Post-conversion check failed: " + e.getMessage());
-      return 1;
-    } finally {
-      if (stateSpace != null) {
-        stateSpace.kill();
-      }
-    }
-  }
-
-  private String checkFailure(StateSpace stateSpace, CheckMode checkMode) {
-    if (checkMode.kind() == CheckKind.INIT) {
-      Trace trace = parent.initializeTrace(stateSpace);
-      return trace.getCurrentState().isInitialised() ? null : "could not initialise the machine";
-    }
-
-    IModelCheckingResult result =
-        new ConsistencyChecker(
-                stateSpace,
-                new ModelCheckingOptions()
-                    .checkDeadlocks(true)
-                    .checkInvariantViolations(true)
-                    .stateLimit(checkMode.modelCheckStates()))
-            .call();
-    boolean ok = result instanceof ModelCheckOk || result instanceof ModelCheckLimitReached;
-    return ok ? null : result.getMessage();
-  }
-
-  private enum CheckKind {
-    NONE,
-    INIT,
-    MODEL_CHECK
-  }
-
-  private record CheckMode(CheckKind kind, int modelCheckStates) {
-
-    static CheckMode parse(String value) {
-      // value is never null: --check has defaultValue = "none".
-      if (value.equals("none")) {
-        return new CheckMode(CheckKind.NONE, 0);
-      }
-      if (value.equals("init")) {
-        return new CheckMode(CheckKind.INIT, 0);
-      }
-      if (value.startsWith("mc:")) {
-        int limit;
-        try {
-          limit = Integer.parseInt(value.substring("mc:".length()));
-        } catch (NumberFormatException e) {
-          limit = 0;
-        }
-        if (limit <= 0) {
-          throw new IllegalArgumentException("--check mc:N requires a positive integer N");
-        }
-        return new CheckMode(CheckKind.MODEL_CHECK, limit);
-      }
-      throw new IllegalArgumentException("--check must be one of: none, init, mc:N");
-    }
   }
 }
