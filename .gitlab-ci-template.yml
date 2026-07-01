@@ -2,10 +2,9 @@
   image: eclipse-temurin:21-jdk
   variables:
     EVENTB_ANIMATE_MODEL_PATH: ''
-    EVENTB_ANIMATE_COMMAND: 'animate'
-    EVENTB_ANIMATE_STEPS: ''
+    EVENTB_ANIMATE_COMMAND: 'check'
     EVENTB_ANIMATE_SIZE: ''
-    EVENTB_ANIMATE_INVARIANTS: 'false'
+    EVENTB_ANIMATE_STATES: ''
     EVENTB_ANIMATE_SAVE: ''
     EVENTB_ANIMATE_TRACE: ''
     EVENTB_ANIMATE_ARGS: ''
@@ -34,17 +33,10 @@
           exit 1
         fi
         cli_args+=("-t" "$EVENTB_ANIMATE_TRACE")
-        if [ -n "$EVENTB_ANIMATE_STEPS" ] || [ -n "$EVENTB_ANIMATE_SIZE" ] || [ "$EVENTB_ANIMATE_INVARIANTS" = "true" ] || [ -n "$EVENTB_ANIMATE_SAVE" ]; then
-          echo "WARNING: EVENTB_ANIMATE_STEPS, EVENTB_ANIMATE_SIZE, EVENTB_ANIMATE_INVARIANTS, and EVENTB_ANIMATE_SAVE are ignored when EVENTB_ANIMATE_COMMAND is 'replay'" >&2
+        if [ -n "$EVENTB_ANIMATE_SIZE" ] || [ -n "$EVENTB_ANIMATE_STATES" ] || [ -n "$EVENTB_ANIMATE_SAVE" ]; then
+          echo "WARNING: EVENTB_ANIMATE_SIZE, EVENTB_ANIMATE_STATES, and EVENTB_ANIMATE_SAVE are ignored when EVENTB_ANIMATE_COMMAND is 'replay'" >&2
         fi
-      elif [ "$EVENTB_ANIMATE_COMMAND" = "animate" ]; then
-        if [ -n "$EVENTB_ANIMATE_STEPS" ]; then
-          if ! [[ "$EVENTB_ANIMATE_STEPS" =~ ^[0-9]+$ ]]; then
-            echo "ERROR: EVENTB_ANIMATE_STEPS must be a positive integer, got '$EVENTB_ANIMATE_STEPS'" >&2
-            exit 1
-          fi
-          cli_args+=("--steps" "$EVENTB_ANIMATE_STEPS")
-        fi
+      elif [ "$EVENTB_ANIMATE_COMMAND" = "check" ]; then
         if [ -n "$EVENTB_ANIMATE_SIZE" ]; then
           if ! [[ "$EVENTB_ANIMATE_SIZE" =~ ^[0-9]+$ ]]; then
             echo "ERROR: EVENTB_ANIMATE_SIZE must be a positive integer, got '$EVENTB_ANIMATE_SIZE'" >&2
@@ -52,14 +44,18 @@
           fi
           cli_args+=("--size" "$EVENTB_ANIMATE_SIZE")
         fi
-        if [ "$EVENTB_ANIMATE_INVARIANTS" = "true" ]; then
-          cli_args+=("--invariants")
+        if [ -n "$EVENTB_ANIMATE_STATES" ]; then
+          if ! [[ "$EVENTB_ANIMATE_STATES" =~ ^[0-9]+$ ]]; then
+            echo "ERROR: EVENTB_ANIMATE_STATES must be a positive integer, got '$EVENTB_ANIMATE_STATES'" >&2
+            exit 1
+          fi
+          cli_args+=("--states" "$EVENTB_ANIMATE_STATES")
         fi
         if [ -n "$EVENTB_ANIMATE_SAVE" ]; then
           cli_args+=("--save" "$EVENTB_ANIMATE_SAVE")
         fi
       else
-        echo "ERROR: Unknown EVENTB_ANIMATE_COMMAND '$EVENTB_ANIMATE_COMMAND'. Must be 'animate' or 'replay'." >&2
+        echo "ERROR: Unknown EVENTB_ANIMATE_COMMAND '$EVENTB_ANIMATE_COMMAND'. Must be 'check' or 'replay'." >&2
         exit 1
       fi
 
