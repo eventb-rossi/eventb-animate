@@ -79,7 +79,7 @@ class ConvertCommand implements Callable<Integer> {
       System.out.println("Wrote Classical B machine: " + output);
       return 0;
     } catch (IllegalArgumentException | IOException e) {
-      logger.error("Conversion failed", e);
+      logger.debug("Conversion failed", e);
       System.err.println("Error: " + e.getMessage());
       return 1;
     } catch (InterruptedException e) {
@@ -186,7 +186,7 @@ class ConvertCommand implements Callable<Integer> {
       }
       return 0;
     } catch (RuntimeException e) {
-      logger.error("Post-conversion check failed", e);
+      logger.debug("Post-conversion check failed", e);
       System.err.println("Post-conversion check failed: " + e.getMessage());
       return 1;
     } finally {

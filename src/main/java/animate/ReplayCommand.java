@@ -42,7 +42,7 @@ class ReplayCommand implements Callable<Integer> {
     try {
       trace = TraceReplay.replayTraceFile(stateSpace, jsonTrace);
     } catch (Exception e) {
-      logger.error("Error replaying trace", e);
+      logger.debug("Error replaying trace", e);
       System.err.println("Error replaying trace: " + e.getMessage());
       return 1;
     }

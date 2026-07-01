@@ -123,7 +123,7 @@ class InfoCommand implements Callable<Integer> {
       try {
         EventBPackageWriter.write(stateSpace, eventb);
       } catch (IOException e) {
-        logger.error("Error saving model", e);
+        logger.debug("Error saving model", e);
         System.err.println("Error saving model: " + e.getMessage());
         err = 1;
       }
@@ -150,7 +150,7 @@ class InfoCommand implements Callable<Integer> {
         cmd.visualizeAsSvgToFile(path, new ArrayList<>());
       }
     } catch (RuntimeException e) {
-      logger.error("Error saving {} to {}", name, path, e);
+      logger.debug("Error saving {} to {}", name, path, e);
       System.err.println("Error saving " + name + " to " + path + ": " + e.getMessage());
       return 1;
     }

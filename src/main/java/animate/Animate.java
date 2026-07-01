@@ -254,7 +254,7 @@ public class Animate implements Callable<Integer> {
       return loadModel();
     } catch (Exception e) {
       modelResolver.cleanupTempDir();
-      logger.error("Error loading model", e);
+      logger.debug("Error loading model", e);
       System.err.println("Error loading model: " + e.getMessage());
       return null;
     }
@@ -413,7 +413,7 @@ public class Animate implements Callable<Integer> {
       try {
         traceManager.get().save(jsonTrace, abstractJsonFile);
       } catch (IOException e) {
-        logger.error("Error saving trace", e);
+        logger.debug("Error saving trace", e);
         System.err.println("Error saving trace: " + e.getMessage());
         return 1;
       }
