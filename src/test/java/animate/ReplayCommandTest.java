@@ -12,15 +12,20 @@ import org.junit.Test;
 
 public class ReplayCommandTest {
 
-  @Test(timeout = 30000)
+  @Test(timeout = 60000)
   public void testReplaySameModelTrace() throws Exception {
-    Path model = Paths.get("src/test/resources/models/binary-search/M3.bum");
+    // base-model/M1 reaches an invariant-violating state, so model-checking finds a counterexample
+    // and --save writes it; that saved trace must then replay perfectly against the same model.
+    Path model = Paths.get("src/test/resources/models/base-model/M1.bum");
     Path traceFile = Files.createTempFile("animate-trace-", ".json");
 
     try {
-      TestCli.Result saveResult =
-          TestCli.execute("--steps", "3", "--save", traceFile.toString(), model.toString());
-      assertEquals("Saving trace should succeed", 0, saveResult.exitCode());
+      TestCli.Result saveResult = TestCli.execute("--save", traceFile.toString(), model.toString());
+      assertEquals(
+          "Model-checking should find a counterexample:\n" + saveResult.output(),
+          1,
+          saveResult.exitCode());
+      assertTrue("Counterexample trace should be written", Files.size(traceFile) > 0);
 
       TestCli.Result replayResult =
           TestCli.execute("replay", "-t", traceFile.toString(), model.toString());

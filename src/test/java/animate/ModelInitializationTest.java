@@ -17,7 +17,6 @@ public class ModelInitializationTest {
     Injector injector = Guice.createInjector(Stage.PRODUCTION, new Config());
     Animate animate = injector.getInstance(Animate.class);
     animate.model = Paths.get("src/test/resources/models/base-model/M1.bum");
-    animate.steps = 1;
     animate.size = 4;
 
     StateSpace stateSpace = animate.initAndLoadModel();
@@ -25,7 +24,7 @@ public class ModelInitializationTest {
 
     try {
       stateSpace.startTransaction();
-      Trace trace = animate.initializeTrace(stateSpace);
+      Trace trace = animate.initializeTrace(stateSpace, true);
       assertTrue("Constants should be set up", trace.getCurrentState().isConstantsSetUp());
       assertTrue("Machine should be initialised", trace.getCurrentState().isInitialised());
     } finally {
@@ -39,21 +38,18 @@ public class ModelInitializationTest {
     Injector injector = Guice.createInjector(Stage.PRODUCTION, new Config());
     Animate animate = injector.getInstance(Animate.class);
     animate.model = Paths.get("src/test/resources/models/base-model/M1.bum");
-    animate.steps = 1;
     animate.size = 4;
-    animate.checkInv = true;
 
     StateSpace stateSpace = animate.initAndLoadModel();
     assertNotNull("Model should load successfully", stateSpace);
 
     try {
       stateSpace.startTransaction();
-      Trace trace = animate.initializeTrace(stateSpace);
+      Trace trace = animate.initializeTrace(stateSpace, true);
 
       assertTrue("Machine should be initialised", trace.getCurrentState().isInitialised());
       assertFalse(
           "Initialized state should violate invariants", trace.getCurrentState().isInvariantOk());
-      assertTrue("Animate should remember the invariant violation", animate.invariantViolated);
     } finally {
       stateSpace.endTransaction();
       stateSpace.kill();

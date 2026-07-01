@@ -1,5 +1,7 @@
 package animate;
 
+import static org.junit.Assert.assertTrue;
+
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -28,5 +30,19 @@ final class TestCli {
       System.setOut(originalOut);
       System.setErr(originalErr);
     }
+  }
+
+  /**
+   * Asserts the run reached ProB's model-checking phase (so the model loaded and initialised) and
+   * returned a verdict: exit 0 (no violation, or a bounded limit reached) or 1 (a real violation or
+   * deadlock) -- never a CLI/usage error.
+   */
+  static void assertModelChecked(Result result, String what) {
+    assertTrue(
+        what + " should be loaded and model-checked:\n" + result.output(),
+        result.output().contains("Model checking..."));
+    assertTrue(
+        what + " should reach a verdict (0) or a real violation (1):\n" + result.output(),
+        result.exitCode() == 0 || result.exitCode() == 1);
   }
 }

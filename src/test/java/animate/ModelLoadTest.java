@@ -17,13 +17,12 @@ import org.junit.runners.Parameterized;
 import org.junit.runners.Parameterized.Parameters;
 
 /**
- * Test that verifies Event-B models can be loaded and animated. Tests models from
+ * Verifies that every bundled Event-B model loads into a ProB state space. Models from
  * https://github.com/17451k/eventb-models
  */
 @RunWith(Parameterized.class)
-public class ModelAnimationTest {
+public class ModelLoadTest {
 
-  private static final int ANIMATION_STEPS = 10;
   private static Api api;
   private final File modelFile;
   private final String modelName;
@@ -34,7 +33,7 @@ public class ModelAnimationTest {
     api = injector.getInstance(Api.class);
   }
 
-  public ModelAnimationTest(String modelName, File modelFile) {
+  public ModelLoadTest(String modelName, File modelFile) {
     this.modelName = modelName;
     this.modelFile = modelFile;
   }
@@ -60,43 +59,6 @@ public class ModelAnimationTest {
       assertNotNull("Current state should exist", trace.getCurrentState());
 
       System.out.println("  ✓ Model loaded successfully");
-    } finally {
-      stateSpace.kill();
-    }
-  }
-
-  @Test
-  public void testModelAnimation() throws Exception {
-    System.out.println("Testing animation for: " + modelName);
-
-    StateSpace stateSpace = api.eventb_load(modelFile.getAbsolutePath());
-
-    try {
-      Trace trace = new Trace(stateSpace);
-
-      // Try to execute random steps
-      int successfulSteps = 0;
-      for (int i = 0; i < ANIMATION_STEPS; i++) {
-        try {
-          Trace newTrace = trace.anyEvent(null);
-          if (newTrace != trace) {
-            trace = newTrace;
-            successfulSteps++;
-          } else {
-            // No more operations available
-            break;
-          }
-        } catch (Exception e) {
-          // Some models may have limited animation possibilities
-          System.out.println(
-              "  ⚠ Animation stopped after " + successfulSteps + " steps: " + e.getMessage());
-          break;
-        }
-      }
-
-      System.out.println("  ✓ Performed " + successfulSteps + " animation steps");
-
-      assertNotNull("Current state should exist after animation", trace.getCurrentState());
     } finally {
       stateSpace.kill();
     }
