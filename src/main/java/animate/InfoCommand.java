@@ -28,9 +28,9 @@ class InfoCommand implements Callable<Integer> {
 
   @ParentCommand Animate parent;
 
-  // The graph options are long-only: at the top level -m/--machine selects a
-  // machine by name and -i/--invariants toggles invariant checking, so short
-  // letters for graph files invited confusion.
+  // The graph options are long-only: the short letters are taken by top-level
+  // options such as -m/--machine and -z/--size, so short letters for graph files
+  // would have invited confusion.
   @Option(
       names = "--machine-graph",
       paramLabel = "machine.dot",
@@ -54,12 +54,6 @@ class InfoCommand implements Callable<Integer> {
       paramLabel = "invariant.dot",
       description = "save invariant graph in dot or svg")
   Path invariantGraph;
-
-  @Option(
-      names = {"-b", "--bmodel"},
-      paramLabel = "model.eventb",
-      description = "dump prolog model to .eventb file")
-  Path eventb;
 
   @Option(names = "--force", description = "overwrite existing output files")
   boolean force;
@@ -88,9 +82,6 @@ class InfoCommand implements Callable<Integer> {
       }
       Animate.validateWritableOutput(path, "Output", force);
     }
-    if (eventb != null) {
-      Animate.validateWritableOutput(eventb, "Output", force);
-    }
   }
 
   private int dumpInfo(StateSpace stateSpace) {
@@ -118,18 +109,7 @@ class InfoCommand implements Callable<Integer> {
       err |= saveVisualization("invariant", invariantGraph, trace);
     }
 
-    if (eventb != null) {
-      logger.info("Saving B model to {}", eventb);
-      try {
-        EventBPackageWriter.write(stateSpace, eventb);
-      } catch (IOException e) {
-        logger.debug("Error saving model", e);
-        System.err.println("Error saving model: " + e.getMessage());
-        err = 1;
-      }
-    }
-
-    if (!hasVisualizationCmd && eventb == null) {
+    if (!hasVisualizationCmd) {
       EventBModel model = (EventBModel) stateSpace.getModel();
       System.out.print(model.calculateDependencies().getGraph());
     }
