@@ -117,6 +117,9 @@ machine name is unique across all projects.
   `hash`; default: `hash`)
 - `--states <N>` - Bound model-checking to at most `N` explored states (default:
   exhaustive)
+- `--time-limit <seconds>` - Bound model-checking to the given wall-clock time
+  (default: unlimited). Like `--states`, a run stopped by the limit is reported
+  as not exhaustive
 - `-m, --machine [<project>/]<name>` - Machine to model-check (default:
   auto-select most refined); add a `<project>/` prefix to pick a machine in a
   specific project of a multi-project archive
