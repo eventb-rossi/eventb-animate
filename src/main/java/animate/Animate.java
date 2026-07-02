@@ -12,12 +12,14 @@ import de.prob.animator.command.ComputeCoverageCommand.ComputeCoverageResult;
 import de.prob.animator.command.GetVersionCommand;
 import de.prob.animator.domainobjects.*;
 import de.prob.check.ConsistencyChecker;
+import de.prob.check.IModelCheckListener;
 import de.prob.check.IModelCheckingResult;
 import de.prob.check.ModelCheckGoalFound;
 import de.prob.check.ModelCheckLimitReached;
 import de.prob.check.ModelCheckOk;
 import de.prob.check.ModelCheckingOptions;
 import de.prob.check.ModelCheckingSearchStrategy;
+import de.prob.check.StateSpaceStats;
 import de.prob.check.tracereplay.json.TraceManager;
 import de.prob.check.tracereplay.json.storage.TraceJsonFile;
 import de.prob.json.JsonMetadata;
@@ -156,6 +158,11 @@ public class Animate implements Callable<Integer> {
       this.kernelStrategy = kernelStrategy;
     }
   }
+
+  @Option(
+      names = "--progress",
+      description = "print model-checking progress to stderr about once per second")
+  boolean progress;
 
   @Option(names = "--perf", description = "print ProB performance info (default: ${DEFAULT-VALUE})")
   boolean perf;
@@ -416,7 +423,8 @@ public class Animate implements Callable<Integer> {
     }
 
     System.out.println("Model checking...");
-    IModelCheckingResult result = new ConsistencyChecker(stateSpace, options).call();
+    IModelCheckingResult result =
+        new ConsistencyChecker(stateSpace, options, progress ? new ProgressPrinter() : null).call();
 
     if (result instanceof ModelCheckOk || result instanceof ModelCheckLimitReached) {
       System.out.println(noViolationMessage(result));
@@ -470,6 +478,46 @@ public class Animate implements Callable<Integer> {
       return noViolation + "(not all states were considered; not an exhaustive check).";
     }
     return noViolation + "(full state space explored).";
+  }
+
+  /**
+   * Prints processed/total state counts to stderr, throttled to roughly one line per second. The
+   * final line is always emitted so even sub-second runs show what was explored. Progress goes to
+   * stderr to keep stdout parseable.
+   */
+  private static final class ProgressPrinter implements IModelCheckListener {
+    private static final long INTERVAL_NANOS = 1_000_000_000L;
+    private long lastPrintedAt = System.nanoTime();
+
+    @Override
+    public void updateStats(
+        String jobId, long timeElapsed, IModelCheckingResult result, StateSpaceStats stats) {
+      long now = System.nanoTime();
+      if (now - lastPrintedAt < INTERVAL_NANOS) {
+        return;
+      }
+      lastPrintedAt = now;
+      print(timeElapsed, stats);
+    }
+
+    @Override
+    public void isFinished(
+        String jobId, long timeElapsed, IModelCheckingResult result, StateSpaceStats stats) {
+      print(timeElapsed, stats);
+    }
+
+    private static void print(long timeElapsed, StateSpaceStats stats) {
+      // Error paths report without statistics; there is nothing useful to print then.
+      if (stats == null) {
+        return;
+      }
+      System.err.printf(
+          "Progress: %d/%d states processed, %d transitions, %d ms%n",
+          stats.getNrProcessedNodes(),
+          stats.getNrTotalNodes(),
+          stats.getNrTotalTransitions(),
+          timeElapsed);
+    }
   }
 
   /** Names exactly the properties this run checked, so the verdict never overclaims. */
