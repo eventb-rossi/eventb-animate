@@ -7,6 +7,7 @@ import com.google.inject.Inject;
 import com.google.inject.Injector;
 import com.google.inject.Provider;
 import com.google.inject.Stage;
+import de.be4.ltl.core.parser.LtlParseException;
 import de.prob.animator.command.ComputeCoverageCommand;
 import de.prob.animator.command.ComputeCoverageCommand.ComputeCoverageResult;
 import de.prob.animator.command.GetVersionCommand;
@@ -14,6 +15,9 @@ import de.prob.animator.domainobjects.*;
 import de.prob.check.ConsistencyChecker;
 import de.prob.check.IModelCheckListener;
 import de.prob.check.IModelCheckingResult;
+import de.prob.check.LTLChecker;
+import de.prob.check.LTLCounterExample;
+import de.prob.check.LTLOk;
 import de.prob.check.ModelCheckGoalFound;
 import de.prob.check.ModelCheckLimitReached;
 import de.prob.check.ModelCheckOk;
@@ -28,6 +32,7 @@ import de.prob.model.eventb.EventBMachine;
 import de.prob.scripting.Api;
 import de.prob.statespace.*;
 import java.io.IOException;
+import java.nio.charset.MalformedInputException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -136,6 +141,20 @@ public class Animate implements Callable<Integer> {
               + " pure reachability search)")
   String goal;
 
+  @Option(
+      names = "--ltl",
+      paramLabel = "formula",
+      description =
+          "check an LTL formula instead of running the consistency check (ProB LTL syntax;"
+              + " wrap Event-B predicates in {...}, e.g. \"G not({x = TRUE & y = TRUE})\")")
+  String ltlFormula;
+
+  @Option(
+      names = "--ltl-file",
+      paramLabel = "file.ltl",
+      description = "read the LTL formula to check from a file")
+  Path ltlFile;
+
   // Only the three orders ProB's do_modelchecking supports; the kernel enum lists
   // more, but they are not accepted by the Prolog side.
   @Option(
@@ -237,7 +256,7 @@ public class Animate implements Callable<Integer> {
           "--time-limit must be a positive number of seconds (or omitted for no limit), got: "
               + timeLimit);
     }
-    if (noDeadlock && noInvariant && !assertions && goal == null) {
+    if (noDeadlock && noInvariant && !assertions && goal == null && !isLtlRun()) {
       throw new IllegalArgumentException(
           "nothing to check: --no-deadlock and --no-invariant disable every check"
               + " (enable another one, e.g. --assertions or --goal)");
@@ -393,7 +412,84 @@ public class Animate implements Callable<Integer> {
 
   @Override
   public Integer call() {
+    if (isLtlRun()) {
+      return runLtl();
+    }
     return withStateSpace(this::runModelCheck);
+  }
+
+  private boolean isLtlRun() {
+    return ltlFormula != null || ltlFile != null;
+  }
+
+  /** Validates the LTL flags and parses the formula before paying for a model load. */
+  private int runLtl() {
+    if (ltlFormula != null && ltlFile != null) {
+      System.err.println("Error: --ltl and --ltl-file are mutually exclusive");
+      return 1;
+    }
+    if (goal != null || assertions) {
+      System.err.println(
+          "Error: --ltl replaces the consistency check and cannot be combined with"
+              + " --goal or --assertions");
+      return 1;
+    }
+    String formulaText;
+    try {
+      formulaText = ltlFormula != null ? ltlFormula : Files.readString(ltlFile).trim();
+    } catch (MalformedInputException e) {
+      // Files.readString decodes strictly; its own message is the cryptic "Input length = 1".
+      System.err.println(
+          "Error reading --ltl-file: "
+              + ltlFile
+              + " is not valid UTF-8 text (re-save the file"
+              + " as UTF-8)");
+      return 1;
+    } catch (IOException e) {
+      System.err.println("Error reading --ltl-file: " + e.getMessage());
+      return 1;
+    }
+    LTL formula;
+    try {
+      formula = LTL.parseEventB(formulaText);
+    } catch (LtlParseException e) {
+      // The check never ran, so nothing was proven.
+      System.err.println("Error: invalid LTL formula: " + e.getMessage());
+      return 2;
+    }
+    return withStateSpace(stateSpace -> runLtlCheck(stateSpace, formula));
+  }
+
+  private int runLtlCheck(StateSpace stateSpace, LTL formula) {
+    System.out.println("LTL checking...");
+    IModelCheckingResult result =
+        new LTLChecker(
+                stateSpace,
+                formula,
+                progress ? new ProgressPrinter() : null,
+                states > 0 ? states : -1)
+            .call();
+
+    if (result instanceof LTLOk) {
+      System.out.println("LTL formula holds (full state space explored).");
+      return 0;
+    }
+
+    if (result instanceof LTLCounterExample) {
+      System.err.println("Error: the LTL formula is violated.");
+      Trace counterexample = ((LTLCounterExample) result).getTrace(stateSpace);
+      printCounterexample(counterexample);
+      if (jsonTrace != null) {
+        saveTrace(counterexample, stateSpace);
+      }
+      return 1;
+    }
+
+    // LTLError or LTLNotYetFinished (e.g. the --states limit): a bounded LTL check
+    // proves nothing about temporal properties, so unlike the consistency check a
+    // limited run is a non-verdict, not a pass.
+    System.err.println("LTL checking did not complete: " + result.getMessage());
+    return 2;
   }
 
   private int runModelCheck(StateSpace stateSpace) {
@@ -503,11 +599,16 @@ public class Animate implements Callable<Integer> {
     @Override
     public void isFinished(
         String jobId, long timeElapsed, IModelCheckingResult result, StateSpaceStats stats) {
+      // The LTL checker (and some error paths) finish without statistics; still
+      // emit a final line so --progress is never completely silent.
+      if (stats == null) {
+        System.err.printf("Progress: finished after %d ms%n", timeElapsed);
+        return;
+      }
       print(timeElapsed, stats);
     }
 
     private static void print(long timeElapsed, StateSpaceStats stats) {
-      // Error paths report without statistics; there is nothing useful to print then.
       if (stats == null) {
         return;
       }

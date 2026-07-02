@@ -130,12 +130,19 @@ machine name is unique across all projects.
   Event-B predicate (ASCII or Unicode operators); a hit is reported as a
   violation (exit 1) with the trace to the state. Combine with `--no-deadlock
   --no-invariant` for a pure reachability search
+- `--ltl <formula>` - Check an LTL formula instead of running the consistency
+  check (ProB LTL syntax; wrap Event-B predicates in `{...}`, e.g.
+  `G not({cars_go = TRUE & peds_go = TRUE})`). A counterexample exits 1 and
+  composes with `--save`. Unlike the consistency check, a run stopped by the
+  `--states` limit proves nothing about temporal properties and exits 2
+- `--ltl-file <file.ltl>` - Read the LTL formula to check from a file
 - `--search-strategy <mixed|bf|df>` - State-space exploration order: mixed
   breadth/depth (default), breadth-first, or depth-first (`df` can reach deep
   violations sooner)
 - `--progress` - Print model-checking progress (states processed/found,
   transitions) to stderr about once per second; useful to keep long CI runs
-  from looking stuck
+  from looking stuck. ProB reports no intermediate progress for LTL checks,
+  so with `--ltl` only a final line is printed
 - `-m, --machine [<project>/]<name>` - Machine to model-check (default:
   auto-select most refined); add a `<project>/` prefix to pick a machine in a
   specific project of a multi-project archive
