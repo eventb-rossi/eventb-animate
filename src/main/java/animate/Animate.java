@@ -522,13 +522,23 @@ public class Animate implements Callable<Integer> {
 
   private int runLtlCheck(StateSpace stateSpace, LTL formula) {
     System.out.println("LTL checking...");
-    IModelCheckingResult result =
-        new LTLChecker(
-                stateSpace,
-                formula,
-                progress ? new ProgressPrinter() : null,
-                states > 0 ? states : -1)
-            .call();
+    IModelCheckingResult result;
+    try {
+      result =
+          new LTLChecker(
+                  stateSpace,
+                  formula,
+                  progress ? new ProgressPrinter() : null,
+                  states > 0 ? states : -1)
+              .call();
+    } catch (RuntimeException e) {
+      // The kernel's CheckerBase re-throws mid-check failures (e.g. a probcli error)
+      // after recording them; without this catch they would escape as a stack trace
+      // with exit 1, the code reserved for real violations.
+      logger.debug("LTL checking failed", e);
+      System.err.println("LTL checking did not complete: " + e.getMessage());
+      return 2;
+    }
 
     if (result instanceof LTLOk) {
       System.out.println("LTL formula holds (full state space explored).");
@@ -574,8 +584,17 @@ public class Animate implements Callable<Integer> {
     }
 
     System.out.println("Model checking...");
-    IModelCheckingResult result =
-        new ConsistencyChecker(stateSpace, options, progress ? new ProgressPrinter() : null).call();
+    IModelCheckingResult result;
+    try {
+      result =
+          new ConsistencyChecker(stateSpace, options, progress ? new ProgressPrinter() : null)
+              .call();
+    } catch (RuntimeException e) {
+      // Same contract as the LTL path: a mid-check kernel failure is a non-verdict.
+      logger.debug("Model checking failed", e);
+      System.err.println("Model checking did not complete: " + e.getMessage());
+      return 2;
+    }
 
     if (result instanceof ModelCheckOk || result instanceof ModelCheckLimitReached) {
       System.out.println(noViolationMessage(result));
