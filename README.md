@@ -133,6 +133,9 @@ machine name is unique across all projects.
 - `--search-strategy <mixed|bf|df>` - State-space exploration order: mixed
   breadth/depth (default), breadth-first, or depth-first (`df` can reach deep
   violations sooner)
+- `--progress` - Print model-checking progress (states processed/found,
+  transitions) to stderr about once per second; useful to keep long CI runs
+  from looking stuck
 - `-m, --machine [<project>/]<name>` - Machine to model-check (default:
   auto-select most refined); add a `<project>/` prefix to pick a machine in a
   specific project of a multi-project archive

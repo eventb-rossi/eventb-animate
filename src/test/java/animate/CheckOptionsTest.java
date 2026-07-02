@@ -153,6 +153,16 @@ public class CheckOptionsTest {
         result.output().contains("full state space explored"));
   }
 
+  @Test(timeout = 120000)
+  public void testProgressPrintsStats() {
+    TestCli.Result result = TestCli.execute("--progress", TRAFFIC_LIGHT_M2);
+
+    assertEquals("A clean run with --progress exits 0:\n" + result.output(), 0, result.exitCode());
+    assertTrue(
+        "At least the final progress line should be printed:\n" + result.output(),
+        result.output().contains("Progress: "));
+  }
+
   @Test
   public void testSearchStrategyBadValueIsUsageError() {
     TestCli.Result result = TestCli.execute("--search-strategy", "random", TRAFFIC_LIGHT_M2);
