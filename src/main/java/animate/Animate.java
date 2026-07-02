@@ -17,6 +17,7 @@ import de.prob.check.ModelCheckGoalFound;
 import de.prob.check.ModelCheckLimitReached;
 import de.prob.check.ModelCheckOk;
 import de.prob.check.ModelCheckingOptions;
+import de.prob.check.ModelCheckingSearchStrategy;
 import de.prob.check.tracereplay.json.TraceManager;
 import de.prob.check.tracereplay.json.storage.TraceJsonFile;
 import de.prob.json.JsonMetadata;
@@ -132,6 +133,29 @@ public class Animate implements Callable<Integer> {
               + " as a violation with a trace (combine with --no-deadlock --no-invariant for a"
               + " pure reachability search)")
   String goal;
+
+  // Only the three orders ProB's do_modelchecking supports; the kernel enum lists
+  // more, but they are not accepted by the Prolog side.
+  @Option(
+      names = "--search-strategy",
+      paramLabel = "mixed|bf|df",
+      description =
+          "state-space exploration order: mixed breadth/depth, breadth-first, or depth-first"
+              + " (default: ${DEFAULT-VALUE})")
+  SearchStrategy searchStrategy = SearchStrategy.mixed;
+
+  /** CLI names for the exploration orders supported by ProB. */
+  enum SearchStrategy {
+    mixed(ModelCheckingSearchStrategy.MIXED_BF_DF),
+    bf(ModelCheckingSearchStrategy.BREADTH_FIRST),
+    df(ModelCheckingSearchStrategy.DEPTH_FIRST);
+
+    final ModelCheckingSearchStrategy kernelStrategy;
+
+    SearchStrategy(ModelCheckingSearchStrategy kernelStrategy) {
+      this.kernelStrategy = kernelStrategy;
+    }
+  }
 
   @Option(names = "--perf", description = "print ProB performance info (default: ${DEFAULT-VALUE})")
   boolean perf;
@@ -368,6 +392,7 @@ public class Animate implements Callable<Integer> {
   private int runModelCheck(StateSpace stateSpace) {
     ModelCheckingOptions options =
         new ModelCheckingOptions()
+            .searchStrategy(searchStrategy.kernelStrategy)
             .checkDeadlocks(!noDeadlock)
             .checkInvariantViolations(!noInvariant)
             .checkAssertions(assertions);
