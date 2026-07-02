@@ -24,7 +24,14 @@ class WdCommand implements Callable<Integer> {
 
   private int checkWellDefinedness(StateSpace stateSpace) {
     CheckWellDefinednessCommand cmd = new CheckWellDefinednessCommand();
-    stateSpace.execute(cmd);
+    try {
+      stateSpace.execute(cmd);
+    } catch (RuntimeException e) {
+      // A ProB failure is a non-verdict (exit 2), not the exit-1 "obligations
+      // not discharged" outcome the README documents.
+      System.err.println("Well-definedness check did not complete: " + e.getMessage());
+      return 2;
+    }
     BigInteger discharged = cmd.getDischargedCount();
     BigInteger total = cmd.getTotalCount();
 
