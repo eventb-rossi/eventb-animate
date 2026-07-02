@@ -26,6 +26,7 @@ import de.prob.statespace.*;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.function.ToIntFunction;
@@ -101,6 +102,13 @@ public class Animate implements Callable<Integer> {
       description = "bound model-checking to at most N explored states (default: exhaustive)")
   int states = -1;
 
+  // -1 means no limit, mirroring --states.
+  @Option(
+      names = "--time-limit",
+      paramLabel = "seconds",
+      description = "bound model-checking to the given wall-clock time (default: unlimited)")
+  int timeLimit = -1;
+
   @Option(names = "--perf", description = "print ProB performance info (default: ${DEFAULT-VALUE})")
   boolean perf;
 
@@ -168,6 +176,11 @@ public class Animate implements Callable<Integer> {
       throw new IllegalArgumentException(
           "--states must be a positive number of states (or omitted for an exhaustive check), got: "
               + states);
+    }
+    if (timeLimit == 0 || timeLimit < -1) {
+      throw new IllegalArgumentException(
+          "--time-limit must be a positive number of seconds (or omitted for no limit), got: "
+              + timeLimit);
     }
   }
 
@@ -328,6 +341,9 @@ public class Animate implements Callable<Integer> {
         new ModelCheckingOptions().checkDeadlocks(true).checkInvariantViolations(true);
     if (states > 0) {
       options = options.stateLimit(states);
+    }
+    if (timeLimit > 0) {
+      options = options.timeLimit(Duration.ofSeconds(timeLimit));
     }
 
     System.out.println("Model checking...");

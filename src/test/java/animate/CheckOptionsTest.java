@@ -1,6 +1,7 @@
 package animate;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Paths;
 import java.util.Map;
@@ -39,5 +40,29 @@ public class CheckOptionsTest {
 
     assertEquals(
         "A -p value without '=' is a usage error:\n" + result.output(), 2, result.exitCode());
+  }
+
+  @Test(timeout = 120000)
+  public void testTimeLimitBoundsTheCheck() {
+    // file-system at -z 6 has far more states than one second can explore, so the
+    // time limit normally fires; on an extreme machine full exploration is also fine.
+    String model = Paths.get("src/test/resources/models/file-system/M0.bum").toString();
+
+    TestCli.Result result = TestCli.execute("--time-limit", "1", "-z", "6", model);
+
+    assertEquals("A time-limited clean run exits 0:\n" + result.output(), 0, result.exitCode());
+    assertTrue(
+        "The outcome should report no violation:\n" + result.output(),
+        result.output().contains("No invariant violation or deadlock found"));
+  }
+
+  @Test
+  public void testTimeLimitZeroRejected() {
+    TestCli.Result result = TestCli.execute("--time-limit", "0", TRAFFIC_LIGHT_M2);
+
+    assertEquals("--time-limit 0 is rejected:\n" + result.output(), 1, result.exitCode());
+    assertTrue(
+        "The error should name the option:\n" + result.output(),
+        result.output().contains("--time-limit"));
   }
 }
