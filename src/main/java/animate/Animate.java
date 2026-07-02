@@ -56,7 +56,8 @@ import picocli.CommandLine.ScopeType;
       CommandLine.HelpCommand.class,
       ReplayCommand.class,
       InfoCommand.class,
-      ConvertCommand.class
+      ConvertCommand.class,
+      WdCommand.class
     })
 public class Animate implements Callable<Integer> {
 

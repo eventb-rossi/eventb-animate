@@ -8,7 +8,7 @@ import org.junit.Test;
 /** The standard help and version options must work uniformly on every subcommand. */
 public class CliHelpTest {
 
-  private static final String[] SUBCOMMANDS = {"replay", "info", "convert"};
+  private static final String[] SUBCOMMANDS = {"replay", "info", "convert", "wd"};
 
   @Test
   public void testHelpExitsZeroOnEverySubcommand() {
