@@ -51,7 +51,9 @@ import picocli.CommandLine.Spec;
 
 @Command(
     name = "eventb-animate",
-    description = "Model-check an Event-B model (deadlocks and invariants) using ProB",
+    description =
+        "Model-check an Event-B model using ProB: deadlocks and invariants by default,"
+            + " plus assertions, goal reachability, and LTL formulas",
     mixinStandardHelpOptions = true,
     sortOptions = false,
     versionProvider = Animate.VersionProvider.class,
