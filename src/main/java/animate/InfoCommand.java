@@ -1,14 +1,20 @@
 package animate;
 
 import com.google.common.io.MoreFiles;
+import de.prob.animator.command.GetCurrentPreferencesCommand;
+import de.prob.animator.command.GetDefaultPreferencesCommand;
 import de.prob.animator.domainobjects.DotVisualizationCommand;
+import de.prob.animator.domainobjects.ProBPreference;
 import de.prob.model.eventb.EventBModel;
 import de.prob.statespace.StateSpace;
 import de.prob.statespace.Trace;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -57,6 +63,11 @@ class InfoCommand implements Callable<Integer> {
 
   @Option(names = "--force", description = "overwrite existing output files")
   boolean force;
+
+  @Option(
+      names = "--prefs",
+      description = "list all ProB preferences (name, current value, default, description)")
+  boolean prefs;
 
   @Override
   public Integer call() {
@@ -109,12 +120,33 @@ class InfoCommand implements Callable<Integer> {
       err |= saveVisualization("invariant", invariantGraph, trace);
     }
 
-    if (!hasVisualizationCmd) {
+    if (prefs) {
+      printPreferences(stateSpace);
+    }
+
+    if (!hasVisualizationCmd && !prefs) {
       EventBModel model = (EventBModel) stateSpace.getModel();
       System.out.print(model.calculateDependencies().getGraph());
     }
 
     return err;
+  }
+
+  /** One line per preference, sorted by name, with the effective value of this run first. */
+  private void printPreferences(StateSpace stateSpace) {
+    GetDefaultPreferencesCommand defaults = new GetDefaultPreferencesCommand();
+    GetCurrentPreferencesCommand current = new GetCurrentPreferencesCommand();
+    stateSpace.execute(defaults);
+    stateSpace.execute(current);
+
+    Map<String, String> currentValues = current.getPreferences();
+    List<ProBPreference> sorted = new ArrayList<>(defaults.getPreferences());
+    sorted.sort(Comparator.comparing(pref -> pref.name));
+    for (ProBPreference pref : sorted) {
+      String value = currentValues.getOrDefault(pref.name, pref.defaultValue);
+      System.out.println(
+          pref.name + " = " + value + " (default: " + pref.defaultValue + ") " + pref.description);
+    }
   }
 
   private int saveVisualization(String name, Path path, Trace trace) {

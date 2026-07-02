@@ -105,6 +105,25 @@ public class InfoCommandTest {
     }
   }
 
+  @Test(timeout = 120000)
+  public void testPrefsListsProBPreferences() {
+    TestCli.Result result =
+        TestCli.execute(
+            "info",
+            "--prefs",
+            "-p",
+            "SYMMETRY_MODE=off",
+            "src/test/resources/models/traffic-light/M0.bum");
+
+    assertEquals("info --prefs should succeed:\n" + result.output(), 0, result.exitCode());
+    assertTrue(
+        "Well-known preferences should be listed:\n" + result.output(),
+        result.output().contains("DEFAULT_SETSIZE"));
+    assertTrue(
+        "The effective value of a -p override should be shown:\n" + result.output(),
+        result.output().contains("SYMMETRY_MODE = off"));
+  }
+
   @Test
   public void testVisualizationStillSavesWhenInitializationRaises() throws Exception {
     Injector injector = Guice.createInjector(Stage.PRODUCTION, new Config());

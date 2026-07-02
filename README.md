@@ -186,6 +186,8 @@ Export options:
 - `--property-graph <file>` - Save properties graph (.dot or .svg)
 - `--invariant-graph <file>` - Save invariant graph (.dot or .svg)
 - `--force` - Overwrite existing output files
+- `--prefs` - List all ProB preferences with their current values, defaults,
+  and descriptions (the names accepted by `-p/--pref`)
 
 #### Convert to Classical B
 
