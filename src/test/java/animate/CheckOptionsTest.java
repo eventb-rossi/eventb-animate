@@ -140,6 +140,26 @@ public class CheckOptionsTest {
         "The error should name --goal:\n" + result.output(), result.output().contains("--goal"));
   }
 
+  @Test(timeout = 120000)
+  public void testSearchStrategyDepthFirst() {
+    TestCli.Result result = TestCli.execute("--search-strategy", "df", TRAFFIC_LIGHT_M2);
+
+    assertEquals(
+        "The exploration order must not change the verdict:\n" + result.output(),
+        0,
+        result.exitCode());
+    assertTrue(
+        "A depth-first run still explores everything:\n" + result.output(),
+        result.output().contains("full state space explored"));
+  }
+
+  @Test
+  public void testSearchStrategyBadValueIsUsageError() {
+    TestCli.Result result = TestCli.execute("--search-strategy", "random", TRAFFIC_LIGHT_M2);
+
+    assertEquals("An unknown strategy is a usage error:\n" + result.output(), 2, result.exitCode());
+  }
+
   @Test
   public void testAllChecksDisabledRejected() {
     TestCli.Result result = TestCli.execute("--no-deadlock", "--no-invariant", TRAFFIC_LIGHT_M2);
