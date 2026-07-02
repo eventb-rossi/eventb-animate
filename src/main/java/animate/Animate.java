@@ -109,6 +109,11 @@ public class Animate implements Callable<Integer> {
       description = "bound model-checking to the given wall-clock time (default: unlimited)")
   int timeLimit = -1;
 
+  @Option(
+      names = "--stop-at-full-coverage",
+      description = "stop model-checking once every event has been covered")
+  boolean stopAtFullCoverage;
+
   @Option(names = "--perf", description = "print ProB performance info (default: ${DEFAULT-VALUE})")
   boolean perf;
 
@@ -344,6 +349,9 @@ public class Animate implements Callable<Integer> {
     }
     if (timeLimit > 0) {
       options = options.timeLimit(Duration.ofSeconds(timeLimit));
+    }
+    if (stopAtFullCoverage) {
+      options = options.stopAtFullCoverage(true);
     }
 
     System.out.println("Model checking...");

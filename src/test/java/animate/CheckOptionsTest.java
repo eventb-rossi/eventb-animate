@@ -56,6 +56,16 @@ public class CheckOptionsTest {
         result.output().contains("No invariant violation or deadlock found"));
   }
 
+  @Test(timeout = 120000)
+  public void testStopAtFullCoverageEndsEarly() {
+    TestCli.Result result = TestCli.execute("--stop-at-full-coverage", TRAFFIC_LIGHT_M2);
+
+    assertEquals("A coverage-stopped clean run exits 0:\n" + result.output(), 0, result.exitCode());
+    assertTrue(
+        "The outcome should flag the non-exhaustive coverage stop:\n" + result.output(),
+        result.output().contains("all events covered; not an exhaustive check"));
+  }
+
   @Test
   public void testTimeLimitZeroRejected() {
     TestCli.Result result = TestCli.execute("--time-limit", "0", TRAFFIC_LIGHT_M2);
