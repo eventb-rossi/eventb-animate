@@ -1,6 +1,7 @@
 package animate;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.file.Paths;
@@ -138,6 +139,9 @@ public class CheckOptionsTest {
         result.exitCode());
     assertTrue(
         "The error should name --goal:\n" + result.output(), result.output().contains("--goal"));
+    assertFalse(
+        "Goal validation must fail before the model is loaded:\n" + result.output(),
+        result.output().contains("Machine:"));
   }
 
   @Test(timeout = 120000)
@@ -174,7 +178,8 @@ public class CheckOptionsTest {
   public void testAllChecksDisabledRejected() {
     TestCli.Result result = TestCli.execute("--no-deadlock", "--no-invariant", TRAFFIC_LIGHT_M2);
 
-    assertEquals("Disabling every check is an error:\n" + result.output(), 1, result.exitCode());
+    assertEquals(
+        "Disabling every check is a usage error:\n" + result.output(), 2, result.exitCode());
     assertTrue(
         "The error should say there is nothing to check:\n" + result.output(),
         result.output().contains("nothing to check"));
@@ -184,9 +189,12 @@ public class CheckOptionsTest {
   public void testTimeLimitZeroRejected() {
     TestCli.Result result = TestCli.execute("--time-limit", "0", TRAFFIC_LIGHT_M2);
 
-    assertEquals("--time-limit 0 is rejected:\n" + result.output(), 1, result.exitCode());
+    assertEquals("--time-limit 0 is a usage error:\n" + result.output(), 2, result.exitCode());
     assertTrue(
         "The error should name the option:\n" + result.output(),
         result.output().contains("--time-limit"));
+    assertFalse(
+        "Flag validation must fail before the model is loaded:\n" + result.output(),
+        result.output().contains("Machine:"));
   }
 }

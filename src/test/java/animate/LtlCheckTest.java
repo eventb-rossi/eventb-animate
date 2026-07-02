@@ -97,7 +97,21 @@ public class LtlCheckTest {
             "--ltl", "G {cars_go = FALSE}", "--goal", "cars_go = TRUE", TRAFFIC_LIGHT_M0);
 
     assertEquals(
-        "Combining --ltl and --goal is an error:\n" + result.output(), 1, result.exitCode());
+        "Combining --ltl and --goal is a usage error:\n" + result.output(), 2, result.exitCode());
+  }
+
+  @Test
+  public void testLtlRejectsUnsupportedConsistencyFlags() {
+    // The kernel's LTL checker cannot honor a time bound, so the flag must be
+    // rejected instead of silently ignored.
+    TestCli.Result result =
+        TestCli.execute("--ltl", "G {cars_go = FALSE}", "--time-limit", "300", TRAFFIC_LIGHT_M0);
+
+    assertEquals(
+        "An unenforceable flag is a usage error:\n" + result.output(), 2, result.exitCode());
+    assertTrue(
+        "The error should name the unsupported flag:\n" + result.output(),
+        result.output().contains("--time-limit"));
   }
 
   @Test(timeout = 120000)

@@ -134,7 +134,10 @@ machine name is unique across all projects.
   check (ProB LTL syntax; wrap Event-B predicates in `{...}`, e.g.
   `G not({cars_go = TRUE & peds_go = TRUE})`). A counterexample exits 1 and
   composes with `--save`. Unlike the consistency check, a run stopped by the
-  `--states` limit proves nothing about temporal properties and exits 2
+  `--states` limit proves nothing about temporal properties and exits 2. Only
+  `--states` bounds an LTL run; the consistency-check flags (`--goal`,
+  `--assertions`, `--no-deadlock`, `--no-invariant`, `--time-limit`,
+  `--stop-at-full-coverage`, `--search-strategy`) are rejected
 - `--ltl-file <file.ltl>` - Read the LTL formula to check from a file
 - `--search-strategy <mixed|bf|df>` - State-space exploration order: mixed
   breadth/depth (default), breadth-first, or depth-first (`df` can reach deep

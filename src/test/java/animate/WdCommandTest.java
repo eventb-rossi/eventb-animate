@@ -18,6 +18,20 @@ public class WdCommandTest {
   }
 
   @Test(timeout = 120000)
+  public void testCheckOnlyFlagsDoNotAffectSubcommands() {
+    // The model-check toggles are meaningless for wd and must not fail its model load.
+    TestCli.Result result =
+        TestCli.execute(
+            "--no-deadlock",
+            "--no-invariant",
+            "wd",
+            "src/test/resources/models/traffic-light/M2.bum");
+
+    assertEquals(
+        "wd must ignore the model-check toggles:\n" + result.output(), 0, result.exitCode());
+  }
+
+  @Test(timeout = 120000)
   public void testUndischargedObligationsExitOne() {
     // file-system M0 applies partial functions, leaving some WD obligations open.
     TestCli.Result result = TestCli.execute("wd", "src/test/resources/models/file-system/M0.bum");
