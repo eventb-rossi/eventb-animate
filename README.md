@@ -189,6 +189,17 @@ Export options:
 - `--prefs` - List all ProB preferences with their current values, defaults,
   and descriptions (the names accepted by `-p/--pref`)
 
+#### Check Well-Definedness
+
+```bash
+eventb-animate wd path/to/model.bum
+```
+
+Checks the model's well-definedness proof obligations with ProB's WD prover
+and prints `X discharged / Y total`. Exits non-zero when any obligation
+remains undischarged (a possible WD problem, such as a partial-function
+application outside its domain or a division by zero).
+
 #### Convert to Classical B
 
 ```bash
