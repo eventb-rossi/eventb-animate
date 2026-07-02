@@ -42,9 +42,12 @@ import java.util.function.ToIntFunction;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
+import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.ScopeType;
+import picocli.CommandLine.Spec;
 
 @Command(
     name = "eventb-animate",
@@ -71,6 +74,9 @@ public class Animate implements Callable<Integer> {
   private final Provider<TraceManager> traceManager;
   final ModelResolver modelResolver = new ModelResolver();
   private String probVersionString;
+  private EventB parsedGoal;
+
+  @Spec CommandSpec spec;
 
   private static final Logger logger = (Logger) LoggerFactory.getLogger(Animate.class);
 
@@ -248,21 +254,82 @@ public class Animate implements Callable<Integer> {
     if (size <= 0) {
       throw new IllegalArgumentException("Default set size must be positive, got: " + size);
     }
+  }
+
+  /**
+   * Usage errors for the default check are raised here, before any model load, as {@link
+   * ParameterException} so picocli reports them with usage help and exit code 2. They must not live
+   * in {@link #validateInput()}: that runs inside every subcommand's model load, where the
+   * check-only flags are meaningless and must not fail the run.
+   */
+  private void validateCheckOptions() {
     if (states == 0 || states < -1) {
-      throw new IllegalArgumentException(
-          "--states must be a positive number of states (or omitted for an exhaustive check), got: "
+      throw usageError(
+          "--states must be a positive number of states (or omitted for an exhaustive check),"
+              + " got: "
               + states);
     }
     if (timeLimit == 0 || timeLimit < -1) {
-      throw new IllegalArgumentException(
+      throw usageError(
           "--time-limit must be a positive number of seconds (or omitted for no limit), got: "
               + timeLimit);
     }
-    if (noDeadlock && noInvariant && !assertions && goal == null && !isLtlRun()) {
-      throw new IllegalArgumentException(
+    if (isLtlRun()) {
+      if (ltlFormula != null && ltlFile != null) {
+        throw usageError("--ltl and --ltl-file are mutually exclusive");
+      }
+      // Rejected rather than silently ignored: the kernel's LTL checker only honors a
+      // state limit, so accepting these flags would promise bounds and checks it never
+      // enforces.
+      List<String> unsupported = new ArrayList<>();
+      if (goal != null) {
+        unsupported.add("--goal");
+      }
+      if (assertions) {
+        unsupported.add("--assertions");
+      }
+      if (noDeadlock) {
+        unsupported.add("--no-deadlock");
+      }
+      if (noInvariant) {
+        unsupported.add("--no-invariant");
+      }
+      if (timeLimit > 0) {
+        unsupported.add("--time-limit");
+      }
+      if (stopAtFullCoverage) {
+        unsupported.add("--stop-at-full-coverage");
+      }
+      if (searchStrategy != SearchStrategy.mixed) {
+        unsupported.add("--search-strategy");
+      }
+      if (!unsupported.isEmpty()) {
+        throw usageError(
+            "the LTL check does not support "
+                + String.join(", ", unsupported)
+                + " (only --states bounds it)");
+      }
+      return;
+    }
+    if (noDeadlock && noInvariant && !assertions && goal == null) {
+      throw usageError(
           "nothing to check: --no-deadlock and --no-invariant disable every check"
               + " (enable another one, e.g. --assertions or --goal)");
     }
+    if (goal != null) {
+      try {
+        parsedGoal = new EventB(goal);
+        if (parsedGoal.getKind() != EvalElementType.PREDICATE) {
+          throw usageError("--goal must be a predicate, not " + parsedGoal.getKind());
+        }
+      } catch (EvaluationException e) {
+        throw usageError("invalid --goal predicate: " + e.getMessage());
+      }
+    }
+  }
+
+  private ParameterException usageError(String message) {
+    return new ParameterException(spec.commandLine(), "Error: " + message);
   }
 
   /**
@@ -414,6 +481,7 @@ public class Animate implements Callable<Integer> {
 
   @Override
   public Integer call() {
+    validateCheckOptions();
     if (isLtlRun()) {
       return runLtl();
     }
@@ -424,18 +492,8 @@ public class Animate implements Callable<Integer> {
     return ltlFormula != null || ltlFile != null;
   }
 
-  /** Validates the LTL flags and parses the formula before paying for a model load. */
+  /** Parses the LTL formula before paying for a model load. */
   private int runLtl() {
-    if (ltlFormula != null && ltlFile != null) {
-      System.err.println("Error: --ltl and --ltl-file are mutually exclusive");
-      return 1;
-    }
-    if (goal != null || assertions) {
-      System.err.println(
-          "Error: --ltl replaces the consistency check and cannot be combined with"
-              + " --goal or --assertions");
-      return 1;
-    }
     String formulaText;
     try {
       formulaText = ltlFormula != null ? ltlFormula : Files.readString(ltlFile).trim();
@@ -510,14 +568,9 @@ public class Animate implements Callable<Integer> {
     if (stopAtFullCoverage) {
       options = options.stopAtFullCoverage(true);
     }
-    if (goal != null) {
-      try {
-        options = options.customGoal(new EventB(goal));
-      } catch (EvaluationException | IllegalArgumentException e) {
-        // Syntax error or not a predicate: the check never ran, so nothing was proven.
-        System.err.println("Error: invalid --goal predicate: " + e.getMessage());
-        return 2;
-      }
+    if (parsedGoal != null) {
+      // Parsed and kind-checked by validateCheckOptions before the model load.
+      options = options.customGoal(parsedGoal);
     }
 
     System.out.println("Model checking...");
