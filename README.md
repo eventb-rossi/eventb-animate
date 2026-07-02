@@ -126,6 +126,10 @@ machine name is unique across all projects.
 - `--no-deadlock` - Do not check for deadlocks
 - `--no-invariant` - Do not check for invariant violations (disabling every
   check is rejected)
+- `--goal <predicate>` - Also search for a reachable state satisfying the
+  Event-B predicate (ASCII or Unicode operators); a hit is reported as a
+  violation (exit 1) with the trace to the state. Combine with `--no-deadlock
+  --no-invariant` for a pure reachability search
 - `-m, --machine [<project>/]<name>` - Machine to model-check (default:
   auto-select most refined); add a `<project>/` prefix to pick a machine in a
   specific project of a multi-project archive
