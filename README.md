@@ -111,6 +111,10 @@ machine name is unique across all projects.
 ### Options
 
 - `-z, --size <n>` - Default size for ProB sets (default: 4)
+- `-p, --pref <KEY=VALUE>` - Set a ProB preference (repeatable). User values
+  override the built-in defaults, including `DEFAULT_SETSIZE` from `-z`; for
+  example `-p SYMMETRY_MODE=off` (symmetry modes: `off`, `flood`, `nauty`,
+  `hash`; default: `hash`)
 - `--states <N>` - Bound model-checking to at most `N` explored states (default:
   exhaustive)
 - `-m, --machine [<project>/]<name>` - Machine to model-check (default:

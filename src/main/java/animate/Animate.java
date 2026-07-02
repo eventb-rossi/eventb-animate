@@ -84,6 +84,15 @@ public class Animate implements Callable<Integer> {
       scope = ScopeType.INHERIT)
   int size;
 
+  @Option(
+      names = {"-p", "--pref"},
+      paramLabel = "KEY=VALUE",
+      description =
+          "set a ProB preference (repeatable); overrides the built-in defaults, including"
+              + " DEFAULT_SETSIZE from -z/--size",
+      scope = ScopeType.INHERIT)
+  Map<String, String> userPrefs = new LinkedHashMap<>();
+
   // -1 (the field default, applied both by picocli and by direct construction in tests) means no
   // limit -- ConsistencyChecker explores the full state space.
   @Option(
@@ -177,11 +186,8 @@ public class Animate implements Callable<Integer> {
     }
   }
 
-  private StateSpace loadModel() throws IOException {
-    validateInput();
-
-    logger.info("Load Event-B Machine");
-
+  /** Built-in defaults first; user-supplied -p/--pref values override any of them. */
+  Map<String, String> buildProBPreferences() {
     Map<String, String> prefs = new HashMap<>();
     prefs.put("MEMOIZE_FUNCTIONS", "true");
     prefs.put("SYMBOLIC", "true");
@@ -196,6 +202,16 @@ public class Animate implements Callable<Integer> {
     if (perf) {
       prefs.put("PERFORMANCE_INFO", "true");
     }
+    prefs.putAll(userPrefs);
+    return prefs;
+  }
+
+  private StateSpace loadModel() throws IOException {
+    validateInput();
+
+    logger.info("Load Event-B Machine");
+
+    Map<String, String> prefs = buildProBPreferences();
 
     Path resolvedModel = modelResolver.resolve(model, machineName);
     String resolvedMachineName = resolvedModel.getFileName().toString().replaceFirst("\\.bum$", "");
