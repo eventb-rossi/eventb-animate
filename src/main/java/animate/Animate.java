@@ -13,6 +13,7 @@ import de.prob.animator.command.GetVersionCommand;
 import de.prob.animator.domainobjects.*;
 import de.prob.check.ConsistencyChecker;
 import de.prob.check.IModelCheckingResult;
+import de.prob.check.ModelCheckGoalFound;
 import de.prob.check.ModelCheckLimitReached;
 import de.prob.check.ModelCheckOk;
 import de.prob.check.ModelCheckingOptions;
@@ -123,6 +124,15 @@ public class Animate implements Callable<Integer> {
   @Option(names = "--no-invariant", description = "do not check for invariant violations")
   boolean noInvariant;
 
+  @Option(
+      names = "--goal",
+      paramLabel = "predicate",
+      description =
+          "also search for a reachable state satisfying the Event-B predicate; a hit is reported"
+              + " as a violation with a trace (combine with --no-deadlock --no-invariant for a"
+              + " pure reachability search)")
+  String goal;
+
   @Option(names = "--perf", description = "print ProB performance info (default: ${DEFAULT-VALUE})")
   boolean perf;
 
@@ -196,10 +206,10 @@ public class Animate implements Callable<Integer> {
           "--time-limit must be a positive number of seconds (or omitted for no limit), got: "
               + timeLimit);
     }
-    if (noDeadlock && noInvariant && !assertions) {
+    if (noDeadlock && noInvariant && !assertions && goal == null) {
       throw new IllegalArgumentException(
           "nothing to check: --no-deadlock and --no-invariant disable every check"
-              + " (enable another one, e.g. --assertions)");
+              + " (enable another one, e.g. --assertions or --goal)");
     }
   }
 
@@ -370,6 +380,15 @@ public class Animate implements Callable<Integer> {
     if (stopAtFullCoverage) {
       options = options.stopAtFullCoverage(true);
     }
+    if (goal != null) {
+      try {
+        options = options.customGoal(new EventB(goal));
+      } catch (EvaluationException | IllegalArgumentException e) {
+        // Syntax error or not a predicate: the check never ran, so nothing was proven.
+        System.err.println("Error: invalid --goal predicate: " + e.getMessage());
+        return 2;
+      }
+    }
 
     System.out.println("Model checking...");
     IModelCheckingResult result = new ConsistencyChecker(stateSpace, options).call();
@@ -381,8 +400,13 @@ public class Animate implements Callable<Integer> {
     }
 
     if (result instanceof ITraceDescription) {
-      // A real counterexample: an invariant violation or a reachable deadlock.
-      System.err.println("Error: " + result.getMessage());
+      // A real counterexample: an invariant violation, a reachable deadlock, or a goal hit.
+      // A found goal is what the user asked for, not a model error, so no "Error:" prefix.
+      if (result instanceof ModelCheckGoalFound) {
+        System.out.println("Goal found: a reachable state satisfies the --goal predicate.");
+      } else {
+        System.err.println("Error: " + result.getMessage());
+      }
       Trace counterexample = ((ITraceDescription) result).getTrace(stateSpace);
       printViolatedInvariants(stateSpace, counterexample.getCurrentState());
       printCounterexample(counterexample);
@@ -434,6 +458,9 @@ public class Animate implements Callable<Integer> {
     }
     if (assertions) {
       properties.add("assertion violation");
+    }
+    if (goal != null) {
+      properties.add("goal state");
     }
     return String.join(" or ", properties);
   }

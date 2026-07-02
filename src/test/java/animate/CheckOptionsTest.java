@@ -97,6 +97,49 @@ public class CheckOptionsTest {
         result.output().contains("No invariant violation found"));
   }
 
+  @Test(timeout = 120000)
+  public void testGoalFoundReportsWitnessTrace() {
+    // cars_go = TRUE is reachable in the abstract traffic light via set_cars(TRUE).
+    String model = Paths.get("src/test/resources/models/traffic-light/M0.bum").toString();
+
+    TestCli.Result result = TestCli.execute("--goal", "cars_go = TRUE", model);
+
+    assertEquals("A reachable goal exits 1:\n" + result.output(), 1, result.exitCode());
+    assertTrue(
+        "The outcome should report the goal hit:\n" + result.output(),
+        result.output().contains("Goal found"));
+    assertTrue(
+        "The trace to the goal state should be printed:\n" + result.output(),
+        result.output().contains("Counterexample trace:"));
+  }
+
+  @Test(timeout = 120000)
+  public void testUnreachableGoalPasses() {
+    // The searched state is exactly what invariant inv3 forbids, so it is unreachable.
+    String model = Paths.get("src/test/resources/models/traffic-light/M0.bum").toString();
+
+    TestCli.Result result = TestCli.execute("--goal", "cars_go = TRUE & peds_go = TRUE", model);
+
+    assertEquals("An unreachable goal exits 0:\n" + result.output(), 0, result.exitCode());
+    assertTrue(
+        "The verdict should say the goal state was searched for:\n" + result.output(),
+        result.output().contains("goal state"));
+  }
+
+  @Test(timeout = 120000)
+  public void testGoalMustBeAPredicate() {
+    String model = Paths.get("src/test/resources/models/traffic-light/M0.bum").toString();
+
+    TestCli.Result result = TestCli.execute("--goal", "cars_go", model);
+
+    assertEquals(
+        "An expression goal is rejected without a verdict:\n" + result.output(),
+        2,
+        result.exitCode());
+    assertTrue(
+        "The error should name --goal:\n" + result.output(), result.output().contains("--goal"));
+  }
+
   @Test
   public void testAllChecksDisabledRejected() {
     TestCli.Result result = TestCli.execute("--no-deadlock", "--no-invariant", TRAFFIC_LIGHT_M2);
