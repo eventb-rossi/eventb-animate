@@ -66,6 +66,47 @@ public class CheckOptionsTest {
         result.output().contains("all events covered; not an exhaustive check"));
   }
 
+  @Test(timeout = 120000)
+  public void testAssertionsAreChecked() {
+    // cars-on-bridge M0 declares theorems, so the run exercises the assertion check.
+    String model = Paths.get("src/test/resources/models/cars-on-bridge/M0.bum").toString();
+
+    TestCli.Result result = TestCli.execute("--assertions", "--states", "300", model);
+
+    TestCli.assertModelChecked(result, "The model with --assertions");
+    assertTrue(
+        "The verdict should say assertions were checked:\n" + result.output(),
+        result.output().contains("assertion violation"));
+  }
+
+  @Test(timeout = 120000)
+  public void testNoDeadlockSkipsDeadlockCheck() {
+    // At -z 3 the leaf machine reaches a deadlock quickly (see ModelCheckTest); with
+    // the deadlock check disabled the same run passes and reports only what it checked.
+    String model = Paths.get("src/test/resources/models/cars-on-bridge/M3.bum").toString();
+
+    TestCli.Result result =
+        TestCli.execute("--no-deadlock", "--size", "3", "--states", "300", model);
+
+    assertEquals(
+        "A deadlocking model passes without the deadlock check:\n" + result.output(),
+        0,
+        result.exitCode());
+    assertTrue(
+        "The verdict should not claim a deadlock check:\n" + result.output(),
+        result.output().contains("No invariant violation found"));
+  }
+
+  @Test
+  public void testAllChecksDisabledRejected() {
+    TestCli.Result result = TestCli.execute("--no-deadlock", "--no-invariant", TRAFFIC_LIGHT_M2);
+
+    assertEquals("Disabling every check is an error:\n" + result.output(), 1, result.exitCode());
+    assertTrue(
+        "The error should say there is nothing to check:\n" + result.output(),
+        result.output().contains("nothing to check"));
+  }
+
   @Test
   public void testTimeLimitZeroRejected() {
     TestCli.Result result = TestCli.execute("--time-limit", "0", TRAFFIC_LIGHT_M2);

@@ -114,6 +114,15 @@ public class Animate implements Callable<Integer> {
       description = "stop model-checking once every event has been covered")
   boolean stopAtFullCoverage;
 
+  @Option(names = "--assertions", description = "also check assertions (theorems) for violations")
+  boolean assertions;
+
+  @Option(names = "--no-deadlock", description = "do not check for deadlocks")
+  boolean noDeadlock;
+
+  @Option(names = "--no-invariant", description = "do not check for invariant violations")
+  boolean noInvariant;
+
   @Option(names = "--perf", description = "print ProB performance info (default: ${DEFAULT-VALUE})")
   boolean perf;
 
@@ -186,6 +195,11 @@ public class Animate implements Callable<Integer> {
       throw new IllegalArgumentException(
           "--time-limit must be a positive number of seconds (or omitted for no limit), got: "
               + timeLimit);
+    }
+    if (noDeadlock && noInvariant && !assertions) {
+      throw new IllegalArgumentException(
+          "nothing to check: --no-deadlock and --no-invariant disable every check"
+              + " (enable another one, e.g. --assertions)");
     }
   }
 
@@ -343,7 +357,10 @@ public class Animate implements Callable<Integer> {
 
   private int runModelCheck(StateSpace stateSpace) {
     ModelCheckingOptions options =
-        new ModelCheckingOptions().checkDeadlocks(true).checkInvariantViolations(true);
+        new ModelCheckingOptions()
+            .checkDeadlocks(!noDeadlock)
+            .checkInvariantViolations(!noInvariant)
+            .checkAssertions(assertions);
     if (states > 0) {
       options = options.stateLimit(states);
     }
@@ -388,7 +405,7 @@ public class Animate implements Callable<Integer> {
    * so derive the caveat from it instead of guessing from the requested options.
    */
   private String noViolationMessage(IModelCheckingResult result) {
-    String noViolation = "No invariant violation or deadlock found ";
+    String noViolation = "No " + checkedProperties() + " found ";
     if (result instanceof ModelCheckLimitReached) {
       // ProB's message names the bound: "State limit reached" or "Time limit reached".
       return noViolation
@@ -404,6 +421,21 @@ public class Animate implements Callable<Integer> {
       return noViolation + "(not all states were considered; not an exhaustive check).";
     }
     return noViolation + "(full state space explored).";
+  }
+
+  /** Names exactly the properties this run checked, so the verdict never overclaims. */
+  private String checkedProperties() {
+    List<String> properties = new ArrayList<>();
+    if (!noInvariant) {
+      properties.add("invariant violation");
+    }
+    if (!noDeadlock) {
+      properties.add("deadlock");
+    }
+    if (assertions) {
+      properties.add("assertion violation");
+    }
+    return String.join(" or ", properties);
   }
 
   private void printViolatedInvariants(StateSpace stateSpace, State state) {
