@@ -120,6 +120,8 @@ machine name is unique across all projects.
 - `--time-limit <seconds>` - Bound model-checking to the given wall-clock time
   (default: unlimited). Like `--states`, a run stopped by the limit is reported
   as not exhaustive
+- `--stop-at-full-coverage` - Stop model-checking once every event has been
+  covered (a bounded check, reported as not exhaustive)
 - `-m, --machine [<project>/]<name>` - Machine to model-check (default:
   auto-select most refined); add a `<project>/` prefix to pick a machine in a
   specific project of a multi-project archive
