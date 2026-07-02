@@ -122,6 +122,10 @@ machine name is unique across all projects.
   as not exhaustive
 - `--stop-at-full-coverage` - Stop model-checking once every event has been
   covered (a bounded check, reported as not exhaustive)
+- `--assertions` - Also check assertions (theorems) for violations
+- `--no-deadlock` - Do not check for deadlocks
+- `--no-invariant` - Do not check for invariant violations (disabling every
+  check is rejected)
 - `-m, --machine [<project>/]<name>` - Machine to model-check (default:
   auto-select most refined); add a `<project>/` prefix to pick a machine in a
   specific project of a multi-project archive
