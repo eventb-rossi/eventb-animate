@@ -99,7 +99,8 @@ public class Animate implements Callable<Integer> {
       paramLabel = "KEY=VALUE",
       description =
           "set a ProB preference (repeatable); overrides the built-in defaults, including"
-              + " DEFAULT_SETSIZE from -z/--size",
+              + " DEFAULT_SETSIZE from -z/--size (see 'info --prefs' for the available"
+              + " preferences)",
       scope = ScopeType.INHERIT)
   Map<String, String> userPrefs = new LinkedHashMap<>();
 
