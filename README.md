@@ -160,14 +160,19 @@ machine name is unique across all projects.
 
 `eventb-animate` exits non-zero on failure, so CI jobs fail automatically:
 
-- `0` - success: no invariant violation or deadlock was found (either the full
-  state space was explored, or the `--states` limit was reached without a
-  violation)
-- `1` - the model could not be loaded, an invariant was violated, a deadlock was
-  reached (a state with no enabled events, including legitimate terminal states),
-  a trace replay was not perfect (`replay`), or a conversion failed (`convert`)
-- `2` - model-checking could not complete (for example it was interrupted), so
-  nothing was proven -- distinct from a real violation
+- `0` - success: the requested check found nothing (the full state space was
+  explored, or a `--states`/`--time-limit`/`--stop-at-full-coverage` bound was
+  reached without a violation), the LTL formula holds, all WD proof
+  obligations are discharged (`wd`), or a replay was perfect (`replay`)
+- `1` - a definite negative verdict or an input failure: the model could not
+  be loaded, an invariant or assertion was violated, a deadlock was reached (a
+  state with no enabled events, including legitimate terminal states), a
+  `--goal` state was found, an LTL counterexample was found, a WD obligation
+  is undischarged (`wd`), a trace replay was not perfect (`replay`), or a
+  conversion failed (`convert`)
+- `2` - no verdict: the check could not complete (interrupted or a ProB
+  error), a bounded LTL run hit the `--states` limit, or the command line was
+  invalid (usage errors, including unparseable `--goal`/`--ltl` formulas)
 
 ### Commands
 
