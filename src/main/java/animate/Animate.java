@@ -318,12 +318,7 @@ public class Animate implements Callable<Integer> {
     IModelCheckingResult result = new ConsistencyChecker(stateSpace, options).call();
 
     if (result instanceof ModelCheckOk || result instanceof ModelCheckLimitReached) {
-      System.out.println(
-          result instanceof ModelCheckOk
-              ? "No invariant violation or deadlock found (full state space explored)."
-              : "No invariant violation or deadlock found up to "
-                  + states
-                  + " states (limit reached; not an exhaustive check).");
+      System.out.println(noViolationMessage(result));
       printCoverage(stateSpace);
       return 0;
     }
@@ -345,6 +340,30 @@ public class Animate implements Callable<Integer> {
     // rather than as a violation, and exit 2 to keep it separate from a real one.
     System.err.println("Model checking did not complete: " + result.getMessage());
     return 2;
+  }
+
+  /**
+   * The success wording must distinguish a genuinely exhaustive run from one stopped by a bound, so
+   * CI logs never overstate what was proven. The checker result carries which stop condition fired,
+   * so derive the caveat from it instead of guessing from the requested options.
+   */
+  private String noViolationMessage(IModelCheckingResult result) {
+    String noViolation = "No invariant violation or deadlock found ";
+    if (result instanceof ModelCheckLimitReached) {
+      // ProB's message names the bound: "State limit reached" or "Time limit reached".
+      return noViolation
+          + "("
+          + result.getMessage().toLowerCase(Locale.ROOT)
+          + "; not an exhaustive check).";
+    }
+    String message = result.getMessage();
+    if (message.contains("All operations were covered")) {
+      return noViolation + "(all events covered; not an exhaustive check).";
+    }
+    if (message.contains("Not all nodes were considered")) {
+      return noViolation + "(not all states were considered; not an exhaustive check).";
+    }
+    return noViolation + "(full state space explored).";
   }
 
   private void printViolatedInvariants(StateSpace stateSpace, State state) {
