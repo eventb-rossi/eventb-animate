@@ -526,12 +526,9 @@ public class Animate implements Callable<Integer> {
     System.out.println("LTL checking...");
     IModelCheckingResult result;
     try {
+      // validateCheckOptions rejected 0 and < -1; the checker treats any negative as unbounded.
       result =
-          new LTLChecker(
-                  stateSpace,
-                  formula,
-                  progress ? new ProgressPrinter() : null,
-                  states > 0 ? states : -1)
+          new LTLChecker(stateSpace, formula, progress ? new ProgressPrinter() : null, states)
               .call();
     } catch (RuntimeException e) {
       // The kernel's CheckerBase re-throws mid-check failures (e.g. a probcli error)
