@@ -11,44 +11,20 @@ A command-line tool for model-checking Event-B models using ProB.
 - Model visualization export (machine hierarchy, events, properties, invariants)
 - Conversion of Event-B models to Classical B machines
 
-## Requirements
-
-- Java 21 or later
-
 ## Installation
 
-### Homebrew (macOS / Linux)
+Install the `eventb-animate` command from a package manager (these need a Java 21+ runtime):
 
-```bash
+```sh
+# Homebrew (macOS / Linux)
 brew tap eventb-rossi/tap
 brew install eventb-animate
-```
 
-### Scoop (Windows)
-
-```powershell
+# Scoop (Windows)
 scoop bucket add eventb https://github.com/eventb-rossi/scoop-eventb
 scoop install eventb/eventb-animate
-```
 
-### Windows (standalone, no Java needed)
-
-These bundle their own Java runtime, so the *Java 21 or later* requirement above
-does **not** apply to them. Download from the latest release:
-
-- **Installer** —
-  [`eventb-animate.msi`](https://github.com/eventb-rossi/eventb-animate/releases/latest/download/eventb-animate.msi):
-  double-click to install (Program Files + an *Event-B Animate* Start Menu group).
-  The installer does **not** add the tool to `PATH` — for that, use Scoop above or
-  the portable ZIP below.
-- **Portable** —
-  [`eventb-animate-win-x64.zip`](https://github.com/eventb-rossi/eventb-animate/releases/latest/download/eventb-animate-win-x64.zip):
-  extract anywhere and run `eventb-animate.exe`; add its folder to `PATH` to call
-  `eventb-animate` from any directory.
-
-### APT (Ubuntu / Debian)
-
-```bash
+# APT (Ubuntu / Debian)
 curl -fsSL https://eventb-rossi.github.io/apt/KEY.gpg \
   | sudo gpg --dearmor -o /etc/apt/keyrings/eventb.gpg
 . /etc/os-release
@@ -56,22 +32,18 @@ echo "deb [signed-by=/etc/apt/keyrings/eventb.gpg] https://eventb-rossi.github.i
   | sudo tee /etc/apt/sources.list.d/eventb.list
 sudo apt update
 sudo apt install eventb-animate
-```
 
-### Copr (Fedora / RHEL)
-
-```bash
+# Copr (Fedora / RHEL)
 sudo dnf copr enable @eventb-rossi/eventb-copr
 sudo dnf install eventb-animate
-```
 
-### Gentoo
-
-```bash
+# Gentoo
 eselect repository enable eventb-rossi
 emaint sync -r eventb-rossi
 emerge sci-mathematics/eventb-animate
 ```
+
+For Windows machines without a JVM, each [release](https://github.com/eventb-rossi/eventb-animate/releases) also ships self-contained `x64` artifacts that bundle their own Java runtime: the `.msi` installer adds an *Event-B Animate* Start Menu group (but not `PATH`), and the `.zip` is portable (unzip and run `eventb-animate.exe`; add its folder to `PATH` to call it from anywhere).
 
 ## Building
 
@@ -331,7 +303,3 @@ animate-pinned:
     EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
     EVENTB_ANIMATE_VERSION: 'v5.1'
 ```
-
-## License
-
-See LICENSE file for details.
