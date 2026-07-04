@@ -802,7 +802,8 @@ public class Animate implements Callable<Integer> {
           RunReport.singleCheck(RunReport.Status.VIOLATION, "ltl", message)
               .withCounterexample(described),
           counterexample,
-          stateSpace);
+          stateSpace,
+          jsonTrace);
     }
 
     // LTLError or LTLNotYetFinished (e.g. the --states limit): a bounded LTL check
@@ -874,7 +875,8 @@ public class Animate implements Callable<Integer> {
       return withSavedTrace(
           violationReport(result, message).withCounterexample(described),
           counterexample,
-          stateSpace);
+          stateSpace,
+          jsonTrace);
     }
 
     // Neither a clean result nor a counterexample: the check did not complete
@@ -885,13 +887,14 @@ public class Animate implements Callable<Integer> {
     return incompleteConsistencyReport(message);
   }
 
-  /** Saves the counterexample when --save was given and records the written path. */
-  private RunReport withSavedTrace(RunReport report, Trace counterexample, StateSpace stateSpace) {
-    if (jsonTrace == null) {
+  /** Saves the counterexample when a --save target was given and records the written path. */
+  RunReport withSavedTrace(
+      RunReport report, Trace counterexample, StateSpace stateSpace, Path target) {
+    if (target == null) {
       return report;
     }
     return report.withTraceFile(
-        traceWriter.save(counterexample, stateSpace, jsonTrace, probVersionString).orElse(null));
+        traceWriter.save(counterexample, stateSpace, target, probVersionString).orElse(null));
   }
 
   /** The checks this consistency run performs, in a fixed report order. */
