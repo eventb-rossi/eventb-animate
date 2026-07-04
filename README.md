@@ -265,6 +265,8 @@ a legitimate terminal state) as a failure.
 | `size` | Default size for ProB sets (check) | No | — |
 | `states` | Bound model-checking to N states; omit for exhaustive (check) | No | — |
 | `save` | Save the counterexample trace to JSON when a violation is found (check) | No | — |
+| `json-report` | Write a machine-readable JSON report of the run to this path | No | — |
+| `junit-report` | Write a JUnit XML report to this path (one testcase per checked property) | No | — |
 | `trace` | Path to JSON trace file (replay, required) | No | — |
 | `args` | Extra args appended to the assembled command | No | — |
 | `version` | Release version tag (e.g., `v5.1`) | No | `latest` |
@@ -291,6 +293,18 @@ a legitimate terminal state) as a failure.
   with:
     model-path: 'path/to/model.bum'
     version: 'v5.1'
+
+# Publish the verdict as a test report rendered on the PR
+- uses: eventb-rossi/eventb-animate@v5.1
+  with:
+    model-path: 'path/to/model.bum'
+    junit-report: 'report.xml'
+- uses: dorny/test-reporter@v1
+  if: ${{ !cancelled() }}
+  with:
+    name: 'Model check'
+    path: 'report.xml'
+    reporter: 'java-junit'
 ```
 
 ### GitLab CI
@@ -316,6 +330,8 @@ animate-model:
 | `EVENTB_ANIMATE_SIZE` | Default size for ProB sets (check) | `''` |
 | `EVENTB_ANIMATE_STATES` | Bound model-checking to N states; omit for exhaustive (check) | `''` |
 | `EVENTB_ANIMATE_SAVE` | Save the counterexample trace to JSON when a violation is found (check) | `''` |
+| `EVENTB_ANIMATE_JSON` | Write a machine-readable JSON report of the run to this path | `''` |
+| `EVENTB_ANIMATE_JUNIT` | Write a JUnit XML report to this path (one testcase per checked property) | `''` |
 | `EVENTB_ANIMATE_TRACE` | Path to JSON trace file (replay, required) | `''` |
 | `EVENTB_ANIMATE_ARGS` | Extra args appended to the assembled command | `''` |
 | `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v5.1`) | `latest` |
@@ -347,4 +363,16 @@ animate-pinned:
   variables:
     EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
     EVENTB_ANIMATE_VERSION: 'v5.1'
+
+# Surface the verdict in the merge-request widget: which property failed,
+# with the counterexample attached, straight from the JUnit report
+model-check-report:
+  extends: .eventb-animate
+  variables:
+    EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
+    EVENTB_ANIMATE_JUNIT: 'report.xml'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
 ```

@@ -25,6 +25,14 @@ inputs:
     description: 'Save the counterexample trace to a JSON file when a violation is found (check command)'
     required: false
     default: ''
+  json-report:
+    description: 'Write a machine-readable JSON report of the run to this path'
+    required: false
+    default: ''
+  junit-report:
+    description: 'Write a JUnit XML report to this path (one testcase per checked property)'
+    required: false
+    default: ''
   trace:
     description: 'Path to JSON trace file (replay command, required when command is "replay")'
     required: false
@@ -71,6 +79,8 @@ runs:
         INPUT_SIZE: ${{ inputs.size }}
         INPUT_STATES: ${{ inputs.states }}
         INPUT_SAVE: ${{ inputs.save }}
+        INPUT_JSON_REPORT: ${{ inputs.json-report }}
+        INPUT_JUNIT_REPORT: ${{ inputs.junit-report }}
         INPUT_TRACE: ${{ inputs.trace }}
         INPUT_ARGS: ${{ inputs.args }}
       run: |
@@ -107,6 +117,14 @@ runs:
         else
           echo "::error::Unknown command '$INPUT_COMMAND'. Must be 'check' or 'replay'."
           exit 1
+        fi
+
+        # The report options work with every command.
+        if [ -n "$INPUT_JSON_REPORT" ]; then
+          cli_args+=("--json" "$INPUT_JSON_REPORT")
+        fi
+        if [ -n "$INPUT_JUNIT_REPORT" ]; then
+          cli_args+=("--junit" "$INPUT_JUNIT_REPORT")
         fi
 
         if [ -n "$INPUT_ARGS" ]; then
