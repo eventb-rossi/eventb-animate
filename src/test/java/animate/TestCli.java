@@ -5,6 +5,9 @@ import static org.junit.Assert.assertTrue;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import javax.xml.parsers.DocumentBuilderFactory;
+import org.w3c.dom.Document;
 import picocli.CommandLine;
 
 /** Runs the CLI with System.out and System.err captured and restored afterwards. */
@@ -38,6 +41,11 @@ final class TestCli {
           err.toString(StandardCharsets.UTF_8),
           run.command());
     }
+  }
+
+  /** DOM-parses a JUnit report; parsing doubles as the well-formedness check. */
+  static Document parseXml(Path report) throws Exception {
+    return DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(report.toFile());
   }
 
   private record Run(int exitCode, Animate command) {}

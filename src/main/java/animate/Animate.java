@@ -232,6 +232,13 @@ public class Animate implements Callable<Integer> {
   Path jsonReport;
 
   @Option(
+      names = "--junit",
+      paramLabel = "report.xml",
+      description = "write a JUnit XML report (one testcase per checked property)",
+      scope = ScopeType.INHERIT)
+  Path junitReport;
+
+  @Option(
       names = "--debug",
       description = "enable debug log (default: ${DEFAULT-VALUE})",
       scope = ScopeType.INHERIT)
@@ -500,7 +507,7 @@ public class Animate implements Callable<Integer> {
   }
 
   private int emitReports(CommandLine.ParseResult parseResult, int exitCode, long durationMs) {
-    if (jsonReport == null) {
+    if (jsonReport == null && junitReport == null) {
       return exitCode;
     }
     RunReport report = lastReport;
@@ -516,10 +523,20 @@ public class Animate implements Callable<Integer> {
     }
     String command = executedCommandName(parseResult);
     Instant timestamp = Instant.now();
-    // A failed report write must fail CI even when the check itself was clean
-    // (already-failing exits keep their code): the report is the artifact CI
-    // asked for, so its absence must not pass silently.
-    {
+    // Each report is written independently: a failed write must not cost the other
+    // report, but it must fail CI even when the check itself was clean (already-
+    // failing exits keep their code). JUnit goes first so the JSON document, which
+    // records the exit code, is rendered after any escalation and never contradicts
+    // the actual process exit.
+    if (junitReport != null) {
+      try {
+        JUnitReportWriter.write(
+            envelope(command, report, exitCode, timestamp, durationMs), junitReport);
+      } catch (IOException e) {
+        exitCode = reportWriteFailed(e, exitCode);
+      }
+    }
+    if (jsonReport != null) {
       try {
         String json =
             JsonReportWriter.render(envelope(command, report, exitCode, timestamp, durationMs));
@@ -568,8 +585,21 @@ public class Animate implements Callable<Integer> {
    * not derived artifacts like convert/info outputs.
    */
   private void validateReportOptions() {
+    if (junitReport != null && "-".equals(junitReport.toString())) {
+      throw usageError("--junit does not support '-'; only --json can write to stdout");
+    }
     if (jsonReport != null && !jsonToStdout()) {
+      if (junitReport != null
+          && jsonReport
+              .toAbsolutePath()
+              .normalize()
+              .equals(junitReport.toAbsolutePath().normalize())) {
+        throw usageError("--json and --junit must not write to the same file: " + jsonReport);
+      }
       validateReportTarget(jsonReport, "--json");
+    }
+    if (junitReport != null) {
+      validateReportTarget(junitReport, "--junit");
     }
   }
 

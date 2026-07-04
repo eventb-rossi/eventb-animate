@@ -128,6 +128,9 @@ machine name is unique across all projects.
   with every command; see [Machine-Readable Reports](#machine-readable-reports)).
   `-` writes the report to stdout and moves all other output to stderr, so
   `eventb-animate --json - model.bum | jq .status` just works
+- `--junit <report.xml>` - Write a JUnit XML report, one testcase per checked
+  property, for CI systems that ingest the format natively (see
+  [Machine-Readable Reports](#machine-readable-reports))
 - `--debug` - Enable debug logging
 - `-h, --help` - Show help (also available on every subcommand)
 - `-V, --version` - Print the release version
@@ -150,8 +153,9 @@ machine name is unique across all projects.
   error), a bounded LTL run hit the `--states` limit, or the command line was
   invalid (usage errors, including unparseable `--goal`/`--ltl` formulas)
 
-If a requested `--json` report cannot be written, an otherwise clean run exits
-1: the report is the artifact CI asked for, so its absence must fail the job.
+If a requested `--json`/`--junit` report cannot be written, an otherwise clean
+run exits 1: the report is the artifact CI asked for, so its absence must fail
+the job.
 
 ### Machine-Readable Reports
 
@@ -173,6 +177,19 @@ eventb-animate --json - model.bum 2>/dev/null | jq .status
 
 With `--json -` stdout carries exactly the report; everything the run would
 normally print moves to stderr.
+
+`--junit <report.xml>` writes the same findings as JUnit XML for CI systems
+that render the format natively (GitLab `artifacts:reports:junit`, the GitHub
+JUnit actions, Jenkins). Each checked property is one `<testcase>` named after
+the check (`invariant`, `deadlock`, `assertions`, `goal`, `ltl`,
+`well-definedness`, `replay`, `convert`, ...) with the machine as its
+classname. A violation marks the fired property `<failure>` -- with the
+counterexample as the failure body -- and the other properties `<skipped>`,
+since the search stops at the first violation and proves nothing about them; a
+run without a verdict (exit 2) marks the properties as `<error>`. The `wd`
+command reports one aggregate testcase: ProB returns only discharged/total
+counts, not per-obligation names. Both report options combine freely (but not
+to the same file), and only `--json` can write to stdout.
 
 ### Commands
 
