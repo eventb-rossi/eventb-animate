@@ -4,16 +4,21 @@ This directory contains Event-B models used for testing the animate program.
 
 ## Source
 
-All models except `counter/` are from the repository:
-https://github.com/17451k/eventb-models
+All models except the hand-written `counter/` and `gate/` are from the
+repository: https://github.com/17451k/eventb-models
 
 ## Models
 
 ### Counter (`counter/`)
-- Hand-written fixture (no Rodin proof files) with a deliberately
-  non-inductive invariant: `inc` is guarded by `x < 10` but the invariant
-  requires `x < 5`, so the constraint-based check flags `inc` while `reset`
-  preserves the invariant
+- Hand-written fixture with a deliberately non-inductive invariant: `inc` is
+  guarded by `x < 10` but the invariant requires `x < 5`, so the
+  constraint-based check flags `inc` while `reset` preserves the invariant
+- Its hand-written `M0.bpo` (no `.bps`, so both obligations are open) carries
+  the two `inc` preservation sequents: `inv1` is provable and `inv2` is
+  false, giving `po --disprove` one solver proof and one counterexample. The
+  hypothesis `x∈ℕ` that makes `inv1` provable lives in the sequent-local
+  SEQHYP set, so dropping local hypotheses would flip the solver proof into
+  a spurious disproof
 - Models: M0.bum
 
 ### Gate (`gate/`)

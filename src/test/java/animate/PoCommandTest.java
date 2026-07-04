@@ -5,7 +5,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -20,13 +19,14 @@ import org.w3c.dom.NodeList;
  */
 public class PoCommandTest {
 
-  private static final ObjectMapper MAPPER = new ObjectMapper();
-
   // 842 M1 obligations (836 discharged + 6 reviewed) plus one undischarged C1 theorem.
   private static final String BASE_MODEL_M1 =
       Paths.get("src/test/resources/models/base-model/M1.bum").toString();
   private static final String TRAFFIC_LIGHT_M2 =
       Paths.get("src/test/resources/models/traffic-light/M2.bum").toString();
+  // Two undischarged inc obligations: inv1 preservation is provable, inv2 is false.
+  private static final String COUNTER_M0 =
+      Paths.get("src/test/resources/models/counter/M0.bum").toString();
 
   @Test
   public void testOpenObligationsExitTwo() {
@@ -164,12 +164,75 @@ public class PoCommandTest {
     }
   }
 
+  @Test(timeout = 120000)
+  public void testDisproveFindsTheCounterexample() {
+    // counter's inc/inv2/INV is false (x=4 steps to x=5 against x<5) while
+    // inc/inv1/INV is provable; the solver must settle both.
+    TestCli.Result result = TestCli.execute("po", "--disprove", COUNTER_M0);
+
+    assertEquals(
+        "A disproved obligation is a violation:\n" + result.output(), 1, result.exitCode());
+    assertTrue(
+        "The counterexample should be shown:\n" + result.output(),
+        result.output().contains("M0/inc/inv2/INV: disproved (counterexample: x = 4)"));
+    assertTrue(
+        "The provable obligation should pass via the solver:\n" + result.output(),
+        result.output().contains("M0/inc/inv1/INV: proven by the constraint solver"));
+    assertTrue(
+        "The verdict should count the disproof:\n" + result.output(),
+        result.output().contains("Error: 1 of 2 proof obligations are disproved"));
+  }
+
+  @Test(timeout = 120000)
+  public void testDisproveTimeoutKeepsTheObligationOpen() {
+    // The induction theorem is true but needs induction, out of the solver's reach.
+    TestCli.Result result =
+        TestCli.execute(
+            "po", "--disprove", "--disprove-timeout", "500", "--filter", "C1/*", BASE_MODEL_M1);
+
+    assertEquals("No verdict stays exit 2:\n" + result.output(), 2, result.exitCode());
+    assertTrue(
+        "The timeout should be reported per obligation:\n" + result.output(),
+        result
+            .output()
+            .contains(
+                "C1/InductionAxiom/THM: no counterexample found (solver timeout after 500 ms)"));
+  }
+
+  @Test
+  public void testDisproveTimeoutRequiresDisprove() {
+    TestCli.Result result = TestCli.execute("po", "--disprove-timeout", "500", COUNTER_M0);
+
+    assertEquals(
+        "--disprove-timeout without --disprove is a usage error:\n" + result.output(),
+        2,
+        result.exitCode());
+    assertTrue(
+        "The error should point at --disprove:\n" + result.output(),
+        result.output().contains("--disprove-timeout only tunes --disprove"));
+  }
+
+  @Test(timeout = 120000)
+  public void testDisproveReportCarriesProbVersion() throws Exception {
+    TestCli.SplitResult result =
+        TestCli.executeSplit("po", "--disprove", "--json", "-", COUNTER_M0);
+
+    assertEquals(1, result.exitCode());
+    JsonNode root = TestCli.parseJson(result.stdout());
+    assertEquals("violation", root.get("status").asText());
+    assertTrue("ProB ran, so its version is recorded", root.hasNonNull("probVersion"));
+    assertEquals("failed", root.get("checks").get(1).get("outcome").asText());
+    assertTrue(
+        "The check message should carry the counterexample:\n" + result.stdout(),
+        root.get("checks").get(1).get("message").asText().contains("x = 4"));
+  }
+
   @Test
   public void testJsonReportCarriesOneCheckPerObligation() throws Exception {
     TestCli.SplitResult result = TestCli.executeSplit("po", "--json", "-", BASE_MODEL_M1);
 
     assertEquals(2, result.exitCode());
-    JsonNode root = MAPPER.readTree(result.stdout());
+    JsonNode root = TestCli.parseJson(result.stdout());
     assertEquals("po", root.get("command").asText());
     assertEquals("incomplete", root.get("status").asText());
     assertEquals(2, root.get("exitCode").asInt());
