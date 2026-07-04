@@ -49,7 +49,7 @@ public class JUnitReportTest {
     try {
       TestCli.Result result = TestCli.execute("wd", "--junit", report.toString(), FILE_SYSTEM_M0);
 
-      assertEquals("M0 has open WD obligations:\n" + result.output(), 1, result.exitCode());
+      assertEquals("M0 has open WD obligations:\n" + result.output(), 2, result.exitCode());
 
       Document doc = TestCli.parseXml(report);
       Element suite = (Element) doc.getElementsByTagName("testsuite").item(0);

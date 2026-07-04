@@ -2,6 +2,7 @@ package animate;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -25,9 +26,12 @@ record RunReport(
   enum Status {
     /** The requested check found nothing wrong (possibly within a stated bound). */
     OK,
-    /** A definite negative verdict: violation, undischarged obligation, imperfect replay. */
+    /** A definite negative verdict: violation, disproof, imperfect replay. */
     VIOLATION,
-    /** No verdict: the check could not run to completion, so nothing was proven. */
+    /**
+     * No verdict: the check could not run to completion or obligations remain unproven, so nothing
+     * was shown either way.
+     */
     INCOMPLETE,
     /** The run failed before producing a verdict: load, input, or conversion failure. */
     ERROR;
@@ -57,6 +61,53 @@ record RunReport(
 
   static RunReport of(Status status, String message, List<Check> checks) {
     return new RunReport(status, message, checks, null, null, null);
+  }
+
+  /**
+   * A single open (unproven) finding: the run has no verdict (exit 2), but the gate check itself
+   * failed, so CI dashboards show the finding rather than a tool error.
+   */
+  static RunReport openFinding(String checkName, String message) {
+    return of(Status.INCOMPLETE, message, new Check(checkName, Outcome.FAILED, message));
+  }
+
+  /**
+   * Combines the reports of independent analyses run in one invocation. A found violation outranks
+   * an incomplete analysis (the definite verdict is the actionable one), which outranks a clean
+   * pass. The message comes from the first part with the merged status; the evidence
+   * (counterexample, saved trace) from the first part that carries it.
+   */
+  static RunReport merge(List<RunReport> parts) {
+    if (parts.size() == 1) {
+      return parts.get(0);
+    }
+    Status status = Status.OK;
+    for (RunReport part : parts) {
+      if (part.status() == Status.VIOLATION) {
+        status = Status.VIOLATION;
+        break;
+      }
+      if (part.status() == Status.INCOMPLETE) {
+        status = Status.INCOMPLETE;
+      }
+    }
+    String message = null;
+    TraceWriter.Counterexample counterexample = null;
+    Path traceFile = null;
+    List<Check> checks = new ArrayList<>();
+    for (RunReport part : parts) {
+      if (message == null && part.status() == status) {
+        message = part.message();
+      }
+      if (counterexample == null) {
+        counterexample = part.counterexample();
+      }
+      if (traceFile == null) {
+        traceFile = part.traceFile();
+      }
+      checks.addAll(part.checks());
+    }
+    return new RunReport(status, message, checks, counterexample, traceFile, null);
   }
 
   /**

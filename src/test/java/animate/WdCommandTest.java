@@ -32,11 +32,12 @@ public class WdCommandTest {
   }
 
   @Test(timeout = 120000)
-  public void testUndischargedObligationsExitOne() {
+  public void testUndischargedObligationsExitTwo() {
     // file-system M0 applies partial functions, leaving some WD obligations open.
+    // Open obligations are unproven, not disproven, so this is the no-verdict exit.
     TestCli.Result result = TestCli.execute("wd", "src/test/resources/models/file-system/M0.bum");
 
-    assertEquals("Undischarged WD obligations exit 1:\n" + result.output(), 1, result.exitCode());
+    assertEquals("Undischarged WD obligations exit 2:\n" + result.output(), 2, result.exitCode());
     assertTrue(
         "The failure should name the undischarged count:\n" + result.output(),
         result.output().contains("not discharged"));
