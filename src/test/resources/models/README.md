@@ -17,10 +17,11 @@ https://github.com/17451k/eventb-models
 - Models: M0.bum
 
 ### Gate (`gate/`)
-- Hand-written fixture (no Rodin proof files) whose single event `step` is
-  guarded by `y < 2` while the invariant allows `y ≤ 2`: the state `y = 2`
-  satisfies the invariant and deadlocks, so the constraint-based deadlock
-  search has a deterministic hit
+- Hand-written fixture (no Rodin proof files) with one deterministic finding
+  per constraint-based analysis: `step` is guarded by `y < 2` while the
+  invariant allows `y ≤ 2`, so the state `y = 2` satisfies the invariant and
+  deadlocks; `never` is guarded by `y > 5` and therefore infeasible; and
+  `inv3` (`y ≤ 5`) is implied by `inv2` (`y ≤ 2`)
 - Models: M0.bum
 
 ### Binary Search (`binary-search/`)

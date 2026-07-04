@@ -2,6 +2,8 @@ package animate;
 
 import static org.junit.Assert.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -47,6 +49,13 @@ final class TestCli {
   static Document parseXml(Path report) throws Exception {
     return DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(report.toFile());
   }
+
+  /** Parses a --json report document; parsing doubles as the well-formedness check. */
+  static JsonNode parseJson(String document) throws Exception {
+    return MAPPER.readTree(document);
+  }
+
+  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private record Run(int exitCode, Animate command) {}
 

@@ -184,7 +184,8 @@ that render the format natively (GitLab `artifacts:reports:junit`, the GitHub
 JUnit actions, Jenkins). Each checked property is one `<testcase>` named after
 the check (`invariant`, `deadlock`, `assertions`, `goal`, `ltl`,
 `well-definedness`, `replay`, `convert`, the qualified obligation names for
-`po`, `invariant/<event>` for `cbc`, ...) with the machine as its classname. A violation marks the fired
+`po`, `invariant/<event>`/`feasibility`/`redundant-invariants` for `cbc`,
+...) with the machine as its classname. A violation marks the fired
 property `<failure>` -- with the counterexample as the failure body -- and the
 other properties `<skipped>`, since the search stops at the first violation
 and proves nothing about them; a run without a verdict (exit 2) marks the
@@ -283,6 +284,13 @@ Options:
   satisfying this Event-B predicate
 - `--no-invariant` - Skip the invariant preservation check (e.g. to search
   only for deadlocks)
+- `--feasibility` - Also report events whose guard can never be satisfied
+  under the invariant (dead events)
+- `--redundant-invariants` - Also report invariants implied by the
+  remaining ones
+- `--strict` - Turn the advisory `--feasibility`/`--redundant-invariants`
+  findings into failures (exit 1); by default they are printed but keep
+  exit 0
 - `--save <trace.json>` - Save the counterexample trace. The trace starts
   in the found state, which need not be reachable, so it may not `replay`
   against the model
