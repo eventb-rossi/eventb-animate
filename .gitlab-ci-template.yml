@@ -21,6 +21,13 @@
       curl -sL --fail -o /tmp/eventb-animate.jar "$url"
   script:
     - |
+      require_positive_int() {
+        if ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
+          echo "ERROR: $1 must be a positive integer, got '$2'" >&2
+          exit 1
+        fi
+      }
+
       if [ -z "$EVENTB_ANIMATE_MODEL_PATH" ]; then
         echo "ERROR: EVENTB_ANIMATE_MODEL_PATH is required but not set" >&2
         exit 1
@@ -40,24 +47,33 @@
         fi
       elif [ "$EVENTB_ANIMATE_COMMAND" = "check" ]; then
         if [ -n "$EVENTB_ANIMATE_SIZE" ]; then
-          if ! [[ "$EVENTB_ANIMATE_SIZE" =~ ^[0-9]+$ ]]; then
-            echo "ERROR: EVENTB_ANIMATE_SIZE must be a positive integer, got '$EVENTB_ANIMATE_SIZE'" >&2
-            exit 1
-          fi
+          require_positive_int EVENTB_ANIMATE_SIZE "$EVENTB_ANIMATE_SIZE"
           cli_args+=("--size" "$EVENTB_ANIMATE_SIZE")
         fi
         if [ -n "$EVENTB_ANIMATE_STATES" ]; then
-          if ! [[ "$EVENTB_ANIMATE_STATES" =~ ^[0-9]+$ ]]; then
-            echo "ERROR: EVENTB_ANIMATE_STATES must be a positive integer, got '$EVENTB_ANIMATE_STATES'" >&2
-            exit 1
-          fi
+          require_positive_int EVENTB_ANIMATE_STATES "$EVENTB_ANIMATE_STATES"
           cli_args+=("--states" "$EVENTB_ANIMATE_STATES")
         fi
         if [ -n "$EVENTB_ANIMATE_SAVE" ]; then
           cli_args+=("--save" "$EVENTB_ANIMATE_SAVE")
         fi
+      elif [ "$EVENTB_ANIMATE_COMMAND" = "wd" ] || [ "$EVENTB_ANIMATE_COMMAND" = "po" ] || [ "$EVENTB_ANIMATE_COMMAND" = "cbc" ]; then
+        cli_args+=("$EVENTB_ANIMATE_COMMAND")
+        if [ -n "$EVENTB_ANIMATE_SIZE" ]; then
+          require_positive_int EVENTB_ANIMATE_SIZE "$EVENTB_ANIMATE_SIZE"
+          cli_args+=("--size" "$EVENTB_ANIMATE_SIZE")
+        fi
+        if [ "$EVENTB_ANIMATE_COMMAND" = "cbc" ] && [ -n "$EVENTB_ANIMATE_SAVE" ]; then
+          cli_args+=("--save" "$EVENTB_ANIMATE_SAVE")
+        fi
+        if [ -n "$EVENTB_ANIMATE_STATES" ]; then
+          echo "WARNING: EVENTB_ANIMATE_STATES is ignored when EVENTB_ANIMATE_COMMAND is '$EVENTB_ANIMATE_COMMAND'" >&2
+        fi
+        if [ "$EVENTB_ANIMATE_COMMAND" != "cbc" ] && [ -n "$EVENTB_ANIMATE_SAVE" ]; then
+          echo "WARNING: EVENTB_ANIMATE_SAVE is ignored when EVENTB_ANIMATE_COMMAND is '$EVENTB_ANIMATE_COMMAND'" >&2
+        fi
       else
-        echo "ERROR: Unknown EVENTB_ANIMATE_COMMAND '$EVENTB_ANIMATE_COMMAND'. Must be 'check' or 'replay'." >&2
+        echo "ERROR: Unknown EVENTB_ANIMATE_COMMAND '$EVENTB_ANIMATE_COMMAND'. Must be 'check', 'replay', 'wd', 'po', or 'cbc'." >&2
         exit 1
       fi
 

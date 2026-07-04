@@ -10,11 +10,11 @@ inputs:
     description: 'Path to the Event-B model (.bum file, .zip archive, or directory)'
     required: true
   command:
-    description: 'Subcommand to run: "check" (model-check, the default) or "replay"'
+    description: 'Subcommand to run: "check" (model-check, the default), "replay", "wd", "po", or "cbc"'
     required: false
     default: 'check'
   size:
-    description: 'Default size for ProB sets (check command)'
+    description: 'Default size for ProB sets (check, wd, cbc, and po --disprove)'
     required: false
     default: ''
   states:
@@ -22,7 +22,7 @@ inputs:
     required: false
     default: ''
   save:
-    description: 'Save the counterexample trace to a JSON file when a violation is found (check command)'
+    description: 'Save the counterexample trace to a JSON file when a violation is found (check and cbc commands)'
     required: false
     default: ''
   json-report:
@@ -84,6 +84,13 @@ runs:
         INPUT_TRACE: ${{ inputs.trace }}
         INPUT_ARGS: ${{ inputs.args }}
       run: |
+        require_positive_int() {
+          if ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Input '$1' must be a positive integer, got '$2'"
+            exit 1
+          fi
+        }
+
         cli_args=()
 
         if [ "$INPUT_COMMAND" = "replay" ]; then
@@ -98,24 +105,33 @@ runs:
           fi
         elif [ "$INPUT_COMMAND" = "check" ]; then
           if [ -n "$INPUT_SIZE" ]; then
-            if ! [[ "$INPUT_SIZE" =~ ^[0-9]+$ ]]; then
-              echo "::error::Input 'size' must be a positive integer, got '$INPUT_SIZE'"
-              exit 1
-            fi
+            require_positive_int size "$INPUT_SIZE"
             cli_args+=("--size" "$INPUT_SIZE")
           fi
           if [ -n "$INPUT_STATES" ]; then
-            if ! [[ "$INPUT_STATES" =~ ^[0-9]+$ ]]; then
-              echo "::error::Input 'states' must be a positive integer, got '$INPUT_STATES'"
-              exit 1
-            fi
+            require_positive_int states "$INPUT_STATES"
             cli_args+=("--states" "$INPUT_STATES")
           fi
           if [ -n "$INPUT_SAVE" ]; then
             cli_args+=("--save" "$INPUT_SAVE")
           fi
+        elif [ "$INPUT_COMMAND" = "wd" ] || [ "$INPUT_COMMAND" = "po" ] || [ "$INPUT_COMMAND" = "cbc" ]; then
+          cli_args+=("$INPUT_COMMAND")
+          if [ -n "$INPUT_SIZE" ]; then
+            require_positive_int size "$INPUT_SIZE"
+            cli_args+=("--size" "$INPUT_SIZE")
+          fi
+          if [ "$INPUT_COMMAND" = "cbc" ] && [ -n "$INPUT_SAVE" ]; then
+            cli_args+=("--save" "$INPUT_SAVE")
+          fi
+          if [ -n "$INPUT_STATES" ]; then
+            echo "::warning::Input 'states' is ignored when command is '$INPUT_COMMAND'"
+          fi
+          if [ "$INPUT_COMMAND" != "cbc" ] && [ -n "$INPUT_SAVE" ]; then
+            echo "::warning::Input 'save' is ignored when command is '$INPUT_COMMAND'"
+          fi
         else
-          echo "::error::Unknown command '$INPUT_COMMAND'. Must be 'check' or 'replay'."
+          echo "::error::Unknown command '$INPUT_COMMAND'. Must be 'check', 'replay', 'wd', 'po', or 'cbc'."
           exit 1
         fi
 
