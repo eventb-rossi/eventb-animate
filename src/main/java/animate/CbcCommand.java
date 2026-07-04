@@ -1,8 +1,11 @@
 package animate;
 
-import de.prob.animator.domainobjects.EvalElementType;
-import de.prob.animator.domainobjects.EvaluationException;
+import de.prob.animator.command.CbcSolveCommand;
+import de.prob.animator.command.GetRedundantInvariantsCommand;
+import de.prob.animator.domainobjects.EvalResult;
 import de.prob.animator.domainobjects.EventB;
+import de.prob.animator.domainobjects.IEvalElement;
+import de.prob.animator.domainobjects.Join;
 import de.prob.check.CBCDeadlockChecker;
 import de.prob.check.CBCDeadlockFound;
 import de.prob.check.CBCInvariantChecker;
@@ -12,6 +15,7 @@ import de.prob.check.InvariantCheckCounterExample;
 import de.prob.check.ModelCheckOk;
 import de.prob.model.eventb.EventBMachine;
 import de.prob.model.representation.BEvent;
+import de.prob.model.representation.Extraction;
 import de.prob.statespace.StateSpace;
 import de.prob.statespace.Trace;
 import java.nio.file.Path;
@@ -72,6 +76,26 @@ class CbcCommand implements Callable<Integer> {
   boolean noInvariant;
 
   @Option(
+      names = "--feasibility",
+      description =
+          "also report events whose guard can never be satisfied under the invariant"
+              + " (dead events); advisory unless --strict")
+  boolean feasibility;
+
+  @Option(
+      names = "--redundant-invariants",
+      description =
+          "also report invariants implied by the remaining ones; advisory unless" + " --strict")
+  boolean redundantInvariants;
+
+  @Option(
+      names = "--strict",
+      description =
+          "turn the advisory --feasibility and --redundant-invariants findings into failures"
+              + " (exit 1)")
+  boolean strict;
+
+  @Option(
       names = "--save",
       paramLabel = "trace.json",
       description = "save the counterexample trace in json to a file (when a violation is found)")
@@ -97,30 +121,28 @@ class CbcCommand implements Callable<Integer> {
 
   /** Usage errors, raised before the model load like the root check's validation. */
   private void validateCbcOptions() {
-    if (noInvariant && !deadlock) {
+    if (noInvariant && !deadlock && !feasibility && !redundantInvariants) {
       throw usageError(
-          "nothing to check: --no-invariant disables the only requested check (add --deadlock)");
+          "nothing to check: --no-invariant disables the only requested check (add --deadlock,"
+              + " --feasibility, or --redundant-invariants)");
     }
     if (noInvariant && events != null) {
       throw usageError("--events restricts the invariant check, which --no-invariant disables");
+    }
+    if (strict && !feasibility && !redundantInvariants) {
+      throw usageError(
+          "--strict has nothing to escalate (add --feasibility or --redundant-invariants)");
     }
     if (where != null && !deadlock) {
       throw usageError("--where only restricts the --deadlock search (add --deadlock)");
     }
     if (where != null) {
-      try {
-        parsedWhere = new EventB(where);
-        if (parsedWhere.getKind() != EvalElementType.PREDICATE) {
-          throw usageError("--where must be a predicate, not " + parsedWhere.getKind());
-        }
-      } catch (EvaluationException e) {
-        throw usageError("invalid --where predicate: " + e.getMessage());
-      }
+      parsedWhere = Animate.parsePredicateOption(spec, where, "--where");
     }
   }
 
   private ParameterException usageError(String message) {
-    return new ParameterException(spec.commandLine(), "Error: " + message);
+    return Animate.usageError(spec, message);
   }
 
   private RunReport runCbc(StateSpace stateSpace) {
@@ -154,46 +176,13 @@ class CbcCommand implements Callable<Integer> {
       // solver queries, so one finding proves nothing about the others.
       parts.add(checkDeadlockFreedom(stateSpace));
     }
-    return merge(parts);
-  }
-
-  /**
-   * The combined run verdict: a found violation outranks an incomplete analysis (the definite
-   * verdict is the actionable one), which outranks a clean pass. The message is taken from the
-   * first part with the merged status; evidence (counterexample, saved trace) from the first part
-   * that carries it.
-   */
-  private static RunReport merge(List<RunReport> parts) {
-    if (parts.size() == 1) {
-      return parts.get(0);
+    if (feasibility) {
+      parts.add(checkFeasibility(stateSpace, machine));
     }
-    RunReport.Status status = RunReport.Status.OK;
-    for (RunReport part : parts) {
-      if (part.status() == RunReport.Status.VIOLATION) {
-        status = RunReport.Status.VIOLATION;
-        break;
-      }
-      if (part.status() == RunReport.Status.INCOMPLETE) {
-        status = RunReport.Status.INCOMPLETE;
-      }
+    if (redundantInvariants) {
+      parts.add(checkRedundantInvariants(stateSpace));
     }
-    String message = null;
-    TraceWriter.Counterexample counterexample = null;
-    Path traceFile = null;
-    List<RunReport.Check> checks = new ArrayList<>();
-    for (RunReport part : parts) {
-      if (message == null && part.status() == status) {
-        message = part.message();
-      }
-      if (counterexample == null) {
-        counterexample = part.counterexample();
-      }
-      if (traceFile == null) {
-        traceFile = part.traceFile();
-      }
-      checks.addAll(part.checks());
-    }
-    return new RunReport(status, message, checks, counterexample, traceFile, null);
+    return RunReport.merge(parts);
   }
 
   private RunReport checkDeadlockFreedom(StateSpace stateSpace) {
@@ -203,9 +192,7 @@ class CbcCommand implements Callable<Integer> {
       result = new CBCDeadlockChecker(stateSpace, parsedWhere).call();
     } catch (RuntimeException e) {
       logger.debug("Constraint-based deadlock check failed", e);
-      String message = "Constraint-based deadlock check did not complete: " + e.getMessage();
-      System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "deadlock", message);
+      return incomplete("deadlock", "Constraint-based deadlock check", e.getMessage());
     }
 
     if (result instanceof ModelCheckOk) {
@@ -234,9 +221,7 @@ class CbcCommand implements Callable<Integer> {
     }
 
     // CheckError or NotYetFinished (interrupted): nothing was proven.
-    String message = "Constraint-based deadlock check did not complete: " + result.getMessage();
-    System.err.println(message);
-    return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "deadlock", message);
+    return incomplete("deadlock", "Constraint-based deadlock check", result.getMessage());
   }
 
   private RunReport saveFirstTrace(RunReport report, Trace counterexample, StateSpace stateSpace) {
@@ -245,6 +230,122 @@ class CbcCommand implements Callable<Integer> {
     }
     traceSaved = true;
     return parent.withSavedTrace(report, counterexample, stateSpace, jsonTrace);
+  }
+
+  /** Prints and reports an analysis that produced no verdict. */
+  private static RunReport incomplete(String checkName, String what, String reason) {
+    String message = what + " did not complete: " + reason;
+    System.err.println(message);
+    return RunReport.singleCheck(RunReport.Status.INCOMPLETE, checkName, message);
+  }
+
+  private RunReport checkFeasibility(StateSpace stateSpace, EventBMachine machine) {
+    System.out.println("Feasibility check...");
+    List<String> infeasible = new ArrayList<>();
+    List<String> undecided = new ArrayList<>();
+    try {
+      // The kernel's FeasibilityAnalysis lumps solver timeouts in with proven-dead
+      // events; solve per event here so "no verdict" is never reported as "dead".
+      List<IEvalElement> invariants = Extraction.getInvariantPredicates(machine);
+      for (BEvent event : machine.getEvents()) {
+        List<IEvalElement> predicates = new ArrayList<>(invariants);
+        predicates.addAll(Extraction.getGuardPredicates(machine, event.getName()));
+        CbcSolveCommand solve =
+            new CbcSolveCommand(Join.conjunct(stateSpace.getModel(), predicates));
+        stateSpace.execute(solve);
+        String satisfiable =
+            solve.getValue() instanceof EvalResult result ? result.getValue() : null;
+        if ("FALSE".equals(satisfiable)) {
+          infeasible.add(event.getName());
+        } else if (!"TRUE".equals(satisfiable)) {
+          undecided.add(event.getName());
+        }
+      }
+    } catch (RuntimeException e) {
+      logger.debug("Feasibility check failed", e);
+      return incomplete("feasibility", "Feasibility check", e.getMessage());
+    }
+    String noVerdict =
+        undecided.isEmpty() ? null : "no solver verdict for " + String.join(", ", undecided);
+    if (noVerdict != null) {
+      System.out.println(
+          "Feasibility undecided (no solver verdict):\n\t - " + String.join("\n\t - ", undecided));
+    }
+    if (infeasible.isEmpty()) {
+      if (noVerdict != null && strict) {
+        // Under --strict a clean pass is a claim; an unanswered query cannot back it.
+        return incomplete("feasibility", "Feasibility check", noVerdict);
+      }
+      String message =
+          noVerdict == null
+              ? "Every event is feasible (each guard is satisfiable under the invariant)."
+              : "No infeasible event found (" + noVerdict + ").";
+      System.out.println(message);
+      return RunReport.singleCheck(RunReport.Status.OK, "feasibility", message);
+    }
+    return advisoryFinding(
+        "feasibility",
+        infeasible.size()
+            + " infeasible (dead) event"
+            + plural(infeasible.size())
+            + ": "
+            + String.join(", ", infeasible)
+            + (noVerdict == null ? "" : " (" + noVerdict + ")"),
+        "Infeasible (dead) events"
+            + advisoryNote()
+            + ":\n\t - "
+            + String.join("\n\t - ", infeasible));
+  }
+
+  private RunReport checkRedundantInvariants(StateSpace stateSpace) {
+    System.out.println("Redundant-invariant check...");
+    GetRedundantInvariantsCommand cmd = new GetRedundantInvariantsCommand();
+    try {
+      stateSpace.execute(cmd);
+    } catch (RuntimeException e) {
+      logger.debug("Redundant-invariant check failed", e);
+      return incomplete("redundant-invariants", "Redundant-invariant check", e.getMessage());
+    }
+    List<String> redundant = cmd.getRedundantInvariants();
+    String timeoutNote = cmd.isTimeout() ? " (solver timeout: the list may be incomplete)" : "";
+    if (redundant.isEmpty()) {
+      if (cmd.isTimeout() && strict) {
+        // Under --strict a clean pass is a claim; a timed-out solver cannot back it.
+        return incomplete("redundant-invariants", "Redundant-invariant check", "solver timeout");
+      }
+      String message = "No invariant is implied by the others" + timeoutNote + ".";
+      System.out.println(message);
+      return RunReport.singleCheck(RunReport.Status.OK, "redundant-invariants", message);
+    }
+    return advisoryFinding(
+        "redundant-invariants",
+        redundant.size()
+            + " redundant invariant"
+            + plural(redundant.size())
+            + " implied by the others"
+            + timeoutNote
+            + ": "
+            + String.join(", ", redundant),
+        "Redundant invariants"
+            + advisoryNote()
+            + timeoutNote
+            + ":\n\t - "
+            + String.join("\n\t - ", redundant));
+  }
+
+  /** Advisory findings inform by default and only fail the run under --strict. */
+  private RunReport advisoryFinding(String checkName, String message, String listing) {
+    if (strict) {
+      System.out.println(listing);
+      System.err.println("Error: " + message);
+      return RunReport.singleCheck(RunReport.Status.VIOLATION, checkName, message);
+    }
+    System.out.println(listing);
+    return RunReport.singleCheck(RunReport.Status.OK, checkName, message + advisoryNote());
+  }
+
+  private String advisoryNote() {
+    return strict ? "" : " (advisory; use --strict to fail)";
   }
 
   /**
@@ -262,8 +363,20 @@ class CbcCommand implements Callable<Integer> {
   }
 
   private RunReport checkInvariantPreservation(StateSpace stateSpace, List<String> scope) {
+    if (scope.isEmpty()) {
+      // The kernel command treats an empty event list as "all", so never pass one on.
+      String message =
+          "No events to check: the machine only has INITIALISATION, whose establishment"
+              + " obligation is covered by model checking.";
+      System.out.println(message);
+      return RunReport.singleCheck(RunReport.Status.OK, "invariant", message);
+    }
     System.out.println(
-        "Constraint-based invariant check (" + scope.size() + " event" + plural(scope) + ")...");
+        "Constraint-based invariant check ("
+            + scope.size()
+            + " event"
+            + plural(scope.size())
+            + ")...");
     IModelCheckingResult result;
     try {
       result = new CBCInvariantChecker(stateSpace, scope, null).call();
@@ -293,7 +406,7 @@ class CbcCommand implements Callable<Integer> {
           "invariant preservation fails for "
               + violating.size()
               + " event"
-              + (violating.size() == 1 ? "" : "s")
+              + plural(violating.size())
               + ": "
               + String.join(", ", violating);
       System.err.println("Error: " + message);
@@ -340,7 +453,7 @@ class CbcCommand implements Callable<Integer> {
     return checks;
   }
 
-  private static String plural(List<String> items) {
-    return items.size() == 1 ? "" : "s";
+  private static String plural(int count) {
+    return count == 1 ? "" : "s";
   }
 }

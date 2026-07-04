@@ -4,7 +4,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -16,8 +15,6 @@ import org.junit.Test;
  * while reset always preserves it.
  */
 public class CbcCommandTest {
-
-  private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private static final String COUNTER_M0 =
       Paths.get("src/test/resources/models/counter/M0.bum").toString();
@@ -140,11 +137,61 @@ public class CbcCommandTest {
   }
 
   @Test(timeout = 120000)
+  public void testFeasibilityReportsDeadEventsAsAdvisory() {
+    // gate: never is guarded by y > 5, unsatisfiable under the invariant y <= 2.
+    TestCli.Result result = TestCli.execute("cbc", "--no-invariant", "--feasibility", GATE_M0);
+
+    assertEquals("Advisory findings keep exit 0:\n" + result.output(), 0, result.exitCode());
+    assertTrue(
+        "The dead event should be listed with the advisory note:\n" + result.output(),
+        result
+            .output()
+            .contains("Infeasible (dead) events (advisory; use --strict to fail):\n\t - never"));
+  }
+
+  @Test(timeout = 120000)
+  public void testStrictEscalatesAdvisoryFindings() {
+    TestCli.Result result =
+        TestCli.execute("cbc", "--no-invariant", "--feasibility", "--strict", GATE_M0);
+
+    assertEquals(
+        "--strict turns findings into failures:\n" + result.output(), 1, result.exitCode());
+    assertTrue(
+        "The finding should be an error under --strict:\n" + result.output(),
+        result.output().contains("Error: 1 infeasible (dead) event: never"));
+  }
+
+  @Test(timeout = 120000)
+  public void testRedundantInvariantsAreReported() {
+    // gate: inv3 (y <= 5) is implied by inv2 (y <= 2).
+    TestCli.Result result =
+        TestCli.execute("cbc", "--no-invariant", "--redundant-invariants", GATE_M0);
+
+    assertEquals("Advisory findings keep exit 0:\n" + result.output(), 0, result.exitCode());
+    assertTrue(
+        "The implied invariant should be listed:\n" + result.output(),
+        result.output().contains("y <= 5"));
+  }
+
+  @Test
+  public void testStrictWithoutAdvisoriesIsAUsageError() {
+    TestCli.Result result = TestCli.execute("cbc", "--strict", GATE_M0);
+
+    assertEquals(
+        "--strict without advisory checks is a usage error:\n" + result.output(),
+        2,
+        result.exitCode());
+    assertTrue(
+        "The error should name the advisory flags:\n" + result.output(),
+        result.output().contains("--strict has nothing to escalate"));
+  }
+
+  @Test(timeout = 120000)
   public void testJsonReportCarriesPerEventChecks() throws Exception {
     TestCli.SplitResult result = TestCli.executeSplit("cbc", "--json", "-", COUNTER_M0);
 
     assertEquals(1, result.exitCode());
-    JsonNode root = MAPPER.readTree(result.stdout());
+    JsonNode root = TestCli.parseJson(result.stdout());
     assertEquals("cbc", root.get("command").asText());
     assertEquals("violation", root.get("status").asText());
     assertEquals(2, root.get("checks").size());
