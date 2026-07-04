@@ -16,6 +16,13 @@ https://github.com/17451k/eventb-models
   preserves the invariant
 - Models: M0.bum
 
+### Gate (`gate/`)
+- Hand-written fixture (no Rodin proof files) whose single event `step` is
+  guarded by `y < 2` while the invariant allows `y ≤ 2`: the state `y = 2`
+  satisfies the invariant and deadlocks, so the constraint-based deadlock
+  search has a deterministic hit
+- Models: M0.bum
+
 ### Binary Search (`binary-search/`)
 - Implementation of the binary search algorithm
 - Models: M0.bum, M1.bum, M2.bum, M3.bum (refinement chain)

@@ -21,6 +21,8 @@ public class CbcCommandTest {
 
   private static final String COUNTER_M0 =
       Paths.get("src/test/resources/models/counter/M0.bum").toString();
+  private static final String GATE_M0 =
+      Paths.get("src/test/resources/models/gate/M0.bum").toString();
 
   @Test(timeout = 120000)
   public void testNonInductiveInvariantIsAViolation() {
@@ -79,6 +81,62 @@ public class CbcCommandTest {
     } finally {
       Files.deleteIfExists(trace);
     }
+  }
+
+  @Test(timeout = 120000)
+  public void testDeadlockSearchFindsTheStuckState() {
+    // gate: step is guarded by y < 2, so y = 2 satisfies the invariant and deadlocks.
+    TestCli.Result result = TestCli.execute("cbc", "--deadlock", GATE_M0);
+
+    assertEquals("A found deadlock is a violation:\n" + result.output(), 1, result.exitCode());
+    assertTrue(
+        "The invariant part of the run stays clean:\n" + result.output(),
+        result.output().contains("No event can violate the invariant"));
+    assertTrue(
+        "The deadlock should be reported with its caveat:\n" + result.output(),
+        result
+            .output()
+            .contains(
+                "Error: a deadlocking state satisfying the invariant was found"
+                    + " (it may be unreachable)."));
+    assertTrue(
+        "The deadlocking state should be printed:\n" + result.output(),
+        result.output().contains("y=2"));
+  }
+
+  @Test(timeout = 120000)
+  public void testWhereRestrictsTheDeadlockSearch() {
+    TestCli.Result result = TestCli.execute("cbc", "--deadlock", "--where", "y < 2", GATE_M0);
+
+    assertEquals(
+        "No deadlock exists among the y < 2 states:\n" + result.output(), 0, result.exitCode());
+    assertTrue(
+        "The pass should mention the restriction:\n" + result.output(),
+        result
+            .output()
+            .contains("No deadlocking state satisfies the invariant and the --where predicate."));
+  }
+
+  @Test
+  public void testWhereWithoutDeadlockIsAUsageError() {
+    TestCli.Result result = TestCli.execute("cbc", "--where", "y < 2", GATE_M0);
+
+    assertEquals(
+        "--where without --deadlock is a usage error:\n" + result.output(), 2, result.exitCode());
+    assertTrue(
+        "The error should point at --deadlock:\n" + result.output(),
+        result.output().contains("--where only restricts the --deadlock search"));
+  }
+
+  @Test
+  public void testNoInvariantAloneIsAUsageError() {
+    TestCli.Result result = TestCli.execute("cbc", "--no-invariant", GATE_M0);
+
+    assertEquals(
+        "Disabling the only check is a usage error:\n" + result.output(), 2, result.exitCode());
+    assertTrue(
+        "The error should say there is nothing to check:\n" + result.output(),
+        result.output().contains("nothing to check"));
   }
 
   @Test(timeout = 120000)
