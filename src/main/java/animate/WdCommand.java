@@ -19,30 +19,31 @@ class WdCommand implements Callable<Integer> {
 
   @Override
   public Integer call() {
-    return parent.withStateSpace(this::checkWellDefinedness);
+    return parent.finishRun(parent.withStateSpace(this::checkWellDefinedness));
   }
 
-  private int checkWellDefinedness(StateSpace stateSpace) {
+  private RunReport checkWellDefinedness(StateSpace stateSpace) {
     CheckWellDefinednessCommand cmd = new CheckWellDefinednessCommand();
     try {
       stateSpace.execute(cmd);
     } catch (RuntimeException e) {
       // A ProB failure is a non-verdict (exit 2), not the exit-1 "obligations
       // not discharged" outcome the README documents.
-      System.err.println("Well-definedness check did not complete: " + e.getMessage());
-      return 2;
+      String message = "Well-definedness check did not complete: " + e.getMessage();
+      System.err.println(message);
+      return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "well-definedness", message);
     }
     BigInteger discharged = cmd.getDischargedCount();
     BigInteger total = cmd.getTotalCount();
 
-    System.out.println("WD proof obligations: " + discharged + " discharged / " + total + " total");
+    String summary = "WD proof obligations: " + discharged + " discharged / " + total + " total";
+    System.out.println(summary);
     if (discharged.equals(total)) {
-      return 0;
+      return RunReport.singleCheck(RunReport.Status.OK, "well-definedness", summary);
     }
-    System.err.println(
-        "Error: "
-            + total.subtract(discharged)
-            + " well-definedness proof obligation(s) not discharged");
-    return 1;
+    String message =
+        total.subtract(discharged) + " well-definedness proof obligation(s) not discharged";
+    System.err.println("Error: " + message);
+    return RunReport.singleCheck(RunReport.Status.VIOLATION, "well-definedness", message);
   }
 }

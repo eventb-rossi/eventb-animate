@@ -26,6 +26,9 @@ public class ReplayCommandTest {
           1,
           saveResult.exitCode());
       assertTrue("Counterexample trace should be written", Files.size(traceFile) > 0);
+      assertTrue(
+          "The save confirmation must stay visible without --debug:\n" + saveResult.output(),
+          saveResult.output().contains("Saving counterexample trace to"));
 
       TestCli.Result replayResult =
           TestCli.execute("replay", "-t", traceFile.toString(), model.toString());
@@ -41,9 +44,17 @@ public class ReplayCommandTest {
 
   @Test
   public void testReplayExitCodesFollowStatus() {
-    assertEquals(0, ReplayCommand.exitCodeFor(replayedTrace(TraceReplayStatus.PERFECT)));
-    assertEquals(1, ReplayCommand.exitCodeFor(replayedTrace(TraceReplayStatus.PARTIAL)));
-    assertEquals(1, ReplayCommand.exitCodeFor(replayedTrace(TraceReplayStatus.IMPERFECT)));
+    RunReport perfect = ReplayCommand.reportFor(replayedTrace(TraceReplayStatus.PERFECT));
+    assertEquals(RunReport.Status.OK, perfect.status());
+    assertEquals(0, perfect.exitCode());
+
+    RunReport partial = ReplayCommand.reportFor(replayedTrace(TraceReplayStatus.PARTIAL));
+    assertEquals(RunReport.Status.VIOLATION, partial.status());
+    assertEquals(1, partial.exitCode());
+
+    RunReport imperfect = ReplayCommand.reportFor(replayedTrace(TraceReplayStatus.IMPERFECT));
+    assertEquals(RunReport.Status.VIOLATION, imperfect.status());
+    assertEquals(1, imperfect.exitCode());
   }
 
   private static ReplayedTrace replayedTrace(TraceReplayStatus status) {
