@@ -10,7 +10,6 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
-import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import org.slf4j.LoggerFactory;
@@ -288,7 +287,7 @@ class ModelResolver {
 
     DocumentBuilderFactory factory;
     try {
-      factory = newDocumentBuilderFactory();
+      factory = SecureXml.documentBuilderFactory();
     } catch (ParserConfigurationException e) {
       throw new IOException("Failed to configure XML parser", e);
     }
@@ -330,18 +329,6 @@ class ModelResolver {
     }
 
     return pathByName.get(leaves.get(0));
-  }
-
-  private DocumentBuilderFactory newDocumentBuilderFactory() throws ParserConfigurationException {
-    DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-    factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
-    factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-    factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-    factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-    factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
-    factory.setXIncludeAware(false);
-    factory.setExpandEntityReferences(false);
-    return factory;
   }
 
   private String machineFileName(Path bumFile) {

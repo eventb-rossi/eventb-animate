@@ -1,19 +1,27 @@
 package animate;
 
+import de.prob.animator.command.StartAnimationCommand;
 import de.prob.model.eventb.Context;
 import de.prob.model.eventb.EventBMachine;
 import de.prob.model.eventb.EventBModel;
 import de.prob.model.eventb.ProofObligation;
+import de.prob.statespace.StateSpace;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
+import picocli.CommandLine.Spec;
 
 @Command(
     name = "po",
@@ -52,15 +60,59 @@ class PoCommand implements Callable<Integer> {
       description = "list every obligation with its status, not only the failing ones")
   boolean verbose;
 
+  @Option(
+      names = "--disprove",
+      description =
+          "run ProB's constraint solver on each obligation that is not discharged, looking"
+              + " for a counterexample to its sequent; a found counterexample is a definite"
+              + " failure (exit 1)")
+  boolean disprove;
+
+  @Option(
+      names = "--disprove-timeout",
+      paramLabel = "ms",
+      defaultValue = "1000",
+      description = "per-obligation solver time limit for --disprove (default: ${DEFAULT-VALUE})")
+  int disproveTimeoutMs;
+
+  @Spec CommandSpec spec;
+
   @Override
   public Integer call() {
-    return parent.finishRun(parent.withExtractedModel(this::checkProofObligations));
+    validatePoOptions();
+    if (disprove) {
+      // The solver setup mirrors the Rodin disprover's: double-check counterexamples
+      // against all hypotheses, and enable CHR for stronger propagation.
+      parent.commandPrefs.put("DOUBLE_EVALUATION", "true");
+      parent.commandPrefs.put("CHR", "true");
+      return parent.finishRun(
+          parent.withStateSpace(
+              stateSpace ->
+                  checkProofObligations((EventBModel) stateSpace.getModel(), stateSpace)));
+    }
+    return parent.finishRun(parent.withExtractedModel(model -> checkProofObligations(model, null)));
+  }
+
+  private void validatePoOptions() {
+    if (!disprove && spec.commandLine().getParseResult().hasMatchedOption("--disprove-timeout")) {
+      throw Animate.usageError(spec, "--disprove-timeout only tunes --disprove (add --disprove)");
+    }
+    if (disproveTimeoutMs <= 0) {
+      throw Animate.usageError(
+          spec,
+          "--disprove-timeout must be a positive number of milliseconds, got: "
+              + disproveTimeoutMs);
+    }
   }
 
   /** One obligation with its component-qualified name, e.g. "M1/INITIALISATION/inv4/INV". */
-  private record QualifiedPo(String name, ProofObligation po) {}
+  private record QualifiedPo(String component, ProofObligation po) {
+    String name() {
+      return component + "/" + po.getName();
+    }
+  }
 
-  private RunReport checkProofObligations(EventBModel model) {
+  private RunReport checkProofObligations(EventBModel model, StateSpace disproverSession) {
     List<String> missingProofFiles = missingProofFiles(model);
     if (!missingProofFiles.isEmpty()) {
       // Rodin writes one .bpo per component, even when it holds no obligations. A
@@ -108,6 +160,7 @@ class PoCommand implements Callable<Integer> {
     List<RunReport.Check> checks = new ArrayList<>(kept.size());
     List<String> reviewedOpen = new ArrayList<>();
     List<String> undischarged = new ArrayList<>();
+    List<OpenPo> openPos = new ArrayList<>();
     int discharged = 0;
     int reviewed = 0;
     for (QualifiedPo qualified : kept) {
@@ -131,12 +184,18 @@ class PoCommand implements Callable<Integer> {
                   RunReport.Outcome.FAILED,
                   withDescription(
                       "reviewed, not proven (rerun with --allow-reviewed to accept)", po)));
+          if (disproverSession != null) {
+            openPos.add(new OpenPo(qualified, checks.size() - 1));
+          }
         }
       } else {
         undischarged.add(qualified.name());
         checks.add(
             new RunReport.Check(
                 qualified.name(), RunReport.Outcome.FAILED, withDescription("undischarged", po)));
+        if (disproverSession != null) {
+          openPos.add(new OpenPo(qualified, checks.size() - 1));
+        }
       }
     }
 
@@ -147,35 +206,184 @@ class PoCommand implements Callable<Integer> {
     }
     printSummary(kept.size(), discharged, reviewed, undischarged.size(), all.size() - kept.size());
 
-    int open = reviewedOpen.size() + undischarged.size();
-    if (open == 0) {
+    // The disprover refines each open obligation's check in place: a counterexample is
+    // a definite failure, a solver proof passes the gate, everything else stays open.
+    int disproved = 0;
+    int solverProved = 0;
+    if (disproverSession != null && !openPos.isEmpty()) {
+      System.out.println(
+          "Disproving "
+              + openPos.size()
+              + " open obligation(s) (timeout "
+              + disproveTimeoutMs
+              + " ms each)...");
+      Map<String, PoSequentParser> sequentCache = new HashMap<>();
+      for (OpenPo open : openPos) {
+        QualifiedPo qualified = open.po();
+        DisproveOutcome outcome = attemptDisproof(qualified, sequentCache, disproverSession);
+        System.out.println("\t - " + qualified.name() + ": " + outcome.message());
+        checks.set(
+            open.checkIndex(),
+            new RunReport.Check(qualified.name(), outcome.outcome(), outcome.message()));
+        if (outcome.disproved()) {
+          disproved++;
+        } else if (outcome.outcome() == RunReport.Outcome.PASSED) {
+          solverProved++;
+        }
+      }
+    }
+
+    if (disproved > 0) {
       String message =
-          reviewed == 0
-              ? "All proof obligations are discharged."
-              : "All proof obligations are discharged or reviewed.";
+          disproved
+              + " of "
+              + kept.size()
+              + " proof obligations are disproved (counterexample"
+              + " found)";
+      System.err.println("Error: " + message);
+      return RunReport.of(RunReport.Status.VIOLATION, message, checks);
+    }
+    long stillOpen =
+        checks.stream().filter(check -> check.outcome() != RunReport.Outcome.PASSED).count();
+    if (stillOpen == 0) {
+      String message;
+      if (solverProved > 0) {
+        message = "All proof obligations are discharged, reviewed, or proven by the solver.";
+      } else if (reviewed > 0) {
+        message = "All proof obligations are discharged or reviewed.";
+      } else {
+        message = "All proof obligations are discharged.";
+      }
       System.out.println(message);
       return RunReport.of(RunReport.Status.OK, message, checks);
     }
-    if (!reviewedOpen.isEmpty()) {
-      System.err.println(
-          "Reviewed (not proven; rerun with --allow-reviewed to accept):\n\t - "
-              + String.join("\n\t - ", reviewedOpen));
+    if (disproverSession == null) {
+      // Without the disprover's per-obligation lines above, group the open ones here.
+      if (!reviewedOpen.isEmpty()) {
+        System.err.println(
+            "Reviewed (not proven; rerun with --allow-reviewed to accept):\n\t - "
+                + String.join("\n\t - ", reviewedOpen));
+      }
+      if (!undischarged.isEmpty()) {
+        System.err.println("Undischarged:\n\t - " + String.join("\n\t - ", undischarged));
+      }
     }
-    if (!undischarged.isEmpty()) {
-      System.err.println("Undischarged:\n\t - " + String.join("\n\t - ", undischarged));
-    }
-    String message = open + " of " + kept.size() + " proof obligations are not discharged";
+    String message = stillOpen + " of " + kept.size() + " proof obligations are not discharged";
     System.err.println("Error: " + message);
     // Open obligations are unproven, not disproven: the no-verdict exit (2), like wd.
     return RunReport.of(RunReport.Status.INCOMPLETE, message, checks);
   }
 
+  /** An open obligation queued for the disprover, with its slot in the checks list. */
+  private record OpenPo(QualifiedPo po, int checkIndex) {}
+
+  /** What one disprover run means for the obligation's check and the run verdict. */
+  private record DisproveOutcome(RunReport.Outcome outcome, String message, boolean disproved) {}
+
+  private DisproveOutcome attemptDisproof(
+      QualifiedPo qualified, Map<String, PoSequentParser> sequentCache, StateSpace session) {
+    PoSequentParser.Sequent sequent;
+    try {
+      PoSequentParser sequents = sequentCache.get(qualified.component());
+      if (sequents == null) {
+        sequents =
+            PoSequentParser.parse(projectDirectory().resolve(qualified.component() + ".bpo"));
+        sequentCache.put(qualified.component(), sequents);
+      }
+      sequent = sequents.sequent(qualified.po().getName());
+    } catch (IOException | RuntimeException e) {
+      // The parser raises unchecked exceptions on malformed references; like a solver
+      // failure below, a broken .bpo must not abort the gate for the other components.
+      return new DisproveOutcome(
+          RunReport.Outcome.ERROR, "solver error: " + solverErrorSummary(e.getMessage()), false);
+    }
+    if (sequent == null || sequent.goal() == null) {
+      return new DisproveOutcome(
+          RunReport.Outcome.ERROR,
+          "solver error: no sequent for this obligation in " + qualified.component() + ".bpo",
+          false);
+    }
+    try {
+      session.execute(new ClearLoadedMachinesCommand());
+      session.execute(new DisproverContextLoadCommand(sequent));
+      session.execute(new StartAnimationCommand());
+      DisproveCommand command = new DisproveCommand(sequent, disproveTimeoutMs);
+      session.execute(command);
+      return classify(command);
+    } catch (RuntimeException e) {
+      // One obligation's solver failure (a heavy sequent, a formula the parser cannot
+      // handle) must not abort the gate; the run continues with the next obligation.
+      return new DisproveOutcome(
+          RunReport.Outcome.ERROR, "solver error: " + solverErrorSummary(e.getMessage()), false);
+    }
+  }
+
+  private DisproveOutcome classify(DisproveCommand command) {
+    String detail = command.getDetail();
+    return switch (command.getVerdict()) {
+      case DISPROVED ->
+          new DisproveOutcome(
+              RunReport.Outcome.FAILED,
+              "disproved" + (detail.isEmpty() ? "" : " (counterexample: " + detail + ")"),
+              true);
+      case DISPROVED_ON_SELECTED ->
+          new DisproveOutcome(
+              RunReport.Outcome.FAILED,
+              "counterexample under the selected hypotheses only (may be spurious)"
+                  + (detail.isEmpty() ? "" : ": " + detail),
+              false);
+      case PROVED ->
+          new DisproveOutcome(
+              RunReport.Outcome.PASSED,
+              "proven by the constraint solver (not recorded in the Rodin proof status)",
+              false);
+      case CONTRADICTORY_HYPOTHESES ->
+          new DisproveOutcome(
+              RunReport.Outcome.PASSED,
+              "hypotheses are contradictory: the obligation holds vacuously; check the model",
+              false);
+      case TIMEOUT ->
+          new DisproveOutcome(
+              RunReport.Outcome.FAILED,
+              "no counterexample found (solver timeout after " + disproveTimeoutMs + " ms)",
+              false);
+      case NO_SOLUTION_FOUND ->
+          new DisproveOutcome(
+              RunReport.Outcome.FAILED, "no counterexample found (" + detail + ")", false);
+      case INTERRUPTED ->
+          new DisproveOutcome(RunReport.Outcome.ERROR, "the solver run was interrupted", false);
+    };
+  }
+
+  /** ProBError messages open with boilerplate; surface the first informative line, shortened. */
+  private static String solverErrorSummary(String message) {
+    if (message == null || message.isBlank()) {
+      return "unknown error";
+    }
+    for (String line : message.split("\n")) {
+      String trimmed = line.trim();
+      if (trimmed.isEmpty()
+          || "Prolog said no.".equals(trimmed)
+          || "ProB returned error messages:".equals(trimmed)) {
+        continue;
+      }
+      return trimmed.length() > 160 ? trimmed.substring(0, 157) + "..." : trimmed;
+    }
+    return "unknown error";
+  }
+
   /** The chain's components whose .bpo file is absent next to the resolved model file. */
   private List<String> missingProofFiles(EventBModel model) {
-    Path projectDir = parent.resolvedModelPath().toAbsolutePath().getParent();
+    Path projectDir = projectDirectory();
     return componentNames(model).stream()
         .filter(name -> !Files.exists(projectDir.resolve(name + ".bpo")))
         .toList();
+  }
+
+  /** The resolved component file's directory; its siblings are the Rodin project files. */
+  private Path projectDirectory() {
+    // The resolver always returns a component file, never a filesystem root.
+    return Objects.requireNonNull(parent.resolvedModelPath().toAbsolutePath().getParent());
   }
 
   private static List<String> componentNames(EventBModel model) {
@@ -193,12 +401,12 @@ class PoCommand implements Callable<Integer> {
     List<QualifiedPo> obligations = new ArrayList<>();
     for (EventBMachine machine : model.getMachines()) {
       for (ProofObligation po : machine.getProofs()) {
-        obligations.add(new QualifiedPo(machine.getName() + "/" + po.getName(), po));
+        obligations.add(new QualifiedPo(machine.getName(), po));
       }
     }
     for (Context context : model.getContexts()) {
       for (ProofObligation po : context.getProofs()) {
-        obligations.add(new QualifiedPo(context.getName() + "/" + po.getName(), po));
+        obligations.add(new QualifiedPo(context.getName(), po));
       }
     }
     return obligations;

@@ -146,8 +146,9 @@ machine name is unique across all projects.
 - `1` - a definite negative verdict or an input failure: the model could not
   be loaded, an invariant or assertion was violated, a deadlock was reached (a
   state with no enabled events, including legitimate terminal states), a
-  `--goal` state was found, an LTL counterexample was found, a trace replay
-  was not perfect (`replay`), or a conversion failed (`convert`)
+  `--goal` state was found, an LTL counterexample was found, a proof
+  obligation was disproved (`po --disprove`), a trace replay was not perfect
+  (`replay`), or a conversion failed (`convert`)
 - `2` - no verdict: nothing was proven either way. The check could not
   complete (interrupted or a ProB error), a bounded LTL run hit the
   `--states` limit, a proof obligation remains undischarged (`wd`, `po` --
@@ -255,6 +256,13 @@ Options:
   nothing fails the gate
 - `-v, --verbose` - List every obligation with its status, not only the
   failing ones
+- `--disprove` - Run ProB's constraint solver on each open obligation,
+  looking for a counterexample to its sequent (this starts ProB). A found
+  counterexample is a definite failure (exit 1); an obligation the solver
+  proves passes the gate with a note; a timeout or solver failure keeps it
+  open (exit 2)
+- `--disprove-timeout <ms>` - Per-obligation solver time limit for
+  `--disprove` (default: 1000)
 
 #### Constraint-Based Invariant Check
 
@@ -332,7 +340,7 @@ a legitimate terminal state) as a failure.
 |-------|-------------|----------|---------|
 | `model-path` | Path to model `.bum`, `.zip`, or directory | Yes | — |
 | `command` | Subcommand: `check` (model-check), `replay`, `wd`, `po`, or `cbc` | No | `check` |
-| `size` | Default size for ProB sets (check, wd, cbc) | No | — |
+| `size` | Default size for ProB sets (check, wd, cbc, po --disprove) | No | — |
 | `states` | Bound model-checking to N states; omit for exhaustive (check) | No | — |
 | `save` | Save the counterexample trace to JSON when a violation is found (check, cbc) | No | — |
 | `json-report` | Write a machine-readable JSON report of the run to this path | No | — |
@@ -404,7 +412,7 @@ animate-model:
 |----------|-------------|---------|
 | `EVENTB_ANIMATE_MODEL_PATH` | Path to model `.bum`, `.zip`, or directory (required) | `''` |
 | `EVENTB_ANIMATE_COMMAND` | Subcommand: `check` (model-check), `replay`, `wd`, `po`, or `cbc` | `check` |
-| `EVENTB_ANIMATE_SIZE` | Default size for ProB sets (check, wd, cbc) | `''` |
+| `EVENTB_ANIMATE_SIZE` | Default size for ProB sets (check, wd, cbc, po --disprove) | `''` |
 | `EVENTB_ANIMATE_STATES` | Bound model-checking to N states; omit for exhaustive (check) | `''` |
 | `EVENTB_ANIMATE_SAVE` | Save the counterexample trace to JSON when a violation is found (check, cbc) | `''` |
 | `EVENTB_ANIMATE_JSON` | Write a machine-readable JSON report of the run to this path | `''` |
