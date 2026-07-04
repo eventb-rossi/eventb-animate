@@ -331,10 +331,10 @@ a legitimate terminal state) as a failure.
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `model-path` | Path to model `.bum`, `.zip`, or directory | Yes | — |
-| `command` | Subcommand: `check` (model-check) or `replay` | No | `check` |
-| `size` | Default size for ProB sets (check) | No | — |
+| `command` | Subcommand: `check` (model-check), `replay`, `wd`, `po`, or `cbc` | No | `check` |
+| `size` | Default size for ProB sets (check, wd, cbc) | No | — |
 | `states` | Bound model-checking to N states; omit for exhaustive (check) | No | — |
-| `save` | Save the counterexample trace to JSON when a violation is found (check) | No | — |
+| `save` | Save the counterexample trace to JSON when a violation is found (check, cbc) | No | — |
 | `json-report` | Write a machine-readable JSON report of the run to this path | No | — |
 | `junit-report` | Write a JUnit XML report to this path (one testcase per checked property) | No | — |
 | `trace` | Path to JSON trace file (replay, required) | No | — |
@@ -357,6 +357,13 @@ a legitimate terminal state) as a failure.
     model-path: 'models/system.bum'
     command: 'replay'
     trace: 'tests/trace.json'
+
+# Gate on the Rodin proof status (extra flags go through args)
+- uses: eventb-rossi/eventb-animate@v5.1
+  with:
+    model-path: 'models/system.zip'
+    command: 'po'
+    args: '--allow-reviewed'
 
 # Pin to a specific release
 - uses: eventb-rossi/eventb-animate@v5.1
@@ -396,10 +403,10 @@ animate-model:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `EVENTB_ANIMATE_MODEL_PATH` | Path to model `.bum`, `.zip`, or directory (required) | `''` |
-| `EVENTB_ANIMATE_COMMAND` | Subcommand: `check` (model-check) or `replay` | `check` |
-| `EVENTB_ANIMATE_SIZE` | Default size for ProB sets (check) | `''` |
+| `EVENTB_ANIMATE_COMMAND` | Subcommand: `check` (model-check), `replay`, `wd`, `po`, or `cbc` | `check` |
+| `EVENTB_ANIMATE_SIZE` | Default size for ProB sets (check, wd, cbc) | `''` |
 | `EVENTB_ANIMATE_STATES` | Bound model-checking to N states; omit for exhaustive (check) | `''` |
-| `EVENTB_ANIMATE_SAVE` | Save the counterexample trace to JSON when a violation is found (check) | `''` |
+| `EVENTB_ANIMATE_SAVE` | Save the counterexample trace to JSON when a violation is found (check, cbc) | `''` |
 | `EVENTB_ANIMATE_JSON` | Write a machine-readable JSON report of the run to this path | `''` |
 | `EVENTB_ANIMATE_JUNIT` | Write a JUnit XML report to this path (one testcase per checked property) | `''` |
 | `EVENTB_ANIMATE_TRACE` | Path to JSON trace file (replay, required) | `''` |
