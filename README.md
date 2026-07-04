@@ -146,12 +146,13 @@ machine name is unique across all projects.
 - `1` - a definite negative verdict or an input failure: the model could not
   be loaded, an invariant or assertion was violated, a deadlock was reached (a
   state with no enabled events, including legitimate terminal states), a
-  `--goal` state was found, an LTL counterexample was found, a WD obligation
-  is undischarged (`wd`), a trace replay was not perfect (`replay`), or a
-  conversion failed (`convert`)
-- `2` - no verdict: the check could not complete (interrupted or a ProB
-  error), a bounded LTL run hit the `--states` limit, or the command line was
-  invalid (usage errors, including unparseable `--goal`/`--ltl` formulas)
+  `--goal` state was found, an LTL counterexample was found, a trace replay
+  was not perfect (`replay`), or a conversion failed (`convert`)
+- `2` - no verdict: nothing was proven either way. The check could not
+  complete (interrupted or a ProB error), a bounded LTL run hit the
+  `--states` limit, a WD proof obligation remains undischarged (`wd` -- open
+  means unproven, not disproven), or the command line was invalid (usage
+  errors, including unparseable `--goal`/`--ltl` formulas)
 
 If a requested `--json`/`--junit` report cannot be written, an otherwise clean
 run exits 1: the report is the artifact CI asked for, so its absence must fail
@@ -221,9 +222,9 @@ eventb-animate wd path/to/model.bum
 ```
 
 Checks the model's well-definedness proof obligations with ProB's WD prover
-and prints `X discharged / Y total`. Exits non-zero when any obligation
-remains undischarged (a possible WD problem, such as a partial-function
-application outside its domain or a division by zero).
+and prints `X discharged / Y total`. Exits 2 when any obligation remains
+undischarged (a possible WD problem, such as a partial-function application
+outside its domain or a division by zero -- unproven, though not shown wrong).
 
 #### Convert to Classical B
 

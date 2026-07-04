@@ -27,8 +27,8 @@ class WdCommand implements Callable<Integer> {
     try {
       stateSpace.execute(cmd);
     } catch (RuntimeException e) {
-      // A ProB failure is a non-verdict (exit 2), not the exit-1 "obligations
-      // not discharged" outcome the README documents.
+      // A ProB failure mid-check is a non-verdict with an errored check, distinct
+      // from the failed "not discharged" finding below.
       String message = "Well-definedness check did not complete: " + e.getMessage();
       System.err.println(message);
       return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "well-definedness", message);
@@ -44,6 +44,7 @@ class WdCommand implements Callable<Integer> {
     String message =
         total.subtract(discharged) + " well-definedness proof obligation(s) not discharged";
     System.err.println("Error: " + message);
-    return RunReport.singleCheck(RunReport.Status.VIOLATION, "well-definedness", message);
+    // Undischarged means unproven, not disproven -- exit 2, reserving exit 1 for disproofs.
+    return RunReport.openFinding("well-definedness", message);
   }
 }
