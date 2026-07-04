@@ -28,10 +28,13 @@ import de.prob.check.tracereplay.json.TraceManager;
 import de.prob.scripting.Api;
 import de.prob.statespace.*;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.MalformedInputException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
@@ -78,7 +81,8 @@ public class Animate implements Callable<Integer> {
   private String loadErrorMessage;
   private EventB parsedGoal;
 
-  // The last finished run's findings, for tests to assert on via TestCli.Result.command().
+  // The last finished run's findings, consumed by the report emission in executeRun
+  // and by tests via TestCli.Result.command().
   RunReport lastReport;
 
   @Spec CommandSpec spec;
@@ -217,6 +221,15 @@ public class Animate implements Callable<Integer> {
       paramLabel = "trace.json",
       description = "save the counterexample trace in json to a file (when a violation is found)")
   Path jsonTrace;
+
+  @Option(
+      names = "--json",
+      paramLabel = "<file|->",
+      description =
+          "write a machine-readable JSON report of the run; '-' writes the report to stdout"
+              + " and moves all other output to stderr",
+      scope = ScopeType.INHERIT)
+  Path jsonReport;
 
   @Option(
       names = "--debug",
@@ -439,6 +452,138 @@ public class Animate implements Callable<Integer> {
   int finishRun(RunReport report) {
     lastReport = report;
     return report.exitCode();
+  }
+
+  private boolean jsonToStdout() {
+    return jsonReport != null && "-".equals(jsonReport.toString());
+  }
+
+  /** The subcommand that ran, with the root's default action reported as "check". */
+  private String executedCommandName(CommandLine.ParseResult parseResult) {
+    while (parseResult.hasSubcommand()) {
+      parseResult = parseResult.subcommand();
+    }
+    String name = parseResult.commandSpec().name();
+    return spec.name().equals(name) ? "check" : name;
+  }
+
+  /**
+   * Cross-cutting run wiring that must surround every command: report option validation, the wall
+   * clock, the --json - stdout diversion (with its guaranteed restore), and report emission.
+   * Emission lives here rather than in the commands so a future subcommand cannot forget it; a
+   * ParameterException from parsing or from command code propagates past emission to picocli's
+   * usage-error handler, so no report is ever written for usage errors.
+   */
+  private int executeRun(CommandLine.ParseResult parseResult) {
+    Integer helpExit = CommandLine.executeHelpRequest(parseResult);
+    if (helpExit != null) {
+      return helpExit;
+    }
+    validateReportOptions();
+    long startNanos = System.nanoTime();
+    int exitCode;
+    if (jsonToStdout()) {
+      // With --json -, stdout must carry exactly one JSON document, so all human
+      // output moves to stderr for this run; the report itself is printed after
+      // the restore below.
+      PrintStream originalOut = System.out;
+      System.setOut(System.err);
+      try {
+        exitCode = new CommandLine.RunLast().execute(parseResult);
+      } finally {
+        System.setOut(originalOut);
+      }
+    } else {
+      exitCode = new CommandLine.RunLast().execute(parseResult);
+    }
+    return emitReports(parseResult, exitCode, (System.nanoTime() - startNanos) / 1_000_000L);
+  }
+
+  private int emitReports(CommandLine.ParseResult parseResult, int exitCode, long durationMs) {
+    if (jsonReport == null) {
+      return exitCode;
+    }
+    RunReport report = lastReport;
+    if (report == null) {
+      // Nothing recorded findings (e.g. the help subcommand), but a report was
+      // requested: emit one that carries at least the verdict.
+      report =
+          RunReport.of(
+              exitCode == 0
+                  ? RunReport.Status.OK
+                  : exitCode == 2 ? RunReport.Status.INCOMPLETE : RunReport.Status.ERROR,
+              null);
+    }
+    String command = executedCommandName(parseResult);
+    Instant timestamp = Instant.now();
+    // A failed report write must fail CI even when the check itself was clean
+    // (already-failing exits keep their code): the report is the artifact CI
+    // asked for, so its absence must not pass silently.
+    {
+      try {
+        String json =
+            JsonReportWriter.render(envelope(command, report, exitCode, timestamp, durationMs));
+        if (jsonToStdout()) {
+          // PrintStream swallows I/O errors, so probe explicitly -- a document
+          // truncated by a closed pipe or a full disk must not pass as written.
+          System.out.print(json);
+          System.out.flush();
+          if (System.out.checkError()) {
+            throw new IOException("cannot write the JSON report to stdout");
+          }
+        } else {
+          Files.writeString(jsonReport, json, StandardCharsets.UTF_8);
+        }
+      } catch (IOException e) {
+        exitCode = reportWriteFailed(e, exitCode);
+      }
+    }
+    return exitCode;
+  }
+
+  private RunReport.Envelope envelope(
+      String command, RunReport report, int exitCode, Instant timestamp, long durationMs) {
+    return new RunReport.Envelope(
+        command,
+        model,
+        resolvedMachineName,
+        probVersionString,
+        toolVersion(),
+        timestamp,
+        durationMs,
+        exitCode,
+        report);
+  }
+
+  private int reportWriteFailed(IOException e, int exitCode) {
+    logger.debug("Error writing report", e);
+    System.err.println("Error writing report: " + e.getMessage());
+    return Math.max(exitCode, 1);
+  }
+
+  /**
+   * Validated centrally for every command (the report options are inherited), before the run
+   * starts, so a bad report destination is a usage error and never wastes a model load. Report
+   * files deliberately overwrite without --force: they are per-run telemetry that CI regenerates,
+   * not derived artifacts like convert/info outputs.
+   */
+  private void validateReportOptions() {
+    if (jsonReport != null && !jsonToStdout()) {
+      validateReportTarget(jsonReport, "--json");
+    }
+  }
+
+  /** Rejects a bad report destination up front, before it can cost a model load. */
+  private void validateReportTarget(Path path, String option) {
+    if (Files.isDirectory(path)) {
+      throw usageError(option + " target is a directory: " + path);
+    }
+    try {
+      // force=true: reports overwrite by default, so this only ensures the parent directory.
+      validateWritableOutput(path, option, true);
+    } catch (IOException e) {
+      throw usageError("cannot create the " + option + " parent directory: " + e.getMessage());
+    }
   }
 
   /** Shuts down the ProB instance and removes any extracted temp directory. */
@@ -848,7 +993,10 @@ public class Animate implements Callable<Integer> {
 
   // Package-visible so tests can inspect the command instance after a run.
   static CommandLine commandLine() {
-    return new CommandLine(Animate.class, new LazyGuiceFactory());
+    CommandLine commandLine = new CommandLine(Animate.class, new LazyGuiceFactory());
+    Animate root = commandLine.getCommand();
+    commandLine.setExecutionStrategy(root::executeRun);
+    return commandLine;
   }
 
   public static int execute(String[] args) {

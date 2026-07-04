@@ -1,6 +1,7 @@
 package animate;
 
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -89,4 +90,20 @@ record RunReport(
   int exitCode() {
     return exitCodeOverride != null ? exitCodeOverride : status.exitCode();
   }
+
+  /**
+   * A command's findings plus everything {@link Animate#finishRun} stamps around them when a
+   * machine-readable report was requested: what ran, on which model, with which ProB, for how long.
+   * {@code machine} and {@code probVersion} are null when the model never loaded.
+   */
+  record Envelope(
+      String command,
+      Path model,
+      String machine,
+      String probVersion,
+      String toolVersion,
+      Instant timestamp,
+      long durationMs,
+      int exitCode,
+      RunReport report) {}
 }
