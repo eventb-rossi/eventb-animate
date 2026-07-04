@@ -24,7 +24,7 @@ public class CheckOptionsTest {
 
   @Test
   public void testUserPrefsWinOverDefaultsAndSize() {
-    Animate animate = new Animate(null, null);
+    Animate animate = new Animate(null, null, null);
     animate.size = 4;
     animate.userPrefs.put("DEFAULT_SETSIZE", "2");
     animate.userPrefs.put("COMPRESSION", "false");

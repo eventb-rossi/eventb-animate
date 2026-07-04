@@ -25,7 +25,9 @@ import de.prob.check.ModelCheckingOptions;
 import de.prob.check.ModelCheckingSearchStrategy;
 import de.prob.check.StateSpaceStats;
 import de.prob.check.tracereplay.json.TraceManager;
+import de.prob.model.eventb.EventBModel;
 import de.prob.scripting.Api;
+import de.prob.scripting.EventBFactory;
 import de.prob.statespace.*;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -61,7 +63,8 @@ import picocli.CommandLine.Spec;
       ReplayCommand.class,
       InfoCommand.class,
       ConvertCommand.class,
-      WdCommand.class
+      WdCommand.class,
+      PoCommand.class
     })
 public class Animate implements Callable<Integer> {
 
@@ -74,10 +77,12 @@ public class Animate implements Callable<Integer> {
   // Providers keep construction cheap: resolving Api installs the ProB CLI
   // binaries, which --version/--help invocations should never pay for.
   private final Provider<Api> api;
+  private final Provider<EventBFactory> eventBFactory;
   private final TraceWriter traceWriter;
   final ModelResolver modelResolver = new ModelResolver();
   private String probVersionString;
   private String resolvedMachineName;
+  private Path resolvedModelPath;
   private String loadErrorMessage;
   private EventB parsedGoal;
 
@@ -245,8 +250,12 @@ public class Animate implements Callable<Integer> {
   boolean debug;
 
   @Inject
-  public Animate(Provider<Api> api, Provider<TraceManager> traceManager) {
+  public Animate(
+      Provider<Api> api,
+      Provider<TraceManager> traceManager,
+      Provider<EventBFactory> eventBFactory) {
     this.api = api;
+    this.eventBFactory = eventBFactory;
     this.traceWriter = new TraceWriter(traceManager);
   }
 
@@ -402,10 +411,10 @@ public class Animate implements Callable<Integer> {
 
     Map<String, String> prefs = buildProBPreferences();
 
-    Path resolvedModel = modelResolver.resolve(model, machineName);
-    resolvedMachineName = resolvedModel.getFileName().toString().replaceFirst("\\.bum$", "");
+    resolvedModelPath = modelResolver.resolve(model, machineName);
+    resolvedMachineName = resolvedModelPath.getFileName().toString().replaceFirst("\\.bum$", "");
     System.out.println("Machine: " + resolvedMachineName);
-    StateSpace stateSpace = api.get().eventb_load(resolvedModel.toString(), prefs);
+    StateSpace stateSpace = api.get().eventb_load(resolvedModelPath.toString(), prefs);
 
     GetVersionCommand version = new GetVersionCommand();
     stateSpace.execute(version);
@@ -453,6 +462,48 @@ public class Animate implements Callable<Integer> {
     } finally {
       releaseStateSpace(stateSpace);
     }
+  }
+
+  /**
+   * Resolves and extracts the model without starting ProB (pure XML parsing of the Rodin .bcm/.bcc
+   * database and the .bpo/.bps proof files), guaranteeing temp-directory cleanup. Mirrors {@link
+   * #withStateSpace}: a model that could not be extracted is an ERROR report (exit 1). The report
+   * envelope carries no probVersion for such a run.
+   */
+  RunReport withExtractedModel(Function<EventBModel, RunReport> body) {
+    initLogging();
+    EventBModel extracted;
+    try {
+      extracted = extractModel();
+    } catch (Exception e) {
+      modelResolver.cleanupTempDir();
+      logger.debug("Error loading model", e);
+      loadErrorMessage = "Error loading model: " + e.getMessage();
+      System.err.println(loadErrorMessage);
+      return RunReport.of(RunReport.Status.ERROR, loadErrorMessage);
+    }
+    try {
+      return body.apply(extracted);
+    } finally {
+      modelResolver.cleanupTempDir();
+    }
+  }
+
+  private EventBModel extractModel() throws IOException {
+    validateInput();
+    resolvedModelPath = modelResolver.resolve(model, machineName);
+    // The resolver always returns a component file, never a filesystem root.
+    resolvedMachineName =
+        Objects.requireNonNull(resolvedModelPath.getFileName())
+            .toString()
+            .replaceFirst("\\.(bum|buc)$", "");
+    System.out.println("Machine: " + resolvedMachineName);
+    return eventBFactory.get().extract(resolvedModelPath.toString()).getModel();
+  }
+
+  /** Where the resolved component file lives; its siblings are the Rodin project files. */
+  Path resolvedModelPath() {
+    return resolvedModelPath;
   }
 
   /** Single exit path for every command: records the findings and maps them to the exit code. */

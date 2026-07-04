@@ -141,8 +141,8 @@ machine name is unique across all projects.
 
 - `0` - success: the requested check found nothing (the full state space was
   explored, or a `--states`/`--time-limit`/`--stop-at-full-coverage` bound was
-  reached without a violation), the LTL formula holds, all WD proof
-  obligations are discharged (`wd`), or a replay was perfect (`replay`)
+  reached without a violation), the LTL formula holds, all proof obligations
+  are discharged (`wd`, `po`), or a replay was perfect (`replay`)
 - `1` - a definite negative verdict or an input failure: the model could not
   be loaded, an invariant or assertion was violated, a deadlock was reached (a
   state with no enabled events, including legitimate terminal states), a
@@ -150,9 +150,9 @@ machine name is unique across all projects.
   was not perfect (`replay`), or a conversion failed (`convert`)
 - `2` - no verdict: nothing was proven either way. The check could not
   complete (interrupted or a ProB error), a bounded LTL run hit the
-  `--states` limit, a WD proof obligation remains undischarged (`wd` -- open
-  means unproven, not disproven), or the command line was invalid (usage
-  errors, including unparseable `--goal`/`--ltl` formulas)
+  `--states` limit, a proof obligation remains undischarged (`wd`, `po` --
+  open means unproven, not disproven), or the command line was invalid
+  (usage errors, including unparseable `--goal`/`--ltl` formulas)
 
 If a requested `--json`/`--junit` report cannot be written, an otherwise clean
 run exits 1: the report is the artifact CI asked for, so its absence must fail
@@ -183,14 +183,16 @@ normally print moves to stderr.
 that render the format natively (GitLab `artifacts:reports:junit`, the GitHub
 JUnit actions, Jenkins). Each checked property is one `<testcase>` named after
 the check (`invariant`, `deadlock`, `assertions`, `goal`, `ltl`,
-`well-definedness`, `replay`, `convert`, ...) with the machine as its
-classname. A violation marks the fired property `<failure>` -- with the
-counterexample as the failure body -- and the other properties `<skipped>`,
-since the search stops at the first violation and proves nothing about them; a
-run without a verdict (exit 2) marks the properties as `<error>`. The `wd`
-command reports one aggregate testcase: ProB returns only discharged/total
-counts, not per-obligation names. Both report options combine freely (but not
-to the same file), and only `--json` can write to stdout.
+`well-definedness`, `replay`, `convert`, the qualified obligation names for
+`po`, ...) with the machine as its classname. A violation marks the fired
+property `<failure>` -- with the counterexample as the failure body -- and the
+other properties `<skipped>`, since the search stops at the first violation
+and proves nothing about them; a run without a verdict (exit 2) marks the
+properties as `<error>`. The `wd` command reports one aggregate testcase (ProB
+returns only discharged/total counts, not per-obligation names), while `po`
+reports one testcase per obligation, open ones as `<failure>`. Both report
+options combine freely (but not to the same file), and only `--json` can
+write to stdout.
 
 ### Commands
 
@@ -225,6 +227,33 @@ Checks the model's well-definedness proof obligations with ProB's WD prover
 and prints `X discharged / Y total`. Exits 2 when any obligation remains
 undischarged (a possible WD problem, such as a partial-function application
 outside its domain or a division by zero -- unproven, though not shown wrong).
+
+#### Check Proof Obligations
+
+```bash
+eventb-animate po path/to/model.bum
+eventb-animate po --allow-reviewed --filter 'M1/*' path/to/model.zip
+```
+
+Gates on the proof status recorded by Rodin: reads the `.bpo`/`.bps` proof
+files next to the model (ProB is not started) and reports every proof
+obligation of the refinement chain -- all machines and contexts -- under its
+qualified name `<component>/<obligation>`. The run passes only when every
+obligation is discharged; open obligations exit 2 (unproven, not disproven).
+A model exported without its proof files is rejected, so an empty proof
+database cannot pass as "nothing to prove". Unlike `wd`, which asks ProB to
+prove well-definedness from scratch, `po` reports what the Rodin provers
+already established.
+
+Options:
+- `--allow-reviewed` - Accept obligations marked as reviewed in Rodin
+  (manually inspected but not proven)
+- `--filter <glob>` - Check only obligations whose qualified name matches
+  (repeatable; `*` also matches across `/`, so `M1/*` selects one component
+  and `*/INV` all invariant-preservation obligations). A filter matching
+  nothing fails the gate
+- `-v, --verbose` - List every obligation with its status, not only the
+  failing ones
 
 #### Convert to Classical B
 

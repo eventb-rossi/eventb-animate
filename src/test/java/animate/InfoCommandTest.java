@@ -164,7 +164,7 @@ public class InfoCommandTest {
   private static final class FailingInitializationAnimate extends Animate {
 
     FailingInitializationAnimate(Provider<Api> api, Provider<TraceManager> traceManager) {
-      super(api, traceManager);
+      super(api, traceManager, null);
     }
 
     @Override
