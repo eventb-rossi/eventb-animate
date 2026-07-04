@@ -6,6 +6,8 @@
     EVENTB_ANIMATE_SIZE: ''
     EVENTB_ANIMATE_STATES: ''
     EVENTB_ANIMATE_SAVE: ''
+    EVENTB_ANIMATE_JSON: ''
+    EVENTB_ANIMATE_JUNIT: ''
     EVENTB_ANIMATE_TRACE: ''
     EVENTB_ANIMATE_ARGS: ''
     EVENTB_ANIMATE_VERSION: 'latest'
@@ -57,6 +59,14 @@
       else
         echo "ERROR: Unknown EVENTB_ANIMATE_COMMAND '$EVENTB_ANIMATE_COMMAND'. Must be 'check' or 'replay'." >&2
         exit 1
+      fi
+
+      # The report options work with every command.
+      if [ -n "$EVENTB_ANIMATE_JSON" ]; then
+        cli_args+=("--json" "$EVENTB_ANIMATE_JSON")
+      fi
+      if [ -n "$EVENTB_ANIMATE_JUNIT" ]; then
+        cli_args+=("--junit" "$EVENTB_ANIMATE_JUNIT")
       fi
 
       if [ -n "$EVENTB_ANIMATE_ARGS" ]; then
