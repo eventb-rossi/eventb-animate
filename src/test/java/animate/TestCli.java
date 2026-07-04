@@ -13,19 +13,44 @@ final class TestCli {
   /** {@code command} is the executed top-level instance, for asserting on its outcome fields. */
   record Result(int exitCode, String output, Animate command) {}
 
+  /** Like {@link Result}, but with stdout and stderr kept apart (for --json - purity checks). */
+  record SplitResult(int exitCode, String stdout, String stderr, Animate command) {}
+
   private TestCli() {}
 
   static Result execute(String... args) {
     ByteArrayOutputStream captured = new ByteArrayOutputStream();
+    try (PrintStream stream = new PrintStream(captured, true, StandardCharsets.UTF_8)) {
+      Run run = run(stream, stream, args);
+      return new Result(run.exitCode(), captured.toString(StandardCharsets.UTF_8), run.command());
+    }
+  }
+
+  static SplitResult executeSplit(String... args) {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+    try (PrintStream outStream = new PrintStream(out, true, StandardCharsets.UTF_8);
+        PrintStream errStream = new PrintStream(err, true, StandardCharsets.UTF_8)) {
+      Run run = run(outStream, errStream, args);
+      return new SplitResult(
+          run.exitCode(),
+          out.toString(StandardCharsets.UTF_8),
+          err.toString(StandardCharsets.UTF_8),
+          run.command());
+    }
+  }
+
+  private record Run(int exitCode, Animate command) {}
+
+  /** Runs the CLI with the given sinks installed as System.out/err, restoring the originals. */
+  private static Run run(PrintStream out, PrintStream err, String... args) {
     PrintStream originalOut = System.out;
     PrintStream originalErr = System.err;
-    try (PrintStream stream = new PrintStream(captured, true, StandardCharsets.UTF_8)) {
-      System.setOut(stream);
-      System.setErr(stream);
+    try {
+      System.setOut(out);
+      System.setErr(err);
       CommandLine commandLine = Animate.commandLine();
-      int exitCode = commandLine.execute(args);
-      return new Result(
-          exitCode, captured.toString(StandardCharsets.UTF_8), commandLine.getCommand());
+      return new Run(commandLine.execute(args), commandLine.getCommand());
     } finally {
       System.setOut(originalOut);
       System.setErr(originalErr);

@@ -124,6 +124,10 @@ machine name is unique across all projects.
 - `--perf` - Print ProB performance information
 - `--save <file.json>` - Save the counterexample trace to a JSON file when a
   violation is found
+- `--json <file|->` - Write a machine-readable JSON report of the run (works
+  with every command; see [Machine-Readable Reports](#machine-readable-reports)).
+  `-` writes the report to stdout and moves all other output to stderr, so
+  `eventb-animate --json - model.bum | jq .status` just works
 - `--debug` - Enable debug logging
 - `-h, --help` - Show help (also available on every subcommand)
 - `-V, --version` - Print the release version
@@ -145,6 +149,30 @@ machine name is unique across all projects.
 - `2` - no verdict: the check could not complete (interrupted or a ProB
   error), a bounded LTL run hit the `--states` limit, or the command line was
   invalid (usage errors, including unparseable `--goal`/`--ltl` formulas)
+
+If a requested `--json` report cannot be written, an otherwise clean run exits
+1: the report is the artifact CI asked for, so its absence must fail the job.
+
+### Machine-Readable Reports
+
+Every command accepts `--json <file|->` and writes one JSON document
+describing the run at the end: what ran (`command`, `model`, `machine`,
+`probVersion`), what happened (`status` of `ok`/`violation`/`incomplete`/
+`error`, `exitCode`, `message`, one `checks` entry per checked property), and
+the evidence (a `counterexample` summary with the transition list, violating
+state, and violated invariants; the `--save` trace path as `traceFile`). The
+document carries `formatVersion: 1`; the key set only changes with a version
+bump. Report files are overwritten on every run (they are per-run telemetry,
+so no `--force` is needed), and usage errors write no report at all -- the run
+never started.
+
+```bash
+eventb-animate --json report.json --save trace.json model.bum
+eventb-animate --json - model.bum 2>/dev/null | jq .status
+```
+
+With `--json -` stdout carries exactly the report; everything the run would
+normally print moves to stderr.
 
 ### Commands
 

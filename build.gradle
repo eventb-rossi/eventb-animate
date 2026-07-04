@@ -33,6 +33,10 @@ dependencies {
 	implementation 'ch.qos.logback:logback-classic:1.5.37'
 	implementation 'info.picocli:picocli:4.7.7'
 	implementation "de.hhu.stups:de.prob2.kernel:${prob_version}"
+	// Used directly by the --json report writer; pinned to the version the kernel
+	// already resolves transitively (re-check `gradlew dependencies` when bumping
+	// prob_version so the two stay aligned).
+	implementation 'com.fasterxml.jackson.core:jackson-databind:2.20.1'
 
 	testImplementation 'junit:junit:4.13.2'
 	testImplementation 'org.hamcrest:hamcrest:3.0'
