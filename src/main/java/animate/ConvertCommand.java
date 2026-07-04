@@ -35,6 +35,10 @@ class ConvertCommand implements Callable<Integer> {
 
   @Override
   public Integer call() {
+    return parent.finishRun(convert());
+  }
+
+  private RunReport convert() {
     try {
       normalizePositionalArguments();
       Animate.validateWritableOutput(output, "Output", force);
@@ -44,7 +48,11 @@ class ConvertCommand implements Callable<Integer> {
       try {
         int convertExit = runConversion(eventbPackage);
         if (convertExit != 0) {
-          return convertExit;
+          // runConversion already printed ProB's output and the failure line; the
+          // override keeps propagating probcli's own exit code.
+          String message = "ProB conversion failed (exit code " + convertExit + ")";
+          return RunReport.singleCheck(RunReport.Status.ERROR, "convert", message)
+              .withExitCode(convertExit);
         }
       } finally {
         if (!inputIsPackage) {
@@ -52,20 +60,24 @@ class ConvertCommand implements Callable<Integer> {
         }
       }
       if (!Files.isRegularFile(output) || Files.size(output) == 0) {
-        System.err.println("Error: conversion did not create a non-empty output file: " + output);
-        return 1;
+        String message = "conversion did not create a non-empty output file: " + output;
+        System.err.println("Error: " + message);
+        return RunReport.singleCheck(RunReport.Status.ERROR, "convert", message);
       }
 
-      System.out.println("Wrote Classical B machine: " + output);
-      return 0;
+      String message = "Wrote Classical B machine: " + output;
+      System.out.println(message);
+      return RunReport.singleCheck(RunReport.Status.OK, "convert", message);
     } catch (IllegalArgumentException | IOException e) {
       logger.debug("Conversion failed", e);
-      System.err.println("Error: " + e.getMessage());
-      return 1;
+      String message = e.getMessage();
+      System.err.println("Error: " + message);
+      return RunReport.singleCheck(RunReport.Status.ERROR, "convert", message);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
-      System.err.println("Error: interrupted while running ProB CLI");
-      return 1;
+      String message = "interrupted while running ProB CLI";
+      System.err.println("Error: " + message);
+      return RunReport.singleCheck(RunReport.Status.ERROR, "convert", message);
     }
   }
 

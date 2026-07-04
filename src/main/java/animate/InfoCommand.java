@@ -74,10 +74,11 @@ class InfoCommand implements Callable<Integer> {
     try {
       validateOutputs();
     } catch (IllegalArgumentException | IOException e) {
-      System.err.println("Error: " + e.getMessage());
-      return 1;
+      String message = e.getMessage();
+      System.err.println("Error: " + message);
+      return parent.finishRun(RunReport.of(RunReport.Status.ERROR, message));
     }
-    return parent.withStateSpace(this::dumpInfo);
+    return parent.finishRun(parent.withStateSpace(this::dumpInfo));
   }
 
   /** Rejects bad output paths before they cost a full ProB model load. */
@@ -95,8 +96,8 @@ class InfoCommand implements Callable<Integer> {
     }
   }
 
-  private int dumpInfo(StateSpace stateSpace) {
-    int err = 0;
+  private RunReport dumpInfo(StateSpace stateSpace) {
+    List<RunReport.Check> checks = new ArrayList<>();
 
     boolean hasVisualizationCmd =
         machineGraph != null
@@ -114,22 +115,31 @@ class InfoCommand implements Callable<Integer> {
         stateSpace.endTransaction();
       }
 
-      err |= saveVisualization("machine_hierarchy", machineGraph, trace);
-      err |= saveVisualization("event_hierarchy", eventGraph, trace);
-      err |= saveVisualization("properties", propertyGraph, trace);
-      err |= saveVisualization("invariant", invariantGraph, trace);
+      addVisualizationCheck(checks, "machine_hierarchy", "machine-graph", machineGraph, trace);
+      addVisualizationCheck(checks, "event_hierarchy", "event-graph", eventGraph, trace);
+      addVisualizationCheck(checks, "properties", "property-graph", propertyGraph, trace);
+      addVisualizationCheck(checks, "invariant", "invariant-graph", invariantGraph, trace);
     }
 
     if (prefs) {
       printPreferences(stateSpace);
+      checks.add(new RunReport.Check("prefs", RunReport.Outcome.PASSED, null));
     }
 
     if (!hasVisualizationCmd && !prefs) {
       EventBModel model = (EventBModel) stateSpace.getModel();
       System.out.print(model.calculateDependencies().getGraph());
+      checks.add(new RunReport.Check("dependencies", RunReport.Outcome.PASSED, null));
     }
 
-    return err;
+    String firstError =
+        checks.stream()
+            .filter(check -> check.outcome() == RunReport.Outcome.ERROR)
+            .map(RunReport.Check::message)
+            .findFirst()
+            .orElse(null);
+    RunReport.Status status = firstError == null ? RunReport.Status.OK : RunReport.Status.ERROR;
+    return RunReport.of(status, firstError, checks);
   }
 
   /** One line per preference, sorted by name, with the effective value of this run first. */
@@ -149,8 +159,11 @@ class InfoCommand implements Callable<Integer> {
     }
   }
 
-  private int saveVisualization(String name, Path path, Trace trace) {
-    if (path == null) return 0;
+  private void addVisualizationCheck(
+      List<RunReport.Check> checks, String name, String checkName, Path path, Trace trace) {
+    if (path == null) {
+      return;
+    }
     logger.info("Saving {} to {}", name, path);
     // validateOutputs already rejected anything that is not .dot or .svg.
     String extension = MoreFiles.getFileExtension(path).toLowerCase(Locale.ROOT);
@@ -163,9 +176,11 @@ class InfoCommand implements Callable<Integer> {
       }
     } catch (RuntimeException e) {
       logger.debug("Error saving {} to {}", name, path, e);
-      System.err.println("Error saving " + name + " to " + path + ": " + e.getMessage());
-      return 1;
+      String message = "Error saving " + name + " to " + path + ": " + e.getMessage();
+      System.err.println(message);
+      checks.add(new RunReport.Check(checkName, RunReport.Outcome.ERROR, message));
+      return;
     }
-    return 0;
+    checks.add(new RunReport.Check(checkName, RunReport.Outcome.PASSED, null));
   }
 }

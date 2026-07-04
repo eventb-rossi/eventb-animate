@@ -25,10 +25,6 @@ import de.prob.check.ModelCheckingOptions;
 import de.prob.check.ModelCheckingSearchStrategy;
 import de.prob.check.StateSpaceStats;
 import de.prob.check.tracereplay.json.TraceManager;
-import de.prob.check.tracereplay.json.storage.TraceJsonFile;
-import de.prob.json.JsonMetadata;
-import de.prob.json.JsonMetadataBuilder;
-import de.prob.model.eventb.EventBMachine;
 import de.prob.scripting.Api;
 import de.prob.statespace.*;
 import java.io.IOException;
@@ -38,7 +34,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.Callable;
-import java.util.function.ToIntFunction;
+import java.util.function.Function;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -50,7 +46,7 @@ import picocli.CommandLine.ScopeType;
 import picocli.CommandLine.Spec;
 
 @Command(
-    name = "eventb-animate",
+    name = Animate.TOOL_NAME,
     description =
         "Model-check an Event-B model using ProB: deadlocks and invariants by default,"
             + " plus assertions, goal reachability, and LTL formulas",
@@ -66,6 +62,8 @@ import picocli.CommandLine.Spec;
     })
 public class Animate implements Callable<Integer> {
 
+  static final String TOOL_NAME = "eventb-animate";
+
   static final String SETUP_CONSTANTS_EVENT = "$setup_constants";
   static final String INITIALISE_MACHINE_EVENT = "$initialise_machine";
   static final String INITIALISATION_EVENT = "INITIALISATION";
@@ -73,23 +71,31 @@ public class Animate implements Callable<Integer> {
   // Providers keep construction cheap: resolving Api installs the ProB CLI
   // binaries, which --version/--help invocations should never pay for.
   private final Provider<Api> api;
-  private final Provider<TraceManager> traceManager;
+  private final TraceWriter traceWriter;
   final ModelResolver modelResolver = new ModelResolver();
   private String probVersionString;
+  private String resolvedMachineName;
+  private String loadErrorMessage;
   private EventB parsedGoal;
+
+  // The last finished run's findings, for tests to assert on via TestCli.Result.command().
+  RunReport lastReport;
 
   @Spec CommandSpec spec;
 
   private static final Logger logger = (Logger) LoggerFactory.getLogger(Animate.class);
 
+  /** The release version from the jar manifest, or "dev" when running from classes. */
+  static String toolVersion() {
+    Package pkg = Animate.class.getPackage();
+    String version = pkg == null ? null : pkg.getImplementationVersion();
+    return version == null || version.isBlank() ? "dev" : version;
+  }
+
   public static class VersionProvider implements CommandLine.IVersionProvider {
     @Override
     public String[] getVersion() {
-      Package pkg = Animate.class.getPackage();
-      String version = pkg == null ? null : pkg.getImplementationVersion();
-      return new String[] {
-        "eventb-animate " + (version == null || version.isBlank() ? "dev" : version)
-      };
+      return new String[] {TOOL_NAME + " " + toolVersion()};
     }
   }
 
@@ -221,7 +227,7 @@ public class Animate implements Callable<Integer> {
   @Inject
   public Animate(Provider<Api> api, Provider<TraceManager> traceManager) {
     this.api = api;
-    this.traceManager = traceManager;
+    this.traceWriter = new TraceWriter(traceManager);
   }
 
   private void printCoverage(StateSpace stateSpace) {
@@ -377,7 +383,7 @@ public class Animate implements Callable<Integer> {
     Map<String, String> prefs = buildProBPreferences();
 
     Path resolvedModel = modelResolver.resolve(model, machineName);
-    String resolvedMachineName = resolvedModel.getFileName().toString().replaceFirst("\\.bum$", "");
+    resolvedMachineName = resolvedModel.getFileName().toString().replaceFirst("\\.bum$", "");
     System.out.println("Machine: " + resolvedMachineName);
     StateSpace stateSpace = api.get().eventb_load(resolvedModel.toString(), prefs);
 
@@ -394,6 +400,9 @@ public class Animate implements Callable<Integer> {
       Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
       root.setLevel(Level.WARN);
       logger.setLevel(Level.INFO);
+      // The trace-save confirmation was an Animate INFO line before it moved to
+      // TraceWriter; keep it visible at the same level.
+      ((Logger) LoggerFactory.getLogger(TraceWriter.class)).setLevel(Level.INFO);
     }
   }
 
@@ -404,25 +413,32 @@ public class Animate implements Callable<Integer> {
     } catch (Exception e) {
       modelResolver.cleanupTempDir();
       logger.debug("Error loading model", e);
-      System.err.println("Error loading model: " + e.getMessage());
+      loadErrorMessage = "Error loading model: " + e.getMessage();
+      System.err.println(loadErrorMessage);
       return null;
     }
   }
 
   /**
    * Loads the model and runs {@code body} with the resulting StateSpace, guaranteeing ProB shutdown
-   * and temp-directory cleanup. Returns 1 if the model could not be loaded.
+   * and temp-directory cleanup. A model that could not be loaded is an ERROR report (exit 1).
    */
-  int withStateSpace(ToIntFunction<StateSpace> body) {
+  RunReport withStateSpace(Function<StateSpace, RunReport> body) {
     StateSpace stateSpace = initAndLoadModel();
     if (stateSpace == null) {
-      return 1;
+      return RunReport.of(RunReport.Status.ERROR, loadErrorMessage);
     }
     try {
-      return body.applyAsInt(stateSpace);
+      return body.apply(stateSpace);
     } finally {
       releaseStateSpace(stateSpace);
     }
+  }
+
+  /** Single exit path for every command: records the findings and maps them to the exit code. */
+  int finishRun(RunReport report) {
+    lastReport = report;
+    return report.exitCode();
   }
 
   /** Shuts down the ProB instance and removes any extracted temp directory. */
@@ -485,9 +501,9 @@ public class Animate implements Callable<Integer> {
   public Integer call() {
     validateCheckOptions();
     if (isLtlRun()) {
-      return runLtl();
+      return finishRun(runLtl());
     }
-    return withStateSpace(this::runModelCheck);
+    return finishRun(withStateSpace(this::runModelCheck));
   }
 
   private boolean isLtlRun() {
@@ -495,34 +511,37 @@ public class Animate implements Callable<Integer> {
   }
 
   /** Parses the LTL formula before paying for a model load. */
-  private int runLtl() {
+  private RunReport runLtl() {
     String formulaText;
     try {
       formulaText = ltlFormula != null ? ltlFormula : Files.readString(ltlFile).trim();
     } catch (MalformedInputException e) {
       // Files.readString decodes strictly; its own message is the cryptic "Input length = 1".
-      System.err.println(
+      String message =
           "Error reading --ltl-file: "
               + ltlFile
               + " is not valid UTF-8 text (re-save the file"
-              + " as UTF-8)");
-      return 1;
+              + " as UTF-8)";
+      System.err.println(message);
+      return RunReport.singleCheck(RunReport.Status.ERROR, "ltl", message);
     } catch (IOException e) {
-      System.err.println("Error reading --ltl-file: " + e.getMessage());
-      return 1;
+      String message = "Error reading --ltl-file: " + e.getMessage();
+      System.err.println(message);
+      return RunReport.singleCheck(RunReport.Status.ERROR, "ltl", message);
     }
     LTL formula;
     try {
       formula = LTL.parseEventB(formulaText);
     } catch (LtlParseException e) {
       // The check never ran, so nothing was proven.
-      System.err.println("Error: invalid LTL formula: " + e.getMessage());
-      return 2;
+      String message = "invalid LTL formula: " + e.getMessage();
+      System.err.println("Error: " + message);
+      return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "ltl", message);
     }
     return withStateSpace(stateSpace -> runLtlCheck(stateSpace, formula));
   }
 
-  private int runLtlCheck(StateSpace stateSpace, LTL formula) {
+  private RunReport runLtlCheck(StateSpace stateSpace, LTL formula) {
     System.out.println("LTL checking...");
     IModelCheckingResult result;
     try {
@@ -535,33 +554,40 @@ public class Animate implements Callable<Integer> {
       // after recording them; without this catch they would escape as a stack trace
       // with exit 1, the code reserved for real violations.
       logger.debug("LTL checking failed", e);
-      System.err.println("LTL checking did not complete: " + e.getMessage());
-      return 2;
+      String message = "LTL checking did not complete: " + e.getMessage();
+      System.err.println(message);
+      return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "ltl", message);
     }
 
     if (result instanceof LTLOk) {
-      System.out.println("LTL formula holds (full state space explored).");
-      return 0;
+      String message = "LTL formula holds (full state space explored).";
+      System.out.println(message);
+      return RunReport.singleCheck(RunReport.Status.OK, "ltl", message);
     }
 
     if (result instanceof LTLCounterExample) {
-      System.err.println("Error: the LTL formula is violated.");
+      String message = "the LTL formula is violated.";
+      System.err.println("Error: " + message);
       Trace counterexample = ((LTLCounterExample) result).getTrace(stateSpace);
-      printCounterexample(counterexample);
-      if (jsonTrace != null) {
-        saveTrace(counterexample, stateSpace);
-      }
-      return 1;
+      TraceWriter.Counterexample described =
+          TraceWriter.describe(stateSpace, counterexample, false);
+      TraceWriter.printTrace(described);
+      return withSavedTrace(
+          RunReport.singleCheck(RunReport.Status.VIOLATION, "ltl", message)
+              .withCounterexample(described),
+          counterexample,
+          stateSpace);
     }
 
     // LTLError or LTLNotYetFinished (e.g. the --states limit): a bounded LTL check
     // proves nothing about temporal properties, so unlike the consistency check a
     // limited run is a non-verdict, not a pass.
-    System.err.println("LTL checking did not complete: " + result.getMessage());
-    return 2;
+    String message = "LTL checking did not complete: " + result.getMessage();
+    System.err.println(message);
+    return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "ltl", message);
   }
 
-  private int runModelCheck(StateSpace stateSpace) {
+  private RunReport runModelCheck(StateSpace stateSpace) {
     ModelCheckingOptions options =
         new ModelCheckingOptions()
             .searchStrategy(searchStrategy.kernelStrategy)
@@ -591,38 +617,128 @@ public class Animate implements Callable<Integer> {
     } catch (RuntimeException e) {
       // Same contract as the LTL path: a mid-check kernel failure is a non-verdict.
       logger.debug("Model checking failed", e);
-      System.err.println("Model checking did not complete: " + e.getMessage());
-      return 2;
+      String message = "Model checking did not complete: " + e.getMessage();
+      System.err.println(message);
+      return incompleteConsistencyReport(message);
     }
 
     if (result instanceof ModelCheckOk || result instanceof ModelCheckLimitReached) {
-      System.out.println(noViolationMessage(result));
+      String message = noViolationMessage(result);
+      System.out.println(message);
       printCoverage(stateSpace);
-      return 0;
+      return RunReport.of(
+          RunReport.Status.OK, message, enabledChecks(RunReport.Outcome.PASSED, null));
     }
 
     if (result instanceof ITraceDescription) {
       // A real counterexample: an invariant violation, a reachable deadlock, or a goal hit.
       // A found goal is what the user asked for, not a model error, so no "Error:" prefix.
+      String message;
       if (result instanceof ModelCheckGoalFound) {
-        System.out.println("Goal found: a reachable state satisfies the --goal predicate.");
+        message = "Goal found: a reachable state satisfies the --goal predicate.";
+        System.out.println(message);
       } else {
-        System.err.println("Error: " + result.getMessage());
+        message = result.getMessage();
+        System.err.println("Error: " + message);
       }
       Trace counterexample = ((ITraceDescription) result).getTrace(stateSpace);
-      printViolatedInvariants(stateSpace, counterexample.getCurrentState());
-      printCounterexample(counterexample);
-      if (jsonTrace != null) {
-        saveTrace(counterexample, stateSpace);
-      }
-      return 1;
+      TraceWriter.Counterexample described = TraceWriter.describe(stateSpace, counterexample, true);
+      TraceWriter.printViolatedInvariants(described);
+      TraceWriter.printTrace(described);
+      return withSavedTrace(
+          violationReport(result, message).withCounterexample(described),
+          counterexample,
+          stateSpace);
     }
 
     // Neither a clean result nor a counterexample: the check did not complete
     // (e.g. interrupted or errored), so nothing was proven. Report it distinctly
     // rather than as a violation, and exit 2 to keep it separate from a real one.
-    System.err.println("Model checking did not complete: " + result.getMessage());
-    return 2;
+    String message = "Model checking did not complete: " + result.getMessage();
+    System.err.println(message);
+    return incompleteConsistencyReport(message);
+  }
+
+  /** Saves the counterexample when --save was given and records the written path. */
+  private RunReport withSavedTrace(RunReport report, Trace counterexample, StateSpace stateSpace) {
+    if (jsonTrace == null) {
+      return report;
+    }
+    return report.withTraceFile(
+        traceWriter.save(counterexample, stateSpace, jsonTrace, probVersionString).orElse(null));
+  }
+
+  /** The checks this consistency run performs, in a fixed report order. */
+  private List<String> enabledCheckNames() {
+    List<String> names = new ArrayList<>();
+    if (!noInvariant) {
+      names.add("invariant");
+    }
+    if (!noDeadlock) {
+      names.add("deadlock");
+    }
+    if (assertions) {
+      names.add("assertions");
+    }
+    if (goal != null) {
+      names.add("goal");
+    }
+    return names;
+  }
+
+  private RunReport.Check[] enabledChecks(RunReport.Outcome outcome, String message) {
+    return enabledCheckNames().stream()
+        .map(name -> new RunReport.Check(name, outcome, message))
+        .toArray(RunReport.Check[]::new);
+  }
+
+  private RunReport incompleteConsistencyReport(String message) {
+    return RunReport.of(
+        RunReport.Status.INCOMPLETE, message, enabledChecks(RunReport.Outcome.ERROR, message));
+  }
+
+  /**
+   * Names the check a counterexample fired. Apart from goals, which have their own result type, the
+   * kernel encodes the violated property only in the result message ("Invariant violation found.",
+   * "Deadlock found.", "Assertion violation found."); unrecognized wordings (state or
+   * well-definedness errors) degrade to a synthetic "consistency" check so the report stays valid.
+   */
+  private static String firedCheck(IModelCheckingResult result) {
+    if (result instanceof ModelCheckGoalFound) {
+      return "goal";
+    }
+    String message = result.getMessage();
+    if (message.contains("Invariant violation")) {
+      return "invariant";
+    }
+    if (message.contains("Deadlock")) {
+      return "deadlock";
+    }
+    if (message.contains("Assertion violation")) {
+      return "assertions";
+    }
+    return "consistency";
+  }
+
+  /**
+   * The fired check fails with the verdict message; the other enabled checks are skipped, not
+   * passed -- the search stopped at the first violation, so nothing was proven about them.
+   */
+  private RunReport violationReport(IModelCheckingResult result, String message) {
+    String fired = firedCheck(result);
+    List<String> names = enabledCheckNames();
+    List<RunReport.Check> checks = new ArrayList<>();
+    for (String name : names) {
+      checks.add(
+          name.equals(fired)
+              ? new RunReport.Check(name, RunReport.Outcome.FAILED, message)
+              : new RunReport.Check(
+                  name, RunReport.Outcome.SKIPPED, "search stopped at the first violation"));
+    }
+    if (!names.contains(fired)) {
+      checks.add(new RunReport.Check(fired, RunReport.Outcome.FAILED, message));
+    }
+    return RunReport.of(RunReport.Status.VIOLATION, message, checks);
   }
 
   /**
@@ -710,56 +826,6 @@ public class Animate implements Callable<Integer> {
       properties.add("goal state");
     }
     return String.join(" or ", properties);
-  }
-
-  private void printViolatedInvariants(StateSpace stateSpace, State state) {
-    // Deadlock counterexamples still satisfy the invariant, so only enumerate
-    // predicates when the reported state actually breaks one.
-    if (state.isInvariantOk()
-        || !(stateSpace.getMainComponent() instanceof EventBMachine machine)) {
-      return;
-    }
-    List<IEvalElement> invariants = new ArrayList<>();
-    for (var invariant : machine.getAllInvariants()) {
-      invariants.add(invariant.getPredicate());
-    }
-    List<AbstractEvalResult> results = state.eval(invariants);
-    List<String> violated = new ArrayList<>();
-    for (int i = 0; i < results.size(); i++) {
-      if (results.get(i) != EvalResult.TRUE) {
-        violated.add(invariants.get(i).toString());
-      }
-    }
-    if (!violated.isEmpty()) {
-      System.err.println("Violated invariants:\n\t - " + String.join("\n\t - ", violated));
-    }
-  }
-
-  private void printCounterexample(Trace trace) {
-    System.out.println("Counterexample trace:");
-    for (Transition transition : trace.getTransitionList()) {
-      System.out.println("\t" + transition.evaluate(FormulaExpand.EXPAND).getPrettyRep());
-    }
-    System.out.println();
-    System.out.println("Violating state:\n" + trace.getCurrentState().getStateRep());
-  }
-
-  private void saveTrace(Trace trace, StateSpace stateSpace) {
-    JsonMetadata metadata =
-        new JsonMetadataBuilder("Trace", 6)
-            .withSavedNow()
-            .withCreator("eventb-animate")
-            .withProBCliVersion(probVersionString)
-            .withModelName(Objects.toString(stateSpace.getMainComponent(), "unknown"))
-            .build();
-    TraceJsonFile traceJsonFile = new TraceJsonFile(trace, metadata);
-    logger.info("Saving counterexample trace to {}", jsonTrace);
-    try {
-      traceManager.get().save(jsonTrace, traceJsonFile);
-    } catch (IOException e) {
-      logger.debug("Error saving trace", e);
-      System.err.println("Error saving trace: " + e.getMessage());
-    }
   }
 
   static final class LazyGuiceFactory implements CommandLine.IFactory {

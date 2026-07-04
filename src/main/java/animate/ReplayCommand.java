@@ -33,28 +33,36 @@ class ReplayCommand implements Callable<Integer> {
 
   @Override
   public Integer call() {
-    return parent.withStateSpace(this::replay);
+    return parent.finishRun(parent.withStateSpace(this::replay));
   }
 
-  private int replay(StateSpace stateSpace) {
+  private RunReport replay(StateSpace stateSpace) {
     System.out.println("Starting trace replay. Use --debug to view steps.");
     ReplayedTrace trace;
     try {
       trace = TraceReplay.replayTraceFile(stateSpace, jsonTrace);
     } catch (Exception e) {
       logger.debug("Error replaying trace", e);
-      System.err.println("Error replaying trace: " + e.getMessage());
-      return 1;
+      String message = "Error replaying trace: " + e.getMessage();
+      System.err.println(message);
+      return RunReport.singleCheck(RunReport.Status.ERROR, "replay", message);
     }
-    System.out.println("Trace replay status: " + trace.getReplayStatus());
+    RunReport report = reportFor(trace);
+    System.out.println(report.message());
     if (trace.getReplayStatus() != TraceReplayStatus.PERFECT) {
       printReplayDiagnostics(trace);
     }
-    return exitCodeFor(trace);
+    return report;
   }
 
-  static int exitCodeFor(ReplayedTrace trace) {
-    return trace.getReplayStatus() == TraceReplayStatus.PERFECT ? 0 : 1;
+  /** PERFECT is the only passing replay; PARTIAL and IMPERFECT are verdict failures (exit 1). */
+  static RunReport reportFor(ReplayedTrace trace) {
+    RunReport.Status status =
+        trace.getReplayStatus() == TraceReplayStatus.PERFECT
+            ? RunReport.Status.OK
+            : RunReport.Status.VIOLATION;
+    return RunReport.singleCheck(
+        status, "replay", "Trace replay status: " + trace.getReplayStatus());
   }
 
   private static void printReplayDiagnostics(ReplayedTrace trace) {
