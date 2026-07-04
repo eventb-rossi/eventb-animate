@@ -12,6 +12,8 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.Test;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
 
 /** The --json report: one versioned document describing the whole run. */
 public class JsonReportTest {
@@ -93,14 +95,25 @@ public class JsonReportTest {
     }
   }
 
+  /**
+   * One ProB run covers the JSON contract, the JUnit contract, and the two-reports emitter path.
+   */
   @Test(timeout = 120000)
-  public void testViolationReportCarriesChecksAndCounterexample() throws Exception {
+  public void testViolationRunEmitsBothReports() throws Exception {
     Path dir = Files.createTempDirectory("animate-report-");
     Path report = dir.resolve("report.json");
+    Path junit = dir.resolve("report.xml");
     Path trace = dir.resolve("trace.json");
     try {
       TestCli.Result result =
-          TestCli.execute("--json", report.toString(), "--save", trace.toString(), BASE_MODEL_M1);
+          TestCli.execute(
+              "--json",
+              report.toString(),
+              "--junit",
+              junit.toString(),
+              "--save",
+              trace.toString(),
+              BASE_MODEL_M1);
 
       assertEquals("M1 violates its invariant:\n" + result.output(), 1, result.exitCode());
       assertTrue(
@@ -125,8 +138,26 @@ public class JsonReportTest {
       assertTrue(counterexample.get("violatedInvariants").size() > 0);
       assertTrue(counterexample.get("violatingState").asText().length() > 0);
 
+      Document doc = TestCli.parseXml(junit);
+      Element suite = (Element) doc.getElementsByTagName("testsuite").item(0);
+      assertEquals("2", suite.getAttribute("tests"));
+      assertEquals("1", suite.getAttribute("failures"));
+      assertEquals("1", suite.getAttribute("skipped"));
+      assertEquals("0", suite.getAttribute("errors"));
+      Element invariant = (Element) doc.getElementsByTagName("testcase").item(0);
+      assertEquals("invariant", invariant.getAttribute("name"));
+      assertEquals("M1", invariant.getAttribute("classname"));
+      Element failure = (Element) invariant.getElementsByTagName("failure").item(0);
+      assertTrue(
+          "The failure body carries the counterexample:\n" + failure.getTextContent(),
+          failure.getTextContent().contains("Counterexample trace:"));
+      assertTrue(failure.getTextContent().contains("Violated invariants:"));
+      Element deadlock = (Element) doc.getElementsByTagName("testcase").item(1);
+      assertEquals("deadlock", deadlock.getAttribute("name"));
+      assertEquals(1, deadlock.getElementsByTagName("skipped").getLength());
     } finally {
       Files.deleteIfExists(report);
+      Files.deleteIfExists(junit);
       Files.deleteIfExists(trace);
       Files.deleteIfExists(dir);
     }
