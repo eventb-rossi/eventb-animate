@@ -4,9 +4,17 @@ This directory contains Event-B models used for testing the animate program.
 
 ## Source
 
-All models are from the repository: https://github.com/17451k/eventb-models
+All models except `counter/` are from the repository:
+https://github.com/17451k/eventb-models
 
 ## Models
+
+### Counter (`counter/`)
+- Hand-written fixture (no Rodin proof files) with a deliberately
+  non-inductive invariant: `inc` is guarded by `x < 10` but the invariant
+  requires `x < 5`, so the constraint-based check flags `inc` while `reset`
+  preserves the invariant
+- Models: M0.bum
 
 ### Binary Search (`binary-search/`)
 - Implementation of the binary search algorithm

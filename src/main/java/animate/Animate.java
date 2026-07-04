@@ -64,7 +64,8 @@ import picocli.CommandLine.Spec;
       InfoCommand.class,
       ConvertCommand.class,
       WdCommand.class,
-      PoCommand.class
+      PoCommand.class,
+      CbcCommand.class
     })
 public class Animate implements Callable<Integer> {
 
@@ -89,6 +90,10 @@ public class Animate implements Callable<Integer> {
   // The last finished run's findings, consumed by the report emission in executeRun
   // and by tests via TestCli.Result.command().
   RunReport lastReport;
+
+  // Per-command ProB preference overrides, applied between the built-in defaults and
+  // the user's -p values, so a subcommand can adjust ProB while -p still wins.
+  final Map<String, String> commandPrefs = new HashMap<>();
 
   @Spec CommandSpec spec;
 
@@ -354,19 +359,30 @@ public class Animate implements Callable<Integer> {
               + " (enable another one, e.g. --assertions or --goal)");
     }
     if (goal != null) {
-      try {
-        parsedGoal = new EventB(goal);
-        if (parsedGoal.getKind() != EvalElementType.PREDICATE) {
-          throw usageError("--goal must be a predicate, not " + parsedGoal.getKind());
-        }
-      } catch (EvaluationException e) {
-        throw usageError("invalid --goal predicate: " + e.getMessage());
-      }
+      parsedGoal = parsePredicateOption(spec, goal, "--goal");
     }
   }
 
   private ParameterException usageError(String message) {
+    return usageError(spec, message);
+  }
+
+  /** The one spelling of a usage error, shared with the subcommands' validations. */
+  static ParameterException usageError(CommandSpec spec, String message) {
     return new ParameterException(spec.commandLine(), "Error: " + message);
+  }
+
+  /** Parses an Event-B predicate option eagerly, so a typo never pays for a model load. */
+  static EventB parsePredicateOption(CommandSpec spec, String value, String optionName) {
+    try {
+      EventB parsed = new EventB(value);
+      if (parsed.getKind() != EvalElementType.PREDICATE) {
+        throw usageError(spec, optionName + " must be a predicate, not " + parsed.getKind());
+      }
+      return parsed;
+    } catch (EvaluationException e) {
+      throw usageError(spec, "invalid " + optionName + " predicate: " + e.getMessage());
+    }
   }
 
   /**
@@ -400,20 +416,17 @@ public class Animate implements Callable<Integer> {
     if (perf) {
       prefs.put("PERFORMANCE_INFO", "true");
     }
+    prefs.putAll(commandPrefs);
     prefs.putAll(userPrefs);
     return prefs;
   }
 
   private StateSpace loadModel() throws IOException {
-    validateInput();
+    resolveComponent();
 
     logger.info("Load Event-B Machine");
 
     Map<String, String> prefs = buildProBPreferences();
-
-    resolvedModelPath = modelResolver.resolve(model, machineName);
-    resolvedMachineName = resolvedModelPath.getFileName().toString().replaceFirst("\\.bum$", "");
-    System.out.println("Machine: " + resolvedMachineName);
     StateSpace stateSpace = api.get().eventb_load(resolvedModelPath.toString(), prefs);
 
     GetVersionCommand version = new GetVersionCommand();
@@ -440,12 +453,18 @@ public class Animate implements Callable<Integer> {
     try {
       return loadModel();
     } catch (Exception e) {
-      modelResolver.cleanupTempDir();
-      logger.debug("Error loading model", e);
-      loadErrorMessage = "Error loading model: " + e.getMessage();
-      System.err.println(loadErrorMessage);
+      recordLoadError(e);
       return null;
     }
+  }
+
+  /** The shared load-failure protocol: clean up, record the message, report the error. */
+  private RunReport recordLoadError(Exception e) {
+    modelResolver.cleanupTempDir();
+    logger.debug("Error loading model", e);
+    loadErrorMessage = "Error loading model: " + e.getMessage();
+    System.err.println(loadErrorMessage);
+    return RunReport.of(RunReport.Status.ERROR, loadErrorMessage);
   }
 
   /**
@@ -474,13 +493,10 @@ public class Animate implements Callable<Integer> {
     initLogging();
     EventBModel extracted;
     try {
-      extracted = extractModel();
+      resolveComponent();
+      extracted = eventBFactory.get().extract(resolvedModelPath.toString()).getModel();
     } catch (Exception e) {
-      modelResolver.cleanupTempDir();
-      logger.debug("Error loading model", e);
-      loadErrorMessage = "Error loading model: " + e.getMessage();
-      System.err.println(loadErrorMessage);
-      return RunReport.of(RunReport.Status.ERROR, loadErrorMessage);
+      return recordLoadError(e);
     }
     try {
       return body.apply(extracted);
@@ -489,7 +505,11 @@ public class Animate implements Callable<Integer> {
     }
   }
 
-  private EventBModel extractModel() throws IOException {
+  /**
+   * Resolves the component file and derives the reported machine identity, shared by the
+   * ProB-loading and extraction-only paths so both stamp the same name into reports.
+   */
+  private void resolveComponent() throws IOException {
     validateInput();
     resolvedModelPath = modelResolver.resolve(model, machineName);
     // The resolver always returns a component file, never a filesystem root.
@@ -498,7 +518,6 @@ public class Animate implements Callable<Integer> {
             .toString()
             .replaceFirst("\\.(bum|buc)$", "");
     System.out.println("Machine: " + resolvedMachineName);
-    return eventBFactory.get().extract(resolvedModelPath.toString()).getModel();
   }
 
   /** Where the resolved component file lives; its siblings are the Rodin project files. */
