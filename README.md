@@ -276,6 +276,13 @@ than trusting what `po` gates on.
 Options:
 - `--events <e1,e2,...>` - Restrict the check to these events
   (comma-separated or repeated; default: every event of the machine)
+- `--deadlock` - Also search for a deadlocking state that satisfies the
+  invariant. The state need not be reachable, so a hit warns that it may
+  never occur in a run -- but proves the guards do not cover the invariant
+- `--where <predicate>` - Restrict the `--deadlock` search to states also
+  satisfying this Event-B predicate
+- `--no-invariant` - Skip the invariant preservation check (e.g. to search
+  only for deadlocks)
 - `--save <trace.json>` - Save the counterexample trace. The trace starts
   in the found state, which need not be reachable, so it may not `replay`
   against the model
