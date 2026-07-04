@@ -184,7 +184,7 @@ that render the format natively (GitLab `artifacts:reports:junit`, the GitHub
 JUnit actions, Jenkins). Each checked property is one `<testcase>` named after
 the check (`invariant`, `deadlock`, `assertions`, `goal`, `ltl`,
 `well-definedness`, `replay`, `convert`, the qualified obligation names for
-`po`, ...) with the machine as its classname. A violation marks the fired
+`po`, `invariant/<event>` for `cbc`, ...) with the machine as its classname. A violation marks the fired
 property `<failure>` -- with the counterexample as the failure body -- and the
 other properties `<skipped>`, since the search stops at the first violation
 and proves nothing about them; a run without a verdict (exit 2) marks the
@@ -254,6 +254,31 @@ Options:
   nothing fails the gate
 - `-v, --verbose` - List every obligation with its status, not only the
   failing ones
+
+#### Constraint-Based Invariant Check
+
+```bash
+eventb-animate cbc path/to/model.bum
+eventb-animate cbc --events inc,reset --save trace.json path/to/model.zip
+```
+
+Proves per-event invariant preservation with ProB's constraint solver,
+without exploring the state space: for each event it searches for an
+invariant-satisfying state -- reachable or not -- from which one step
+violates the invariant. A hit is a violation (exit 1) with a two-step
+counterexample trace; no hit is a preservation proof for every checked
+event, with two caveats printed alongside: initialisation is not checked
+(the [model checker](#model-checking) covers it), and a solver timeout can
+mask a violation. The check ignores the Rodin proof status shipped with the
+model (`PROOF_INFO=false`), so it proves preservation from scratch rather
+than trusting what `po` gates on.
+
+Options:
+- `--events <e1,e2,...>` - Restrict the check to these events
+  (comma-separated or repeated; default: every event of the machine)
+- `--save <trace.json>` - Save the counterexample trace. The trace starts
+  in the found state, which need not be reachable, so it may not `replay`
+  against the model
 
 #### Convert to Classical B
 
