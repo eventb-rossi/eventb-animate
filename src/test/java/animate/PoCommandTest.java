@@ -19,11 +19,18 @@ import org.w3c.dom.NodeList;
  */
 public class PoCommandTest {
 
-  // 842 M1 obligations (836 discharged + 6 reviewed) plus one undischarged C1 theorem.
+  // 842 M1 obligations (328 discharged, 1 reviewed, 513 with a stale/broken proof) plus one
+  // undischarged C1 theorem. The export left most proofs broken, which the gate must surface
+  // rather than count as discharged.
   private static final String BASE_MODEL_M1 =
       Paths.get("src/test/resources/models/base-model/M1.bum").toString();
   private static final String TRAFFIC_LIGHT_M2 =
       Paths.get("src/test/resources/models/traffic-light/M2.bum").toString();
+  private static final String TRAFFIC_LIGHT_DIR =
+      Paths.get("src/test/resources/models/traffic-light").toString();
+  // 19 discharged and 22 obligations whose stored proof is broken (stale FIS/INV proofs).
+  private static final String BINARY_SEARCH_M3 =
+      Paths.get("src/test/resources/models/binary-search/M3.bum").toString();
   // Two undischarged inc obligations: inv1 preservation is provable, inv2 is false.
   private static final String COUNTER_M0 =
       Paths.get("src/test/resources/models/counter/M0.bum").toString();
@@ -35,46 +42,80 @@ public class PoCommandTest {
     assertEquals(
         "Open obligations are unproven, exit 2:\n" + result.output(), 2, result.exitCode());
     assertTrue(
-        "The summary should count every status:\n" + result.output(),
+        "The summary should count every status, broken included:\n" + result.output(),
         result
             .output()
-            .contains("Proof obligations: 843 total, 836 discharged, 6 reviewed, 1 undischarged"));
+            .contains(
+                "Proof obligations: 843 total, 328 discharged, 1 reviewed, 513 broken,"
+                    + " 1 undischarged"));
     assertTrue(
         "The undischarged obligation should be named:\n" + result.output(),
         result.output().contains("C1/InductionAxiom/THM"));
     assertTrue(
-        "The reviewed obligations should be named:\n" + result.output(),
-        result.output().contains("M1/INITIALISATION/RootType/INV"));
+        "Broken proofs should be surfaced, not counted as discharged:\n" + result.output(),
+        result.output().contains("Broken (stored proof is stale; replay it in Rodin):"));
+    assertTrue(
+        "The broken obligations should be named:\n" + result.output(),
+        result.output().contains("M1/INITIALISATION/CommonRoleType/INV"));
     assertTrue(
         "The verdict should count the open obligations:\n" + result.output(),
-        result.output().contains("Error: 7 of 843 proof obligations are not discharged"));
+        result.output().contains("Error: 515 of 843 proof obligations are not discharged"));
   }
 
   @Test
-  public void testAllowReviewedStillFailsOnUndischarged() {
+  public void testBrokenProofsAreNotDischarged() {
+    // binary-search ships 22 obligations whose stored proof is broken (stale) at full
+    // confidence; the kernel reports them discharged, so the gate reads the .bps flag back.
+    TestCli.Result result = TestCli.execute("po", BINARY_SEARCH_M3);
+
+    assertEquals(
+        "Broken proofs are not discharged, so the gate fails:\n" + result.output(),
+        2,
+        result.exitCode());
+    assertTrue(
+        "Broken obligations should be split out of the discharged count:\n" + result.output(),
+        result.output().contains("Proof obligations: 41 total, 19 discharged, 22 broken"));
+    assertTrue(
+        "A broken obligation should be named:\n" + result.output(),
+        result.output().contains("M1/search/act1/FIS"));
+    assertTrue(
+        "The verdict should count the broken obligations as open:\n" + result.output(),
+        result.output().contains("Error: 22 of 41 proof obligations are not discharged"));
+  }
+
+  @Test
+  public void testAllowReviewedDoesNotRescueBrokenProofs() {
     TestCli.Result result = TestCli.execute("po", "--allow-reviewed", BASE_MODEL_M1);
 
     assertEquals(
-        "The undischarged theorem still fails the gate:\n" + result.output(), 2, result.exitCode());
+        "Broken proofs and the undischarged theorem still fail the gate:\n" + result.output(),
+        2,
+        result.exitCode());
     assertTrue(
-        "Only the undischarged obligation should remain open:\n" + result.output(),
-        result.output().contains("Error: 1 of 843 proof obligations are not discharged"));
+        "--allow-reviewed accepts the one reviewed obligation but not the 513 broken ones:\n"
+            + result.output(),
+        result.output().contains("Error: 514 of 843 proof obligations are not discharged"));
+    assertTrue(
+        "The broken obligations should still be surfaced:\n" + result.output(),
+        result.output().contains("Broken (stored proof is stale; replay it in Rodin):"));
   }
 
   @Test
   public void testFilterComposesWithAllowReviewed() {
+    // The one obligation that is reviewed rather than broken; --allow-reviewed accepts it.
     TestCli.Result result =
-        TestCli.execute("po", "--allow-reviewed", "--filter", "M1/*", BASE_MODEL_M1);
+        TestCli.execute(
+            "po", "--allow-reviewed", "--filter", "M1/INITIALISATION/SRootType/INV", BASE_MODEL_M1);
 
     assertEquals(
-        "Filtering out the C1 theorem and accepting reviewed passes:\n" + result.output(),
+        "Scoping to the reviewed obligation and accepting it passes:\n" + result.output(),
         0,
         result.exitCode());
     assertTrue(
-        "The summary should count the filtered-out obligation:\n" + result.output(),
-        result.output().contains("(1 filtered out by --filter)"));
+        "The summary should count the filtered-out obligations:\n" + result.output(),
+        result.output().contains("(842 filtered out by --filter)"));
     assertTrue(
-        "The verdict should mention the accepted reviewed obligations:\n" + result.output(),
+        "The verdict should mention the accepted reviewed obligation:\n" + result.output(),
         result.output().contains("All proof obligations are discharged or reviewed."));
   }
 
@@ -97,12 +138,14 @@ public class PoCommandTest {
 
   @Test
   public void testAllDischargedExitsZero() {
-    TestCli.Result result = TestCli.execute("po", TRAFFIC_LIGHT_M2);
+    // The abstract machine's obligations are the one fully proven (unbroken) scope; the
+    // later refinements carry the stale proofs.
+    TestCli.Result result = TestCli.execute("po", "--filter", "M0/*", TRAFFIC_LIGHT_M2);
 
-    assertEquals("A fully proven chain passes:\n" + result.output(), 0, result.exitCode());
+    assertEquals("A fully proven scope passes:\n" + result.output(), 0, result.exitCode());
     assertTrue(
-        "The summary should cover the whole refinement chain:\n" + result.output(),
-        result.output().contains("Proof obligations: 23 total, 23 discharged"));
+        "The summary should count the scoped and filtered obligations:\n" + result.output(),
+        result.output().contains("Proof obligations: 4 total, 4 discharged (19 filtered out"));
     assertTrue(
         "The verdict line should be printed:\n" + result.output(),
         result.output().contains("All proof obligations are discharged."));
@@ -133,12 +176,22 @@ public class PoCommandTest {
 
   @Test
   public void testVerboseListsEveryObligation() {
-    TestCli.Result result = TestCli.execute("po", "-v", TRAFFIC_LIGHT_M2);
+    TestCli.Result result = TestCli.execute("po", "-v", "-m", "M0", TRAFFIC_LIGHT_DIR);
 
     assertEquals(0, result.exitCode());
     assertTrue(
         "Discharged obligations should be listed under -v:\n" + result.output(),
         result.output().contains("\t - M0/INITIALISATION/inv3/INV: discharged"));
+  }
+
+  @Test
+  public void testVerboseListsBrokenStatus() {
+    TestCli.Result result = TestCli.execute("po", "-v", BINARY_SEARCH_M3);
+
+    assertEquals(2, result.exitCode());
+    assertTrue(
+        "Broken obligations should be labelled as such under -v:\n" + result.output(),
+        result.output().contains("\t - M1/search/act1/FIS: broken"));
   }
 
   @Test
@@ -256,15 +309,15 @@ public class PoCommandTest {
       Element suite = (Element) doc.getElementsByTagName("testsuite").item(0);
       assertEquals("eventb-animate po", suite.getAttribute("name"));
       assertEquals("843", suite.getAttribute("tests"));
-      assertEquals("7", suite.getAttribute("failures"));
+      assertEquals("515", suite.getAttribute("failures"));
       assertEquals("0", suite.getAttribute("errors"));
       NodeList failures = doc.getElementsByTagName("failure");
-      assertEquals(7, failures.getLength());
+      assertEquals(515, failures.getLength());
       Element firstFailure = (Element) failures.item(0);
       assertTrue(
           "The failure should carry the obligation status:\n"
               + firstFailure.getAttribute("message"),
-          firstFailure.getAttribute("message").contains("reviewed, not proven"));
+          firstFailure.getAttribute("message").contains("broken: the recorded proof is stale"));
     } finally {
       Files.deleteIfExists(report);
     }
