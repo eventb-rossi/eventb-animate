@@ -11,9 +11,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -157,15 +159,32 @@ class PoCommand implements Callable<Integer> {
           new RunReport.Check("proof-obligations", RunReport.Outcome.ERROR, message));
     }
 
+    Set<String> broken = brokenObligations(model);
     List<RunReport.Check> checks = new ArrayList<>(kept.size());
     List<String> reviewedOpen = new ArrayList<>();
+    List<String> brokenOpen = new ArrayList<>();
     List<String> undischarged = new ArrayList<>();
     List<OpenPo> openPos = new ArrayList<>();
     int discharged = 0;
     int reviewed = 0;
+    int brokenCount = 0;
     for (QualifiedPo qualified : kept) {
       ProofObligation po = qualified.po();
-      if (po.isDischarged()) {
+      if (broken.contains(qualified.name())) {
+        // A broken proof is stale whatever its recorded confidence: Rodin marks the
+        // obligation as needing a replay and does not count it discharged, so neither
+        // does the gate. The kernel drops the flag, so it is read back from the .bps.
+        brokenCount++;
+        brokenOpen.add(qualified.name());
+        checks.add(
+            new RunReport.Check(
+                qualified.name(),
+                RunReport.Outcome.FAILED,
+                withDescription("broken: the recorded proof is stale (replay it in Rodin)", po)));
+        if (disproverSession != null) {
+          openPos.add(new OpenPo(qualified, checks.size() - 1));
+        }
+      } else if (po.isDischarged()) {
         discharged++;
         checks.add(new RunReport.Check(qualified.name(), RunReport.Outcome.PASSED, "discharged"));
       } else if (po.isReviewed()) {
@@ -201,10 +220,16 @@ class PoCommand implements Callable<Integer> {
 
     if (verbose) {
       for (QualifiedPo qualified : kept) {
-        System.out.println("\t - " + qualified.name() + ": " + statusWord(qualified.po()));
+        System.out.println("\t - " + qualified.name() + ": " + statusWord(qualified, broken));
       }
     }
-    printSummary(kept.size(), discharged, reviewed, undischarged.size(), all.size() - kept.size());
+    printSummary(
+        kept.size(),
+        discharged,
+        reviewed,
+        brokenCount,
+        undischarged.size(),
+        all.size() - kept.size());
 
     // The disprover refines each open obligation's check in place: a counterexample is
     // a definite failure, a solver proof passes the gate, everything else stays open.
@@ -263,6 +288,11 @@ class PoCommand implements Callable<Integer> {
         System.err.println(
             "Reviewed (not proven; rerun with --allow-reviewed to accept):\n\t - "
                 + String.join("\n\t - ", reviewedOpen));
+      }
+      if (!brokenOpen.isEmpty()) {
+        System.err.println(
+            "Broken (stored proof is stale; replay it in Rodin):\n\t - "
+                + String.join("\n\t - ", brokenOpen));
       }
       if (!undischarged.isEmpty()) {
         System.err.println("Undischarged:\n\t - " + String.join("\n\t - ", undischarged));
@@ -372,6 +402,35 @@ class PoCommand implements Callable<Integer> {
     return "unknown error";
   }
 
+  /**
+   * Qualified names of obligations Rodin flagged as broken (stale proof) in the .bps files. The
+   * bundled kernel keeps only the confidence, so these are read straight from the status files and
+   * folded back into the classification.
+   */
+  private Set<String> brokenObligations(EventBModel model) {
+    Path projectDir = projectDirectory();
+    Set<String> broken = new LinkedHashSet<>();
+    for (String component : componentNames(model)) {
+      Path bps = projectDir.resolve(component + ".bps");
+      if (!Files.exists(bps)) {
+        // A component with obligations but no status file has nothing proved (confidence 0),
+        // so its obligations are already open; there is no broken flag to recover.
+        continue;
+      }
+      try {
+        for (String name : ProofStatusReader.brokenObligations(bps)) {
+          broken.add(component + "/" + name);
+        }
+      } catch (IOException e) {
+        // A malformed .bps must not abort the gate; without its flags the obligations fall
+        // back to their kernel confidence, which is the behaviour before broken detection.
+        System.err.println(
+            "Warning: cannot read proof status from " + component + ".bps: " + e.getMessage());
+      }
+    }
+    return broken;
+  }
+
   /** The chain's components whose .bpo file is absent next to the resolved model file. */
   private List<String> missingProofFiles(EventBModel model) {
     Path projectDir = projectDirectory();
@@ -440,12 +499,16 @@ class PoCommand implements Callable<Integer> {
     return description == null || description.isBlank() ? message : message + ": " + description;
   }
 
-  private static String statusWord(ProofObligation po) {
+  private static String statusWord(QualifiedPo qualified, Set<String> broken) {
+    if (broken.contains(qualified.name())) {
+      return "broken";
+    }
+    ProofObligation po = qualified.po();
     return po.isDischarged() ? "discharged" : po.isReviewed() ? "reviewed" : "undischarged";
   }
 
   private static void printSummary(
-      int total, int discharged, int reviewed, int undischarged, int filteredOut) {
+      int total, int discharged, int reviewed, int broken, int undischarged, int filteredOut) {
     StringBuilder summary =
         new StringBuilder("Proof obligations: ")
             .append(total)
@@ -454,6 +517,9 @@ class PoCommand implements Callable<Integer> {
             .append(" discharged");
     if (reviewed > 0) {
       summary.append(", ").append(reviewed).append(" reviewed");
+    }
+    if (broken > 0) {
+      summary.append(", ").append(broken).append(" broken");
     }
     if (undischarged > 0) {
       summary.append(", ").append(undischarged).append(" undischarged");

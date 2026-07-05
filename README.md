@@ -242,9 +242,12 @@ files next to the model (ProB is not started) and reports every proof
 obligation of the refinement chain -- all machines and contexts -- under its
 qualified name `<component>/<obligation>`. The run passes only when every
 obligation is discharged; open obligations exit 2 (unproven, not disproven).
-A model exported without its proof files is rejected, so an empty proof
-database cannot pass as "nothing to prove". Unlike `wd`, which asks ProB to
-prove well-definedness from scratch, `po` reports what the Rodin provers
+An obligation Rodin flagged as _broken_ -- its stored proof is stale because
+the model changed after it was proved -- counts as open whatever confidence it
+records, so a stale export cannot pass the gate until the proofs are replayed
+in Rodin. A model exported without its proof files is rejected, so an empty
+proof database cannot pass as "nothing to prove". Unlike `wd`, which asks ProB
+to prove well-definedness from scratch, `po` reports what the Rodin provers
 already established.
 
 Options:
