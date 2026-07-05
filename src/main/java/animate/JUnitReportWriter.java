@@ -39,7 +39,7 @@ final class JUnitReportWriter {
   private static void writeDocument(XMLStreamWriter xml, RunReport.Envelope envelope)
       throws XMLStreamException {
     RunReport report = envelope.report();
-    List<RunReport.Check> testcases = testcases(report);
+    List<RunReport.Check> testcases = report.checksOrSynthesized();
     long failures = count(testcases, RunReport.Outcome.FAILED);
     long errors = count(testcases, RunReport.Outcome.ERROR);
     long skipped = count(testcases, RunReport.Outcome.SKIPPED);
@@ -61,7 +61,7 @@ final class JUnitReportWriter {
     for (RunReport.Check check : testcases) {
       xml.writeStartElement("testcase");
       xml.writeAttribute("name", xmlSafe(check.name()));
-      xml.writeAttribute("classname", classname(envelope));
+      xml.writeAttribute("classname", envelope.displayName());
       xml.writeAttribute("time", caseTime);
       switch (check.outcome()) {
         case PASSED -> {}
@@ -75,19 +75,6 @@ final class JUnitReportWriter {
     xml.writeEndElement();
     xml.writeEndElement();
     xml.writeEndDocument();
-  }
-
-  /**
-   * A run that failed before any check could run (e.g. the model never loaded) still gets one
-   * testcase, so the suite is never empty and CI shows the error instead of an empty report.
-   */
-  private static List<RunReport.Check> testcases(RunReport report) {
-    if (!report.checks().isEmpty()) {
-      return report.checks();
-    }
-    RunReport.Outcome outcome =
-        report.status() == RunReport.Status.OK ? RunReport.Outcome.PASSED : RunReport.Outcome.ERROR;
-    return List.of(new RunReport.Check("run", outcome, report.message()));
   }
 
   private static long count(List<RunReport.Check> checks, RunReport.Outcome outcome) {
@@ -107,15 +94,6 @@ final class JUnitReportWriter {
     xml.writeAttribute("errors", Long.toString(errors));
     xml.writeAttribute("skipped", Long.toString(skipped));
     xml.writeAttribute("time", seconds(envelope.durationMs()));
-  }
-
-  /** GitLab requires a non-empty classname; the machine is the natural grouping key. */
-  private static String classname(RunReport.Envelope envelope) {
-    if (envelope.machine() != null) {
-      return envelope.machine();
-    }
-    Path fileName = envelope.model() == null ? null : envelope.model().getFileName();
-    return fileName == null ? Animate.TOOL_NAME : fileName.toString();
   }
 
   private static void writeVerdict(

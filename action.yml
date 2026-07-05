@@ -33,6 +33,10 @@ inputs:
     description: 'Write a JUnit XML report to this path (one testcase per checked property)'
     required: false
     default: ''
+  markdown-report:
+    description: 'Write a human-readable Markdown report of the run to this path'
+    required: false
+    default: ''
   trace:
     description: 'Path to JSON trace file (replay command, required when command is "replay")'
     required: false
@@ -81,6 +85,7 @@ runs:
         INPUT_SAVE: ${{ inputs.save }}
         INPUT_JSON_REPORT: ${{ inputs.json-report }}
         INPUT_JUNIT_REPORT: ${{ inputs.junit-report }}
+        INPUT_MARKDOWN_REPORT: ${{ inputs.markdown-report }}
         INPUT_TRACE: ${{ inputs.trace }}
         INPUT_ARGS: ${{ inputs.args }}
       run: |
@@ -141,6 +146,9 @@ runs:
         fi
         if [ -n "$INPUT_JUNIT_REPORT" ]; then
           cli_args+=("--junit" "$INPUT_JUNIT_REPORT")
+        fi
+        if [ -n "$INPUT_MARKDOWN_REPORT" ]; then
+          cli_args+=("--markdown" "$INPUT_MARKDOWN_REPORT")
         fi
 
         if [ -n "$INPUT_ARGS" ]; then

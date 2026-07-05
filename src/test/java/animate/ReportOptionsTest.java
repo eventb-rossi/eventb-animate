@@ -91,6 +91,39 @@ public class ReportOptionsTest {
   }
 
   @Test
+  public void testMarkdownToStdoutIsRejected() {
+    TestCli.Result result = TestCli.execute("--markdown", "-", BASE_MODEL_M1);
+
+    assertEquals("--markdown - is a usage error:\n" + result.output(), 2, result.exitCode());
+    assertTrue(
+        "The error should name the option:\n" + result.output(),
+        result.output().contains("--markdown"));
+    assertFalse(
+        "Validation must fail before any model load:\n" + result.output(),
+        result.output().contains("Machine:"));
+  }
+
+  @Test
+  public void testMarkdownAndJsonToTheSameFileIsRejected() throws Exception {
+    Path dir = Files.createTempDirectory("animate-report-");
+    Path report = dir.resolve("report.out");
+    try {
+      TestCli.Result result =
+          TestCli.execute(
+              "--markdown", report.toString(), "--json", report.toString(), BASE_MODEL_M1);
+
+      assertEquals("A shared path is a usage error:\n" + result.output(), 2, result.exitCode());
+      assertTrue(
+          "The error should explain the collision:\n" + result.output(),
+          result.output().contains("must not write to the same file"));
+      assertTrue("Nothing must be written", Files.notExists(report));
+    } finally {
+      Files.deleteIfExists(report);
+      Files.deleteIfExists(dir);
+    }
+  }
+
+  @Test
   public void testJsonAndJunitToTheSameFileIsRejected() throws Exception {
     Path dir = Files.createTempDirectory("animate-report-");
     Path report = dir.resolve("report.out");

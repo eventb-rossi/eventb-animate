@@ -8,6 +8,7 @@
     EVENTB_ANIMATE_SAVE: ''
     EVENTB_ANIMATE_JSON: ''
     EVENTB_ANIMATE_JUNIT: ''
+    EVENTB_ANIMATE_MARKDOWN: ''
     EVENTB_ANIMATE_TRACE: ''
     EVENTB_ANIMATE_ARGS: ''
     EVENTB_ANIMATE_VERSION: 'latest'
@@ -83,6 +84,9 @@
       fi
       if [ -n "$EVENTB_ANIMATE_JUNIT" ]; then
         cli_args+=("--junit" "$EVENTB_ANIMATE_JUNIT")
+      fi
+      if [ -n "$EVENTB_ANIMATE_MARKDOWN" ]; then
+        cli_args+=("--markdown" "$EVENTB_ANIMATE_MARKDOWN")
       fi
 
       if [ -n "$EVENTB_ANIMATE_ARGS" ]; then

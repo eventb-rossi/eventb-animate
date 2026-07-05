@@ -275,6 +275,15 @@ public class Animate implements Callable<Integer> {
   Path junitReport;
 
   @Option(
+      names = {"--markdown", "--md"},
+      paramLabel = "report.md",
+      description =
+          "write a human-readable Markdown report of the run (counterexample trace, violating"
+              + " state, violated invariants)",
+      scope = ScopeType.INHERIT)
+  Path markdownReport;
+
+  @Option(
       names = "--debug",
       description = "enable debug log (default: ${DEFAULT-VALUE})",
       scope = ScopeType.INHERIT)
@@ -647,7 +656,7 @@ public class Animate implements Callable<Integer> {
   }
 
   private int emitReports(CommandLine.ParseResult parseResult, int exitCode, long durationMs) {
-    if (jsonReport == null && junitReport == null) {
+    if (jsonReport == null && junitReport == null && markdownReport == null) {
       return exitCode;
     }
     RunReport report = lastReport;
@@ -664,14 +673,24 @@ public class Animate implements Callable<Integer> {
     String command = executedCommandName(parseResult);
     Instant timestamp = Instant.now();
     // Each report is written independently: a failed write must not cost the other
-    // report, but it must fail CI even when the check itself was clean (already-
-    // failing exits keep their code). JUnit goes first so the JSON document, which
-    // records the exit code, is rendered after any escalation and never contradicts
-    // the actual process exit.
+    // reports, but it must fail CI even when the check itself was clean (already-
+    // failing exits keep their code). Both JSON and Markdown record the exit code, so
+    // they render after the writes that can escalate it; JSON goes strictly last so it
+    // can never contradict the actual process exit.
     if (junitReport != null) {
       try {
         JUnitReportWriter.write(
             envelope(command, report, exitCode, timestamp, durationMs), junitReport);
+      } catch (IOException e) {
+        exitCode = reportWriteFailed(e, exitCode);
+      }
+    }
+    if (markdownReport != null) {
+      try {
+        Files.writeString(
+            markdownReport,
+            MarkdownReportWriter.render(envelope(command, report, exitCode, timestamp, durationMs)),
+            StandardCharsets.UTF_8);
       } catch (IOException e) {
         exitCode = reportWriteFailed(e, exitCode);
       }
@@ -725,21 +744,41 @@ public class Animate implements Callable<Integer> {
    * not derived artifacts like convert/info outputs.
    */
   private void validateReportOptions() {
-    if (junitReport != null && "-".equals(junitReport.toString())) {
-      throw usageError("--junit does not support '-'; only --json can write to stdout");
-    }
+    record Target(String option, Path path) {}
+    List<Target> targets = new ArrayList<>();
+    // --json alone may write to stdout, and only when its path is '-'; that variant writes no file.
     if (jsonReport != null && !jsonToStdout()) {
-      if (junitReport != null
-          && jsonReport
-              .toAbsolutePath()
-              .normalize()
-              .equals(junitReport.toAbsolutePath().normalize())) {
-        throw usageError("--json and --junit must not write to the same file: " + jsonReport);
-      }
-      validateReportTarget(jsonReport, "--json");
+      targets.add(new Target("--json", jsonReport));
     }
     if (junitReport != null) {
-      validateReportTarget(junitReport, "--junit");
+      targets.add(new Target("--junit", junitReport));
+    }
+    if (markdownReport != null) {
+      targets.add(new Target("--markdown", markdownReport));
+    }
+    for (Target target : targets) {
+      if ("-".equals(target.path().toString())) {
+        throw usageError(
+            target.option() + " does not support '-'; only --json can write to stdout");
+      }
+    }
+    // Each report is an independent artifact, so no two may collide on the same file.
+    List<Path> normalized =
+        targets.stream().map(t -> t.path().toAbsolutePath().normalize()).toList();
+    for (int i = 0; i < targets.size(); i++) {
+      for (int j = i + 1; j < targets.size(); j++) {
+        if (normalized.get(i).equals(normalized.get(j))) {
+          throw usageError(
+              targets.get(i).option()
+                  + " and "
+                  + targets.get(j).option()
+                  + " must not write to the same file: "
+                  + targets.get(j).path());
+        }
+      }
+    }
+    for (Target target : targets) {
+      validateReportTarget(target.path(), target.option());
     }
   }
 

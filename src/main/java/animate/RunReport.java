@@ -125,6 +125,19 @@ record RunReport(
     return of(status, message, new Check(checkName, outcome, message));
   }
 
+  /**
+   * The checks to surface, or a single synthesized {@code run} row derived from the verdict when a
+   * run recorded none (e.g. a load failure). Report writers that must show at least one row -- the
+   * JUnit suite and the Markdown table -- share this so an empty run renders identically in both.
+   */
+  List<Check> checksOrSynthesized() {
+    if (!checks.isEmpty()) {
+      return checks;
+    }
+    Outcome outcome = status == Status.OK ? Outcome.PASSED : Outcome.ERROR;
+    return List.of(new Check("run", outcome, message));
+  }
+
   RunReport withCounterexample(TraceWriter.Counterexample counterexample) {
     return new RunReport(status, message, checks, counterexample, traceFile, exitCodeOverride);
   }
@@ -156,5 +169,19 @@ record RunReport(
       Instant timestamp,
       long durationMs,
       int exitCode,
-      RunReport report) {}
+      RunReport report) {
+
+    /**
+     * The most specific label for the run: the machine, else the model's file name, else the tool
+     * name. Never null or empty -- JUnit needs a non-empty classname and the Markdown title needs a
+     * subject.
+     */
+    String displayName() {
+      if (machine != null) {
+        return machine;
+      }
+      Path fileName = model == null ? null : model.getFileName();
+      return fileName == null ? Animate.TOOL_NAME : fileName.toString();
+    }
+  }
 }

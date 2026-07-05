@@ -157,6 +157,10 @@ machine name is unique across all projects.
 - `--junit <report.xml>` - Write a JUnit XML report, one testcase per checked
   property, for CI systems that ingest the format natively (see
   [Machine-Readable Reports](#machine-readable-reports))
+- `--markdown <report.md>`, `--md` - Write a human-readable Markdown report of
+  the run (counterexample trace, violating state, violated invariants), for a
+  person to read in a merge-request view or as a browsable CI artifact (see
+  [Machine-Readable Reports](#machine-readable-reports))
 - `--debug` - Enable debug logging
 - `-h, --help` - Show help (also available on every subcommand)
 - `-V, --version` - Print the release version
@@ -184,9 +188,9 @@ machine name is unique across all projects.
   (`wd`, `po` -- open means unproven, not disproven), or the command line was
   invalid (usage errors, including unparseable `--goal`/`--ltl` formulas)
 
-If a requested `--json`/`--junit` report cannot be written, an otherwise clean
-run exits 1: the report is the artifact CI asked for, so its absence must fail
-the job.
+If a requested `--json`/`--junit`/`--markdown` report cannot be written, an
+otherwise clean run exits 1: the report is the artifact CI asked for, so its
+absence must fail the job.
 
 ### Machine-Readable Reports
 
@@ -224,6 +228,17 @@ returns only discharged/total counts, not per-obligation names), while `po`
 reports one testcase per obligation, open ones as `<failure>`. Both report
 options combine freely (but not to the same file), and only `--json` can
 write to stdout.
+
+`--markdown <report.md>` writes the same findings as a human-readable Markdown
+document: a title with the verdict, a metadata list, a checks table, and, when a
+violation is found, the counterexample trace, violating state, and violated
+invariants. Every value ProB produces is rendered as inline code or a fenced
+block (with the fence widened past any backtick run), so an identifier or state
+dump can never break the layout. It is meant for a person to read in a
+merge-request view or as a browsable CI artifact -- keep gating on
+`--json`/`--junit`, whose shapes are stable, rather than parsing the Markdown.
+Like the other report options it overwrites without `--force`, must not share a
+file with them, and does not support `-`.
 
 ### Commands
 
