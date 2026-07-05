@@ -6,6 +6,8 @@ A command-line tool for model-checking Event-B models using ProB.
 
 - Exhaustive bounded model-checking of Event-B models (deadlocks and invariants),
   working at any refinement level
+- Symbolic invariant model-checking (BMC, IC3, k-induction, t-induction) that can
+  prove safety on state spaces too large to enumerate
 - Coverage analysis
 - Counterexample trace saving and replay in JSON format
 - Model visualization export (machine hierarchy, events, properties, invariants)
@@ -73,6 +75,17 @@ witnesses/gluing.
 The model path may also be a `.zip` archive or a Rodin project directory; the
 most refined machine is auto-selected unless `-m/--machine` says otherwise.
 
+To check invariant safety symbolically instead of by enumerating states, pass
+`--symbolic` with an algorithm — IC3 and k-induction can *prove* safety on state
+spaces too large to explore exhaustively:
+
+```bash
+eventb-animate --symbolic ic3 path/to/model.bum
+```
+
+This reports only a verdict (no counterexample trace); see the `--symbolic`
+option below for the trade-offs.
+
 A Rodin archive exported via Eclipse's *Archive File* wizard may bundle several
 projects, each under its own top-level directory. When the archive holds more
 than one project, name the machine you want with its project prefix, for example
@@ -111,6 +124,19 @@ machine name is unique across all projects.
   `--assertions`, `--no-deadlock`, `--no-invariant`, `--time-limit`,
   `--stop-at-full-coverage`, `--search-strategy`) are rejected
 - `--ltl-file <file.ltl>` - Read the LTL formula to check from a file
+- `--symbolic <bmc|ic3|kinduction|tinduction>` - Verify invariant safety with
+  ProB's symbolic model checker (BMC, IC3, k-induction, t-induction) instead of
+  the explicit consistency check. It reasons over the transition relation with a
+  SAT/SMT backend, so IC3 and k-induction can *prove* safety on state spaces too
+  large to enumerate. It reports only a verdict: a reachable violation exits 1
+  (with no trace — rerun the default check to save one), a proven-safe machine
+  exits 0, and an inconclusive run exits 2. The induction modes prove safety
+  where BMC only finds bugs, but any mode may be inconclusive (exit 2) on Event-B
+  set-theoretic invariants when the solver is too weak. Because it produces no
+  trace and no incremental progress and checks invariants only with no bound,
+  `--save`, `--progress`, `--ltl` and the consistency-check flags (`--goal`,
+  `--assertions`, `--no-deadlock`, `--no-invariant`, `--states`, `--time-limit`,
+  `--stop-at-full-coverage`, `--search-strategy`) are rejected
 - `--search-strategy <mixed|bf|df>` - State-space exploration order: mixed
   breadth/depth (default), breadth-first, or depth-first (`df` can reach deep
   violations sooner)
@@ -141,19 +167,22 @@ machine name is unique across all projects.
 
 - `0` - success: the requested check found nothing (the full state space was
   explored, or a `--states`/`--time-limit`/`--stop-at-full-coverage` bound was
-  reached without a violation), the LTL formula holds, all proof obligations
-  are discharged (`wd`, `po`), or a replay was perfect (`replay`)
+  reached without a violation), the LTL formula holds, a `--symbolic` run proved
+  invariant safety, all proof obligations are discharged (`wd`, `po`), or a
+  replay was perfect (`replay`)
 - `1` - a definite negative verdict or an input failure: the model could not
   be loaded, an invariant or assertion was violated, a deadlock was reached (a
   state with no enabled events, including legitimate terminal states), a
-  `--goal` state was found, an LTL counterexample was found, a proof
-  obligation was disproved (`po --disprove`), a trace replay was not perfect
-  (`replay`), or a conversion failed (`convert`)
+  `--goal` state was found, an LTL counterexample was found, a `--symbolic` run
+  found a reachable invariant violation, a proof obligation was disproved
+  (`po --disprove`), a trace replay was not perfect (`replay`), or a conversion
+  failed (`convert`)
 - `2` - no verdict: nothing was proven either way. The check could not
   complete (interrupted or a ProB error), a bounded LTL run hit the
-  `--states` limit, a proof obligation remains undischarged (`wd`, `po` --
-  open means unproven, not disproven), or the command line was invalid
-  (usage errors, including unparseable `--goal`/`--ltl` formulas)
+  `--states` limit, a `--symbolic` run was inconclusive (the solver/provers were
+  too weak, or a bound was reached), a proof obligation remains undischarged
+  (`wd`, `po` -- open means unproven, not disproven), or the command line was
+  invalid (usage errors, including unparseable `--goal`/`--ltl` formulas)
 
 If a requested `--json`/`--junit` report cannot be written, an otherwise clean
 run exits 1: the report is the artifact CI asked for, so its absence must fail

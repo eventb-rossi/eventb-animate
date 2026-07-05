@@ -11,6 +11,7 @@ import de.be4.ltl.core.parser.LtlParseException;
 import de.prob.animator.command.ComputeCoverageCommand;
 import de.prob.animator.command.ComputeCoverageCommand.ComputeCoverageResult;
 import de.prob.animator.command.GetVersionCommand;
+import de.prob.animator.command.SymbolicModelcheckCommand;
 import de.prob.animator.domainobjects.*;
 import de.prob.check.ConsistencyChecker;
 import de.prob.check.IModelCheckListener;
@@ -185,6 +186,31 @@ public class Animate implements Callable<Integer> {
       description = "read the LTL formula to check from a file")
   Path ltlFile;
 
+  @Option(
+      names = "--symbolic",
+      paramLabel = "bmc|ic3|kinduction|tinduction",
+      description =
+          "verify invariant safety with ProB's symbolic model checker instead of the explicit"
+              + " consistency check. Verdict only: it reports no counterexample trace, so --save is"
+              + " unsupported and the consistency-check flags are rejected. Induction modes"
+              + " (ic3/kinduction/tinduction) may be inconclusive (exit 2) on Event-B set-theoretic"
+              + " invariants")
+  SymbolicAlgorithm symbolic;
+
+  /** CLI names for ProB's symbolic model-checking algorithms. */
+  enum SymbolicAlgorithm {
+    bmc(SymbolicModelcheckCommand.Algorithm.BMC),
+    ic3(SymbolicModelcheckCommand.Algorithm.IC3),
+    kinduction(SymbolicModelcheckCommand.Algorithm.KINDUCTION),
+    tinduction(SymbolicModelcheckCommand.Algorithm.TINDUCTION);
+
+    final SymbolicModelcheckCommand.Algorithm kernel;
+
+    SymbolicAlgorithm(SymbolicModelcheckCommand.Algorithm kernel) {
+      this.kernel = kernel;
+    }
+  }
+
   // Only the three orders ProB's do_modelchecking supports; the kernel enum lists
   // more, but they are not accepted by the Prolog side.
   @Option(
@@ -316,6 +342,34 @@ public class Animate implements Callable<Integer> {
           "--time-limit must be a positive number of seconds (or omitted for no limit), got: "
               + timeLimit);
     }
+    if (isSymbolicRun()) {
+      // Verdict-only mode: a single blocking call that reports no trace and no incremental
+      // progress, checks invariants only, and takes no bound, so --save and the flags below are
+      // rejected rather than silently ignored.
+      if (jsonTrace != null) {
+        throw usageError(
+            "--symbolic produces no counterexample trace, so --save is unsupported"
+                + " (run the default check for a saveable trace)");
+      }
+      List<String> unsupported = unsupportedConsistencyFlags();
+      if (states > 0) {
+        unsupported.add("--states");
+      }
+      if (progress) {
+        unsupported.add("--progress");
+      }
+      if (ltlFormula != null) {
+        unsupported.add("--ltl");
+      }
+      if (ltlFile != null) {
+        unsupported.add("--ltl-file");
+      }
+      rejectUnsupported(
+          "symbolic model checking",
+          unsupported,
+          "(it checks invariants only and reports a single verdict)");
+      return;
+    }
     if (isLtlRun()) {
       if (ltlFormula != null && ltlFile != null) {
         throw usageError("--ltl and --ltl-file are mutually exclusive");
@@ -323,34 +377,8 @@ public class Animate implements Callable<Integer> {
       // Rejected rather than silently ignored: the kernel's LTL checker only honors a
       // state limit, so accepting these flags would promise bounds and checks it never
       // enforces.
-      List<String> unsupported = new ArrayList<>();
-      if (goal != null) {
-        unsupported.add("--goal");
-      }
-      if (assertions) {
-        unsupported.add("--assertions");
-      }
-      if (noDeadlock) {
-        unsupported.add("--no-deadlock");
-      }
-      if (noInvariant) {
-        unsupported.add("--no-invariant");
-      }
-      if (timeLimit > 0) {
-        unsupported.add("--time-limit");
-      }
-      if (stopAtFullCoverage) {
-        unsupported.add("--stop-at-full-coverage");
-      }
-      if (searchStrategy != SearchStrategy.mixed) {
-        unsupported.add("--search-strategy");
-      }
-      if (!unsupported.isEmpty()) {
-        throw usageError(
-            "the LTL check does not support "
-                + String.join(", ", unsupported)
-                + " (only --states bounds it)");
-      }
+      rejectUnsupported(
+          "the LTL check", unsupportedConsistencyFlags(), "(only --states bounds it)");
       return;
     }
     if (noDeadlock && noInvariant && !assertions && goal == null) {
@@ -360,6 +388,48 @@ public class Animate implements Callable<Integer> {
     }
     if (goal != null) {
       parsedGoal = parsePredicateOption(spec, goal, "--goal");
+    }
+  }
+
+  /**
+   * The consistency-check flags that the alternative whole-machine modes (LTL, symbolic) never
+   * honor. Collected in one place so both modes reject exactly the same set and a new flag is
+   * refused by both without being re-listed.
+   */
+  private List<String> unsupportedConsistencyFlags() {
+    List<String> unsupported = new ArrayList<>();
+    if (goal != null) {
+      unsupported.add("--goal");
+    }
+    if (assertions) {
+      unsupported.add("--assertions");
+    }
+    if (noDeadlock) {
+      unsupported.add("--no-deadlock");
+    }
+    if (noInvariant) {
+      unsupported.add("--no-invariant");
+    }
+    if (timeLimit > 0) {
+      unsupported.add("--time-limit");
+    }
+    if (stopAtFullCoverage) {
+      unsupported.add("--stop-at-full-coverage");
+    }
+    if (searchStrategy != SearchStrategy.mixed) {
+      unsupported.add("--search-strategy");
+    }
+    return unsupported;
+  }
+
+  /**
+   * Raises the shared "&lt;mode&gt; does not support ..." usage error when an alternative check
+   * mode was given a flag it cannot honor, so the message is assembled in one place instead of once
+   * per mode. No-op when nothing was rejected.
+   */
+  private void rejectUnsupported(String mode, List<String> unsupported, String suffix) {
+    if (!unsupported.isEmpty()) {
+      throw usageError(mode + " does not support " + String.join(", ", unsupported) + " " + suffix);
     }
   }
 
@@ -748,11 +818,18 @@ public class Animate implements Callable<Integer> {
     if (isLtlRun()) {
       return finishRun(runLtl());
     }
+    if (isSymbolicRun()) {
+      return finishRun(withStateSpace(this::runSymbolic));
+    }
     return finishRun(withStateSpace(this::runModelCheck));
   }
 
   private boolean isLtlRun() {
     return ltlFormula != null || ltlFile != null;
+  }
+
+  private boolean isSymbolicRun() {
+    return symbolic != null;
   }
 
   /** Parses the LTL formula before paying for a model load. */
@@ -904,6 +981,61 @@ public class Animate implements Callable<Integer> {
     String message = "Model checking did not complete: " + result.getMessage();
     System.err.println(message);
     return incompleteConsistencyReport(message);
+  }
+
+  /**
+   * Symbolic invariant model checking via ProB's {@link SymbolicModelcheckCommand}. Unlike the
+   * explicit consistency check it yields only a verdict -- no counterexample trace -- so a
+   * COUNTER_EXAMPLE points the user at the default check for a saveable trace, and the inconclusive
+   * outcomes (the Event-B-common "provers too weak", a reached bound, an interrupt) map to
+   * INCOMPLETE (exit 2) rather than a false pass.
+   */
+  private RunReport runSymbolic(StateSpace stateSpace) {
+    String label = "Symbolic model checking (" + symbolic + ")";
+    System.out.println(label + "...");
+    SymbolicModelcheckCommand cmd = new SymbolicModelcheckCommand(symbolic.kernel);
+    try {
+      stateSpace.execute(cmd);
+    } catch (RuntimeException e) {
+      // Same contract as runModelCheck: a mid-check kernel failure is a non-verdict, not a pass.
+      logger.debug("Symbolic model checking failed", e);
+      return symbolicIncomplete(label + " did not complete: " + e.getMessage());
+    }
+
+    SymbolicModelcheckCommand.ResultType result = cmd.getResult();
+    if (result == null) {
+      // Defensive: an unrecognized Prolog result term leaves getResult() null.
+      return symbolicIncomplete(label + " returned no recognized result.");
+    }
+
+    return switch (result) {
+      case SUCCESSFUL -> {
+        String message = "No invariant violation reachable (symbolic " + symbolic + ").";
+        System.out.println(message);
+        yield RunReport.singleCheck(RunReport.Status.OK, "invariant", message);
+      }
+      case COUNTER_EXAMPLE -> {
+        String message = "Invariant violation reachable (symbolic " + symbolic + ").";
+        System.err.println("Error: " + message);
+        System.out.println(
+            "Hint: symbolic model checking reports no trace; rerun the default check"
+                + " to obtain a saveable counterexample.");
+        yield RunReport.singleCheck(RunReport.Status.VIOLATION, "invariant", message);
+      }
+      // The kernel maps "solver_and_provers_too_weak" -- the routine Event-B outcome -- to TIMEOUT.
+      case TIMEOUT ->
+          symbolicIncomplete(
+              label + " was inconclusive: the solver/provers were too weak or timed out.");
+      case LIMIT_REACHED ->
+          symbolicIncomplete(label + " was inconclusive: a bound was reached before a verdict.");
+      case INTERRUPTED -> symbolicIncomplete(label + " was interrupted.");
+    };
+  }
+
+  /** Reports a symbolic non-verdict: prints it to stderr and maps it to INCOMPLETE (exit 2). */
+  private RunReport symbolicIncomplete(String message) {
+    System.err.println(message);
+    return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "invariant", message);
   }
 
   /** Saves the counterexample when a --save target was given and records the written path. */
