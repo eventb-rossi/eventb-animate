@@ -232,8 +232,7 @@ class ReplayCommand implements Callable<Integer> {
    */
   private RunReport refineIncomplete(String message, Throwable cause) {
     logger.debug(message, cause);
-    System.err.println(message);
-    return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "refine", message);
+    return Animate.incomplete("refine", message);
   }
 
   /**

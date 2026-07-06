@@ -228,9 +228,7 @@ class CbcCommand implements Callable<Integer> {
 
   /** Prints and reports an analysis that produced no verdict. */
   private static RunReport incomplete(String checkName, String what, String reason) {
-    String message = what + " did not complete: " + reason;
-    System.err.println(message);
-    return RunReport.singleCheck(RunReport.Status.INCOMPLETE, checkName, message);
+    return Animate.incomplete(checkName, what + " did not complete: " + reason);
   }
 
   private RunReport checkFeasibility(StateSpace stateSpace, EventBMachine machine) {

@@ -29,9 +29,8 @@ class WdCommand implements Callable<Integer> {
     } catch (RuntimeException e) {
       // A ProB failure mid-check is a non-verdict with an errored check, distinct
       // from the failed "not discharged" finding below.
-      String message = "Well-definedness check did not complete: " + e.getMessage();
-      System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "well-definedness", message);
+      return Animate.incomplete(
+          "well-definedness", "Well-definedness check did not complete: " + e.getMessage());
     }
     BigInteger discharged = cmd.getDischargedCount();
     BigInteger total = cmd.getTotalCount();

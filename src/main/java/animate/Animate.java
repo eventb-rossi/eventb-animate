@@ -559,6 +559,28 @@ public class Animate implements Callable<Integer> {
     return names;
   }
 
+  /**
+   * The shared "&lt;command&gt; requires a machine, but the loaded component is a context" ERROR
+   * report (exit 1), for the commands that only operate on machines (cbc, testgen). Printed to
+   * stderr so both refuse a context identically.
+   */
+  static RunReport notAMachine(String commandName, String checkName) {
+    String message = commandName + " requires a machine, but the loaded component is a context";
+    System.err.println("Error: " + message);
+    return RunReport.singleCheck(RunReport.Status.ERROR, checkName, message);
+  }
+
+  /**
+   * The shared no-verdict report: prints {@code message} to stderr (no "Error:" prefix -- a
+   * non-verdict is not a failure) and returns an INCOMPLETE (exit 2) single-check report. Shared by
+   * every command that turns a mid-run kernel failure or an inconclusive result into a no-verdict,
+   * so the print-and-report pairing lives in one place.
+   */
+  static RunReport incomplete(String checkName, String message) {
+    System.err.println(message);
+    return RunReport.singleCheck(RunReport.Status.INCOMPLETE, checkName, message);
+  }
+
   /** The plural suffix for {@code count} items ("" for one, "s" otherwise). */
   static String plural(int count) {
     return count == 1 ? "" : "s";
@@ -1041,9 +1063,7 @@ public class Animate implements Callable<Integer> {
       // after recording them; without this catch they would escape as a stack trace
       // with exit 1, the code reserved for real violations.
       logger.debug("LTL checking failed", e);
-      String message = "LTL checking did not complete: " + e.getMessage();
-      System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "ltl", message);
+      return incomplete("ltl", "LTL checking did not complete: " + e.getMessage());
     }
 
     if (result instanceof LTLOk) {
@@ -1072,9 +1092,7 @@ public class Animate implements Callable<Integer> {
     // LTLError or LTLNotYetFinished (e.g. the --states limit): a bounded LTL check
     // proves nothing about temporal properties, so unlike the consistency check a
     // limited run is a non-verdict, not a pass.
-    String message = "LTL checking did not complete: " + result.getMessage();
-    System.err.println(message);
-    return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "ltl", message);
+    return incomplete("ltl", "LTL checking did not complete: " + result.getMessage());
   }
 
   private RunReport runModelCheck(StateSpace stateSpace) {
@@ -1199,8 +1217,7 @@ public class Animate implements Callable<Integer> {
 
   /** Reports a symbolic non-verdict: prints it to stderr and maps it to INCOMPLETE (exit 2). */
   private RunReport symbolicIncomplete(String message) {
-    System.err.println(message);
-    return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "invariant", message);
+    return incomplete("invariant", message);
   }
 
   /**
