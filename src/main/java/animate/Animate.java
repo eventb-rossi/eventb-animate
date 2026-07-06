@@ -43,6 +43,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -786,62 +787,83 @@ public class Animate implements Callable<Integer> {
     if (jsonReport == null && junitReport == null && markdownReport == null) {
       return exitCode;
     }
-    RunReport report = lastReport;
-    if (report == null) {
-      // Nothing recorded findings (e.g. the help subcommand), but a report was
-      // requested: emit one that carries at least the verdict.
-      report =
-          RunReport.of(
-              exitCode == 0
-                  ? RunReport.Status.OK
-                  : exitCode == 2 ? RunReport.Status.INCOMPLETE : RunReport.Status.ERROR,
-              null);
-    }
+    // Nothing recorded findings (e.g. the help subcommand), but a report was requested: emit one
+    // that carries at least the verdict. Kept single-assignment so the envelope lambda can capture
+    // it.
+    RunReport report =
+        lastReport != null
+            ? lastReport
+            : RunReport.of(
+                exitCode == 0
+                    ? RunReport.Status.OK
+                    : exitCode == 2 ? RunReport.Status.INCOMPLETE : RunReport.Status.ERROR,
+                null);
     String command = executedCommandName(parseResult);
     Instant timestamp = Instant.now();
     // Each report is written independently: a failed write must not cost the other
     // reports, but it must fail CI even when the check itself was clean (already-
     // failing exits keep their code). Both JSON and Markdown record the exit code, so
-    // they render after the writes that can escalate it; JSON goes strictly last so it
-    // can never contradict the actual process exit.
+    // they render after the writes that can escalate it -- the envelope is rebuilt per
+    // write for the current code; JSON goes strictly last so it can never contradict the
+    // actual process exit.
+    IntFunction<RunReport.Envelope> envelopeFor =
+        code -> envelope(command, report, code, timestamp, durationMs);
     if (junitReport != null) {
-      try {
-        JUnitReportWriter.write(
-            envelope(command, report, exitCode, timestamp, durationMs), junitReport);
-      } catch (IOException e) {
-        exitCode = reportWriteFailed(e, exitCode);
-      }
+      exitCode =
+          writeReport(exitCode, envelopeFor, env -> JUnitReportWriter.write(env, junitReport));
     }
     if (markdownReport != null) {
-      try {
-        Files.writeString(
-            markdownReport,
-            MarkdownReportWriter.render(envelope(command, report, exitCode, timestamp, durationMs)),
-            StandardCharsets.UTF_8);
-      } catch (IOException e) {
-        exitCode = reportWriteFailed(e, exitCode);
-      }
+      exitCode =
+          writeReport(
+              exitCode,
+              envelopeFor,
+              env ->
+                  Files.writeString(
+                      markdownReport, MarkdownReportWriter.render(env), StandardCharsets.UTF_8));
     }
     if (jsonReport != null) {
-      try {
-        String json =
-            JsonReportWriter.render(envelope(command, report, exitCode, timestamp, durationMs));
-        if (jsonToStdout()) {
-          // PrintStream swallows I/O errors, so probe explicitly -- a document
-          // truncated by a closed pipe or a full disk must not pass as written.
-          System.out.print(json);
-          System.out.flush();
-          if (System.out.checkError()) {
-            throw new IOException("cannot write the JSON report to stdout");
-          }
-        } else {
-          Files.writeString(jsonReport, json, StandardCharsets.UTF_8);
-        }
-      } catch (IOException e) {
-        exitCode = reportWriteFailed(e, exitCode);
-      }
+      exitCode = writeReport(exitCode, envelopeFor, this::writeJsonReport);
     }
     return exitCode;
+  }
+
+  /** One report write; may throw IOException, which {@link #writeReport} maps to an exit code. */
+  @FunctionalInterface
+  private interface ReportWriter {
+    void write(RunReport.Envelope envelope) throws IOException;
+  }
+
+  /**
+   * Runs one report write against the envelope stamped with the current {@code exitCode}, returning
+   * the code unchanged on success or escalated (never lowered) when the write fails. Shared by the
+   * three report targets so each follows the same independent-write, fail-CI-on-error policy.
+   */
+  private int writeReport(
+      int exitCode, IntFunction<RunReport.Envelope> envelopeFor, ReportWriter writer) {
+    try {
+      writer.write(envelopeFor.apply(exitCode));
+      return exitCode;
+    } catch (IOException e) {
+      return reportWriteFailed(e, exitCode);
+    }
+  }
+
+  /**
+   * Writes the JSON report to its file, or to stdout when {@code --json -} was given. PrintStream
+   * swallows I/O errors, so the stdout path probes checkError explicitly -- a document truncated by
+   * a closed pipe or a full disk must not pass as written.
+   */
+  private void writeJsonReport(RunReport.Envelope envelope) throws IOException {
+    String json = JsonReportWriter.render(envelope);
+    if (jsonToStdout()) {
+      System.out.print(json);
+      System.out.flush();
+      if (System.out.checkError()) {
+        throw new IOException("cannot write the JSON report to stdout");
+      }
+    } else {
+      Files.writeString(jsonReport, json, StandardCharsets.UTF_8);
+    }
   }
 
   private RunReport.Envelope envelope(
