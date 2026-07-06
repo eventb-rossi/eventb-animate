@@ -69,7 +69,8 @@ import picocli.CommandLine.Spec;
       WdCommand.class,
       PoCommand.class,
       CbcCommand.class,
-      TestgenCommand.class
+      TestgenCommand.class,
+      EvalCommand.class
     })
 public class Animate implements Callable<Integer> {
 
