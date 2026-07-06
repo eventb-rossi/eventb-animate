@@ -157,7 +157,8 @@ machine name is unique across all projects.
   goal was hit — what were the other variables?"; a predicate reports its
   `TRUE`/`FALSE` verdict. It prints nothing on a clean run (there is no
   counterexample to evaluate in — to evaluate without one, run a check that hits a
-  goal, or evaluate over the state space directly with the `eval` subcommand). A
+  goal, or evaluate over the state space directly with the
+  [`eval`](#evaluate-formulas) subcommand). A
   formula that cannot be evaluated in the state is shown as an error but never
   changes the check's own verdict. Rejected with `--symbolic`, which reports no
   state
@@ -185,7 +186,9 @@ machine name is unique across all projects.
   reached without a violation), the LTL formula holds, a `--symbolic` run proved
   invariant safety, all proof obligations are discharged (`wd`, `po`), a
   replay was perfect (`replay`), a trace was adapted to the target refinement
-  level (`replay --refine`), or an operation-coverage run completed (`testgen`)
+  level (`replay --refine`), an operation-coverage run completed (`testgen`), or
+  every requested formula was evaluated (`eval`, including a `--where` query that
+  matched no state)
 - `1` - a definite negative verdict or an input failure: the model could not
   be loaded, an invariant or assertion was violated, a deadlock was reached (a
   state with no enabled events, including legitimate terminal states), a
@@ -200,8 +203,9 @@ machine name is unique across all projects.
   `--states` limit, a `--symbolic` run was inconclusive (the solver/provers were
   too weak, or a bound was reached), a proof obligation remains undischarged
   (`wd`, `po` -- open means unproven, not disproven), a target operation was
-  left uncovered under `testgen --fail-on-uncovered`, or the command line was
-  invalid (usage errors, including unparseable `--goal`/`--ltl` formulas)
+  left uncovered under `testgen --fail-on-uncovered`, an `eval` formula could not
+  be evaluated (a query with no answer), or the command line was invalid (usage
+  errors, including unparseable `--goal`/`--ltl`/`--eval` formulas)
 
 If a requested `--json`/`--junit`/`--markdown` report cannot be written, an
 otherwise clean run exits 1: the report is the artifact CI asked for, so its
@@ -438,6 +442,47 @@ Options:
 - `--fail-on-infeasible` - Exit 1 when any target operation is a dead
   operation (advisory otherwise)
 - `--force` - Overwrite existing trace files in `--out`
+
+#### Evaluate Formulas
+
+```bash
+eventb-animate eval -e 'card(dom(files))' -e 'files = ∅' path/to/model.bum
+eventb-animate eval --where 'cars = 0' -e 'peds_go' path/to/model.zip
+```
+
+Evaluates Event-B expressions and predicates (ASCII or Unicode operators) in
+explored states and reports each value. Because ProB evaluation is
+state-addressed, no state is special: by default the formulas are evaluated in
+the initialised state (after `$setup_constants` and `$initialise_machine`), and
+with `--where PRED` they are evaluated in *every* explored state satisfying the
+predicate — the CLI form of "evaluate over the state space".
+
+A predicate reports its `TRUE`/`FALSE` verdict; a predicate computing to `FALSE`
+is a successful evaluation (exit 0). Only a formula that cannot be parsed (exit 2,
+a usage error before any load), or that parses but cannot be evaluated in the
+state — a type or well-definedness error, an uninitialised identifier, or a value
+the solver leaves unknown — makes the run a non-verdict (exit 2); the remaining
+formulas are still evaluated and printed. The values are also written to the
+`--json`/`--markdown` reports as an `evaluations` array (see
+[Machine-Readable Reports](#machine-readable-reports)).
+
+With `--where`, the run first explores the state space (with all checks disabled,
+so exploration is never cut short by a violation) and then selects the matching
+states, so results cover only the *bounded* explored space: `--states`/
+`--time-limit` cap the search and a match beyond the bound is missed. A `--where`
+query that matches no state is a successful, empty result (exit 0). Note also
+that a non-deterministic `INITIALISATION` has more than one initial state, so
+"the initialised state" is one arbitrary branch.
+
+Options:
+- `-e, --expr <formula>` - Event-B expression or predicate to evaluate
+  (repeatable; required)
+- `--where <predicate>` - Evaluate in every explored state satisfying this
+  Event-B predicate instead of only the initialised state
+- `--states <N>` - Bound the `--where` exploration to at most `N` states
+  (default: exhaustive; only valid with `--where`)
+- `--time-limit <seconds>` - Bound the `--where` exploration to the given
+  wall-clock time (default: unlimited; only valid with `--where`)
 
 #### Convert to Classical B
 
