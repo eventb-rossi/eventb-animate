@@ -339,9 +339,17 @@ class ModelResolver {
     return fileName.toString();
   }
 
-  private String machineName(Path bumFile) {
-    String fileName = machineFileName(bumFile);
-    return fileName.substring(0, fileName.length() - ".bum".length());
+  /**
+   * The component's machine name: its file name with a Rodin component suffix (.bum machine or .buc
+   * context) stripped. Shared with {@link Animate#resolveComponent} so the reported machine
+   * identity is derived one way. A name without a recognized suffix is returned unchanged.
+   */
+  String machineName(Path componentFile) {
+    String fileName = machineFileName(componentFile);
+    if (fileName.endsWith(RodinNames.BUM) || fileName.endsWith(RodinNames.BUC)) {
+      return fileName.substring(0, fileName.length() - RodinNames.BUM.length());
+    }
+    return fileName;
   }
 
   void cleanupTempDir() {

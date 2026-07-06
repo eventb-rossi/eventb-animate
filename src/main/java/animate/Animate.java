@@ -719,11 +719,9 @@ public class Animate implements Callable<Integer> {
   private void resolveComponent() throws IOException {
     validateInput();
     resolvedModelPath = modelResolver.resolve(model, machineName);
-    // The resolver always returns a component file, never a filesystem root.
-    resolvedMachineName =
-        Objects.requireNonNull(resolvedModelPath.getFileName())
-            .toString()
-            .replaceFirst("\\.(bum|buc)$", "");
+    // The resolver always returns a component file, never a filesystem root; it also owns the
+    // component-suffix stripping so the reported name is derived one way.
+    resolvedMachineName = modelResolver.machineName(resolvedModelPath);
     System.out.println("Machine: " + resolvedMachineName);
   }
 
