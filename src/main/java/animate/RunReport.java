@@ -2,8 +2,10 @@ package animate;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * The findings of one command run. Every command returns one of these and {@link Animate#finishRun}
@@ -45,6 +47,11 @@ record RunReport(
         case INCOMPLETE -> 2;
       };
     }
+
+    /** The lowercase report label (e.g. "ok"/"violation"); the one spelling every writer emits. */
+    String label() {
+      return name().toLowerCase(Locale.ROOT);
+    }
   }
 
   /** Outcome of one named check within the run (one JUnit testcase later). */
@@ -52,7 +59,12 @@ record RunReport(
     PASSED,
     FAILED,
     SKIPPED,
-    ERROR
+    ERROR;
+
+    /** The lowercase report label (e.g. "passed"/"failed"); the one spelling every writer emits. */
+    String label() {
+      return name().toLowerCase(Locale.ROOT);
+    }
   }
 
   record Check(String name, Outcome outcome, String message) {}
@@ -212,6 +224,13 @@ record RunReport(
       }
       Path fileName = model == null ? null : model.getFileName();
       return fileName == null ? Animate.TOOL_NAME : fileName.toString();
+    }
+
+    /**
+     * The run timestamp as an ISO-8601 instant, the one format the JSON and Markdown reports share.
+     */
+    String isoTimestamp() {
+      return DateTimeFormatter.ISO_INSTANT.format(timestamp);
     }
   }
 }

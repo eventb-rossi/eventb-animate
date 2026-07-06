@@ -58,7 +58,7 @@ public class MarkdownReportTest {
 
     assertTrue(
         "title carries the machine and verdict:\n" + md,
-        md.contains("# eventb-animate: M1 — VIOLATION"));
+        md.contains("# eventb-animate: M1 — violation"));
     assertTrue("status is the lowercase verdict:\n" + md, md.contains("- **Status:** `violation`"));
     assertTrue("exit code is rendered:\n" + md, md.contains("- **Exit code:** `1`"));
 
@@ -92,11 +92,11 @@ public class MarkdownReportTest {
 
     assertTrue(
         "subject falls back to the tool name:\n" + md,
-        md.contains("# eventb-animate: eventb-animate — ERROR"));
+        md.contains("# eventb-animate: eventb-animate — error"));
     assertFalse("no model line when the model is unknown:\n" + md, md.contains("**Model:**"));
     assertFalse("no machine line before load:\n" + md, md.contains("**Machine:**"));
     assertFalse("no ProB version before load:\n" + md, md.contains("**ProB version:**"));
-    assertTrue("a checkless run gets a synthesized row:\n" + md, md.contains("| `run` | ERROR |"));
+    assertTrue("a checkless run gets a synthesized row:\n" + md, md.contains("| `run` | error |"));
     assertFalse(
         "no counterexample section when there is none:\n" + md, md.contains("Counterexample"));
   }
@@ -112,7 +112,7 @@ public class MarkdownReportTest {
       String md = Files.readString(report);
       assertTrue(
           "the report names the machine and verdict:\n" + md,
-          md.contains("# eventb-animate: M1 — VIOLATION"));
+          md.contains("# eventb-animate: M1 — violation"));
       assertTrue("the counterexample section is present:\n" + md, md.contains("## Counterexample"));
       assertTrue(
           "the violated invariants are listed:\n" + md, md.contains("### Violated invariants"));

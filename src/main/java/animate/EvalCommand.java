@@ -27,7 +27,7 @@ import picocli.CommandLine.Spec;
  * state is special -- {@code --where} is the CLI form of "evaluate over the state space".
  */
 @Command(
-    name = "eval",
+    name = EvalCommand.CHECK,
     description =
         "Evaluate Event-B expressions or predicates in explored states: in the initialised state by"
             + " default, or -- with --where -- in every explored state satisfying a predicate",
@@ -35,6 +35,9 @@ import picocli.CommandLine.Spec;
     sortOptions = false,
     versionProvider = Animate.VersionProvider.class)
 class EvalCommand implements Callable<Integer> {
+
+  /** The single check name this command reports under, and its subcommand name. */
+  static final String CHECK = "eval";
 
   @ParentCommand Animate parent;
   @Spec CommandSpec spec;
@@ -153,19 +156,18 @@ class EvalCommand implements Callable<Integer> {
       // A mid-search kernel failure -- exploration, or a --where predicate ProB cannot evaluate --
       // is a non-verdict, not an empty result.
       logger.debug("eval --where did not complete", e);
-      String message = "eval --where did not complete: " + e.getMessage();
-      System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "eval", message);
+      return Animate.incomplete(CHECK, "eval --where did not complete: " + e.getMessage());
     }
 
     if (matching.isEmpty()) {
       String message =
           "No explored state satisfies the --where predicate (within the searched state space).";
       System.out.println(message);
-      return RunReport.singleCheck(RunReport.Status.OK, "eval", message);
+      return RunReport.singleCheck(RunReport.Status.OK, CHECK, message);
     }
 
-    System.out.println(Animate.count(matching.size(), "state") + " satisfy the --where predicate:");
+    String matched = Animate.count(matching.size(), "state");
+    System.out.println(matched + " satisfy the --where predicate:");
     List<RunReport.StateEvaluation> blocks = new ArrayList<>();
     for (State state : matching) {
       RunReport.StateEvaluation block =
@@ -173,7 +175,7 @@ class EvalCommand implements Callable<Integer> {
       blocks.add(block);
       Evaluations.printBlock("  " + block.state() + ":", block);
     }
-    return reportOne(blocks, evaluatedMessage(Animate.count(matching.size(), "state")));
+    return reportOne(blocks, evaluatedMessage(matched));
   }
 
   /** "Evaluated N formula(s) in {location}." -- the shared summary of both eval paths. */
@@ -199,11 +201,9 @@ class EvalCommand implements Callable<Integer> {
           Animate.count(failed.size(), "formula")
               + " could not be evaluated: "
               + String.join(", ", failed);
-      System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "eval", message)
-          .withEvaluations(blocks);
+      return Animate.incomplete(CHECK, message).withEvaluations(blocks);
     }
     System.out.println(okMessage);
-    return RunReport.singleCheck(RunReport.Status.OK, "eval", okMessage).withEvaluations(blocks);
+    return RunReport.singleCheck(RunReport.Status.OK, CHECK, okMessage).withEvaluations(blocks);
   }
 }

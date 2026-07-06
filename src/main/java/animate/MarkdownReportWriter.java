@@ -1,8 +1,6 @@
 package animate;
 
-import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
@@ -29,7 +27,7 @@ final class MarkdownReportWriter {
         .append(": ")
         .append(envelope.displayName())
         .append(" — ")
-        .append(report.status().name())
+        .append(report.status().label())
         .append("\n\n");
 
     appendMetadata(md, envelope);
@@ -68,13 +66,9 @@ final class MarkdownReportWriter {
       md.append("- **ProB version:** ").append(code(envelope.probVersion())).append('\n');
     }
     md.append("- **Tool version:** ").append(code(envelope.toolVersion())).append('\n');
-    md.append("- **Timestamp:** ")
-        .append(code(DateTimeFormatter.ISO_INSTANT.format(envelope.timestamp())))
-        .append('\n');
+    md.append("- **Timestamp:** ").append(code(envelope.isoTimestamp())).append('\n');
     md.append("- **Duration:** ").append(code(envelope.durationMs() + " ms")).append('\n');
-    md.append("- **Status:** ")
-        .append(code(envelope.report().status().name().toLowerCase(Locale.ROOT)))
-        .append('\n');
+    md.append("- **Status:** ").append(code(envelope.report().status().label())).append('\n');
     md.append("- **Exit code:** ").append(code(Integer.toString(envelope.exitCode()))).append('\n');
   }
 
@@ -84,7 +78,7 @@ final class MarkdownReportWriter {
       md.append("| ")
           .append(code(check.name()))
           .append(" | ")
-          .append(check.outcome().name())
+          .append(check.outcome().label())
           .append(" | ")
           .append(check.message() == null ? "" : tableCell(check.message()))
           .append(" |\n");
