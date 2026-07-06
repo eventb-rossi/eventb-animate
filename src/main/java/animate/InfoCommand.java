@@ -107,13 +107,7 @@ class InfoCommand implements Callable<Integer> {
 
     if (hasVisualizationCmd) {
       logger.info("Initializing model");
-      stateSpace.startTransaction();
-      Trace trace;
-      try {
-        trace = parent.initializeTrace(stateSpace, false);
-      } finally {
-        stateSpace.endTransaction();
-      }
+      Trace trace = parent.initializeInTransaction(stateSpace);
 
       addVisualizationCheck(checks, "machine_hierarchy", "machine-graph", machineGraph, trace);
       addVisualizationCheck(checks, "event_hierarchy", "event-graph", eventGraph, trace);

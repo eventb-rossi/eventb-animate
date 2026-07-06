@@ -151,6 +151,16 @@ machine name is unique across all projects.
 - `--perf` - Print ProB performance information
 - `--save <file.json>` - Save the counterexample trace to a JSON file when a
   violation is found
+- `--eval <formula>` - Also evaluate an Event-B expression or predicate (ASCII or
+  Unicode operators) in the counterexample state and report its value next to the
+  trace and in the `--json`/`--markdown` reports (repeatable). This answers "the
+  goal was hit — what were the other variables?"; a predicate reports its
+  `TRUE`/`FALSE` verdict. It prints nothing on a clean run (there is no
+  counterexample to evaluate in — to evaluate without one, run a check that hits a
+  goal, or evaluate over the state space directly with the `eval` subcommand). A
+  formula that cannot be evaluated in the state is shown as an error but never
+  changes the check's own verdict. Rejected with `--symbolic`, which reports no
+  state
 - `--json <file|->` - Write a machine-readable JSON report of the run (works
   with every command; see [Machine-Readable Reports](#machine-readable-reports)).
   `-` writes the report to stdout and moves all other output to stderr, so
@@ -204,11 +214,12 @@ describing the run at the end: what ran (`command`, `model`, `machine`,
 `probVersion`), what happened (`status` of `ok`/`violation`/`incomplete`/
 `error`, `exitCode`, `message`, one `checks` entry per checked property), and
 the evidence (a `counterexample` summary with the transition list, violating
-state, and violated invariants; the `--save` trace path as `traceFile`). The
-document carries `formatVersion: 1`; the key set only changes with a version
-bump. Report files are overwritten on every run (they are per-run telemetry,
-so no `--force` is needed), and usage errors write no report at all -- the run
-never started.
+state, and violated invariants; the `--save` trace path as `traceFile`; and,
+when `--eval` or the `eval` subcommand was used, an `evaluations` array of
+per-state `{formula, value}` blocks). The document carries `formatVersion: 2`;
+the key set only changes with a version bump. Report files are overwritten on
+every run (they are per-run telemetry, so no `--force` is needed), and usage
+errors write no report at all -- the run never started.
 
 ```bash
 eventb-animate --json report.json --save trace.json model.bum
