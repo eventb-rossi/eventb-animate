@@ -1,6 +1,7 @@
 package animate;
 
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -42,6 +43,10 @@ final class MarkdownReportWriter {
     TraceWriter.Counterexample counterexample = report.counterexample();
     if (counterexample != null) {
       appendCounterexample(md, counterexample);
+    }
+
+    if (!report.evaluations().isEmpty()) {
+      appendEvaluations(md, report.evaluations());
     }
 
     if (report.traceFile() != null) {
@@ -100,6 +105,24 @@ final class MarkdownReportWriter {
       md.append(step++).append(". ").append(code(transition)).append('\n');
     }
     md.append("\n### Violating state\n").append(fenced(ce.violatingState())).append('\n');
+  }
+
+  /**
+   * Evaluated formula values, grouped per state. Rendered as inline-code bullet lists (not a table)
+   * so a value carrying a pipe -- common in Event-B, e.g. {@code {1|->2}} -- cannot break a row;
+   * the {@code code()} helper widens the fence past any backtick run in the value.
+   */
+  private static void appendEvaluations(
+      StringBuilder md, List<RunReport.StateEvaluation> evaluations) {
+    md.append("\n## Evaluations\n");
+    for (RunReport.StateEvaluation stateEvaluation : evaluations) {
+      md.append("\nIn ").append(code(stateEvaluation.state())).append(":\n\n");
+      for (RunReport.FormulaValue value : stateEvaluation.values()) {
+        md.append("- ").append(code(value.formula()));
+        md.append(value.error() ? " — could not evaluate: " : " = ");
+        md.append(code(value.value())).append('\n');
+      }
+    }
   }
 
   // --- Markdown-safety helpers ---

@@ -262,6 +262,18 @@ public class Animate implements Callable<Integer> {
   Path jsonTrace;
 
   @Option(
+      names = "--eval",
+      paramLabel = "formula",
+      description =
+          "also evaluate an Event-B expression or predicate in the counterexample state and report"
+              + " its value (repeatable); prints nothing on a clean run. Use the 'eval' subcommand"
+              + " to evaluate without a counterexample")
+  List<String> evalFormulas = new ArrayList<>();
+
+  // Parsed eagerly by validateCheckOptions so a bad --eval formula is a usage error before load.
+  private List<Evaluations.Formula> parsedEvalFormulas = List.of();
+
+  @Option(
       names = "--json",
       paramLabel = "<file|->",
       description =
@@ -343,17 +355,8 @@ public class Animate implements Callable<Integer> {
    * check-only flags are meaningless and must not fail the run.
    */
   private void validateCheckOptions() {
-    if (states == 0 || states < -1) {
-      throw usageError(
-          "--states must be a positive number of states (or omitted for an exhaustive check),"
-              + " got: "
-              + states);
-    }
-    if (timeLimit == 0 || timeLimit < -1) {
-      throw usageError(
-          "--time-limit must be a positive number of seconds (or omitted for no limit), got: "
-              + timeLimit);
-    }
+    validatePositiveBound(spec, states, "--states", "states", "an exhaustive check");
+    validatePositiveBound(spec, timeLimit, "--time-limit", "seconds", "no limit");
     if (isSymbolicRun()) {
       // Verdict-only mode: a single blocking call that reports no trace and no incremental
       // progress, checks invariants only, and takes no bound, so --save and the flags below are
@@ -362,6 +365,11 @@ public class Animate implements Callable<Integer> {
         throw usageError(
             "--symbolic produces no counterexample trace, so --save is unsupported"
                 + " (run the default check for a saveable trace)");
+      }
+      if (!evalFormulas.isEmpty()) {
+        throw usageError(
+            "--symbolic produces no counterexample state, so --eval has nothing to evaluate"
+                + " (run the default check, or use the 'eval' subcommand)");
       }
       List<String> unsupported = unsupportedConsistencyFlags();
       if (states > 0) {
@@ -382,6 +390,9 @@ public class Animate implements Callable<Integer> {
           "(it checks invariants only and reports a single verdict)");
       return;
     }
+    // --eval evaluates in a counterexample state; the symbolic run has none (rejected above), but
+    // both the LTL and consistency checks produce one, so parse the formulas eagerly for both.
+    parsedEvalFormulas = parseEvalFormulas();
     if (isLtlRun()) {
       if (ltlFormula != null && ltlFile != null) {
         throw usageError("--ltl and --ltl-file are mutually exclusive");
@@ -401,6 +412,18 @@ public class Animate implements Callable<Integer> {
     if (goal != null) {
       parsedGoal = parsePredicateOption(spec, goal, "--goal");
     }
+  }
+
+  /** Parses every --eval formula (predicate or expression) up front; empty when none were given. */
+  private List<Evaluations.Formula> parseEvalFormulas() {
+    if (evalFormulas.isEmpty()) {
+      return List.of();
+    }
+    List<Evaluations.Formula> parsed = new ArrayList<>();
+    for (String formula : evalFormulas) {
+      parsed.add(Evaluations.parseFormula(spec, formula, "--eval"));
+    }
+    return parsed;
   }
 
   /**
@@ -456,14 +479,51 @@ public class Animate implements Callable<Integer> {
 
   /** Parses an Event-B predicate option eagerly, so a typo never pays for a model load. */
   static EventB parsePredicateOption(CommandSpec spec, String value, String optionName) {
+    return parseFormulaOption(spec, value, optionName, false);
+  }
+
+  /**
+   * Parses an Event-B formula option eagerly, so a typo is a usage error (exit 2) before any model
+   * load. With {@code allowExpression} false only a predicate is accepted (--goal, --where);
+   * otherwise a predicate or an expression is accepted and only an assignment is rejected (--eval,
+   * eval -e). The predicate-only wording is unchanged so existing options report identically.
+   */
+  static EventB parseFormulaOption(
+      CommandSpec spec, String value, String optionName, boolean allowExpression) {
     try {
       EventB parsed = new EventB(value);
-      if (parsed.getKind() != EvalElementType.PREDICATE) {
-        throw usageError(spec, optionName + " must be a predicate, not " + parsed.getKind());
+      EvalElementType kind = parsed.getKind();
+      boolean accepted =
+          kind == EvalElementType.PREDICATE
+              || (allowExpression && kind == EvalElementType.EXPRESSION);
+      if (!accepted) {
+        String expected = allowExpression ? "a predicate or expression" : "a predicate";
+        throw usageError(spec, optionName + " must be " + expected + ", not " + kind);
       }
       return parsed;
     } catch (EvaluationException e) {
-      throw usageError(spec, "invalid " + optionName + " predicate: " + e.getMessage());
+      String noun = allowExpression ? "formula" : "predicate";
+      throw usageError(spec, "invalid " + optionName + " " + noun + ": " + e.getMessage());
+    }
+  }
+
+  /**
+   * Rejects a non-positive bound ({@code 0} or {@code < -1}); {@code -1}/omitted means unbounded.
+   * Shared by the check and eval commands so their {@code --states}/{@code --time-limit} validate
+   * identically, differing only in the "omitted for ..." phrase each passes.
+   */
+  static void validatePositiveBound(
+      CommandSpec spec, int value, String option, String unit, String unbounded) {
+    if (value == 0 || value < -1) {
+      throw usageError(
+          spec,
+          option
+              + " must be a positive number of "
+              + unit
+              + " (or omitted for "
+              + unbounded
+              + "), got: "
+              + value);
     }
   }
 
@@ -501,6 +561,26 @@ public class Animate implements Callable<Integer> {
   /** The plural suffix for {@code count} items ("" for one, "s" otherwise). */
   static String plural(int count) {
     return count == 1 ? "" : "s";
+  }
+
+  /** "{n} {noun}" with the noun pluralized, e.g. {@code count(1, "state")} = "1 state". */
+  static String count(int n, String noun) {
+    return n + " " + noun + plural(n);
+  }
+
+  /**
+   * Applies the {@code --states}/{@code --time-limit} bounds to model-checking options ({@code -1}
+   * or 0 means unbounded), shared by the consistency check and the {@code eval --where}
+   * exploration.
+   */
+  static ModelCheckingOptions applyBounds(ModelCheckingOptions options, int states, int timeLimit) {
+    if (states > 0) {
+      options = options.stateLimit(states);
+    }
+    if (timeLimit > 0) {
+      options = options.timeLimit(Duration.ofSeconds(timeLimit));
+    }
+    return options;
   }
 
   /** Built-in defaults first; user-supplied -p/--pref values override any of them. */
@@ -845,6 +925,21 @@ public class Animate implements Callable<Integer> {
     return trace;
   }
 
+  /**
+   * Initialises the model inside a ProB transaction (the commands emitted by {@link
+   * #initializeTrace} are grouped so ProB replays them as one unit), tolerating a model whose
+   * setup/initialisation cannot complete. Shared by the commands that need an initialised state but
+   * are not model-checking (info, eval).
+   */
+  Trace initializeInTransaction(StateSpace stateSpace) {
+    stateSpace.startTransaction();
+    try {
+      return initializeTrace(stateSpace, false);
+    } finally {
+      stateSpace.endTransaction();
+    }
+  }
+
   private Trace initializeOnce(
       Trace trace, boolean failOnInitializationError, String... eventNames) {
     for (String eventName : eventNames) {
@@ -964,8 +1059,10 @@ public class Animate implements Callable<Integer> {
           TraceWriter.describe(stateSpace, counterexample, false);
       TraceWriter.printTrace(described);
       return withSavedTrace(
-          RunReport.singleCheck(RunReport.Status.VIOLATION, "ltl", message)
-              .withCounterexample(described),
+          evaluateInCounterexample(
+              RunReport.singleCheck(RunReport.Status.VIOLATION, "ltl", message)
+                  .withCounterexample(described),
+              counterexample),
           counterexample,
           stateSpace,
           jsonTrace);
@@ -981,17 +1078,14 @@ public class Animate implements Callable<Integer> {
 
   private RunReport runModelCheck(StateSpace stateSpace) {
     ModelCheckingOptions options =
-        new ModelCheckingOptions()
-            .searchStrategy(searchStrategy.kernelStrategy)
-            .checkDeadlocks(!noDeadlock)
-            .checkInvariantViolations(!noInvariant)
-            .checkAssertions(assertions);
-    if (states > 0) {
-      options = options.stateLimit(states);
-    }
-    if (timeLimit > 0) {
-      options = options.timeLimit(Duration.ofSeconds(timeLimit));
-    }
+        applyBounds(
+            new ModelCheckingOptions()
+                .searchStrategy(searchStrategy.kernelStrategy)
+                .checkDeadlocks(!noDeadlock)
+                .checkInvariantViolations(!noInvariant)
+                .checkAssertions(assertions),
+            states,
+            timeLimit);
     if (stopAtFullCoverage) {
       options = options.stopAtFullCoverage(true);
     }
@@ -1038,7 +1132,8 @@ public class Animate implements Callable<Integer> {
       TraceWriter.printViolatedInvariants(described);
       TraceWriter.printTrace(described);
       return withSavedTrace(
-          violationReport(result, message).withCounterexample(described),
+          evaluateInCounterexample(
+              violationReport(result, message).withCounterexample(described), counterexample),
           counterexample,
           stateSpace,
           jsonTrace);
@@ -1112,6 +1207,23 @@ public class Animate implements Callable<Integer> {
    */
   List<de.prob.check.tracereplay.PersistentTransition> loadTrace(Path source) throws IOException {
     return traceWriter.load(source).getTransitionList();
+  }
+
+  /**
+   * Evaluates the --eval formulas in the counterexample's final state, prints them after the trace,
+   * and attaches them to the report. A no-op when no --eval formula was given. Evaluation errors
+   * are shown but never change the check's verdict -- the annotation is best-effort, like the state
+   * dump.
+   */
+  private RunReport evaluateInCounterexample(RunReport report, Trace counterexample) {
+    if (parsedEvalFormulas.isEmpty()) {
+      return report;
+    }
+    RunReport.StateEvaluation block =
+        Evaluations.evaluate(
+            "violating state", counterexample.getCurrentState(), parsedEvalFormulas);
+    Evaluations.printBlock(block);
+    return report.withEvaluations(List.of(block));
   }
 
   /** Saves the counterexample when a --save target was given and records the written path. */

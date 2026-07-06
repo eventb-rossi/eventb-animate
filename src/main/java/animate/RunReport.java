@@ -15,11 +15,13 @@ record RunReport(
     String message,
     List<Check> checks,
     TraceWriter.Counterexample counterexample,
+    List<StateEvaluation> evaluations,
     Path traceFile,
     Integer exitCodeOverride) {
 
   RunReport {
     checks = List.copyOf(checks);
+    evaluations = List.copyOf(evaluations);
   }
 
   /** Run verdicts, ordered from best to worst; the exit codes follow the README contract. */
@@ -55,12 +57,30 @@ record RunReport(
 
   record Check(String name, Outcome outcome, String message) {}
 
+  /**
+   * One formula's evaluated value in one state. {@code value} is the printed value (an expression's
+   * result, or {@code TRUE}/{@code FALSE} for a predicate) when {@code error} is false, or the
+   * error text ProB returned when {@code error} is true (a value it could not compute).
+   */
+  record FormulaValue(String formula, String value, boolean error) {}
+
+  /**
+   * The formulas evaluated in one state, labelled by {@code state} -- a state id, or a role such as
+   * "initialised state" / "violating state". Evaluations are observations, not pass/fail checks, so
+   * they live outside {@link #checks} and never become JUnit testcases.
+   */
+  record StateEvaluation(String state, List<FormulaValue> values) {
+    StateEvaluation {
+      values = List.copyOf(values);
+    }
+  }
+
   static RunReport of(Status status, String message, Check... checks) {
     return of(status, message, List.of(checks));
   }
 
   static RunReport of(Status status, String message, List<Check> checks) {
-    return new RunReport(status, message, checks, null, null, null);
+    return new RunReport(status, message, checks, null, List.of(), null, null);
   }
 
   /**
@@ -95,6 +115,7 @@ record RunReport(
     TraceWriter.Counterexample counterexample = null;
     Path traceFile = null;
     List<Check> checks = new ArrayList<>();
+    List<StateEvaluation> evaluations = new ArrayList<>();
     for (RunReport part : parts) {
       if (message == null && part.status() == status) {
         message = part.message();
@@ -106,8 +127,9 @@ record RunReport(
         traceFile = part.traceFile();
       }
       checks.addAll(part.checks());
+      evaluations.addAll(part.evaluations());
     }
-    return new RunReport(status, message, checks, counterexample, traceFile, null);
+    return new RunReport(status, message, checks, counterexample, evaluations, traceFile, null);
   }
 
   /**
@@ -139,16 +161,24 @@ record RunReport(
   }
 
   RunReport withCounterexample(TraceWriter.Counterexample counterexample) {
-    return new RunReport(status, message, checks, counterexample, traceFile, exitCodeOverride);
+    return new RunReport(
+        status, message, checks, counterexample, evaluations, traceFile, exitCodeOverride);
+  }
+
+  /** Attaches the per-state formula evaluations surfaced by --eval and the eval subcommand. */
+  RunReport withEvaluations(List<StateEvaluation> evaluations) {
+    return new RunReport(
+        status, message, checks, counterexample, evaluations, traceFile, exitCodeOverride);
   }
 
   RunReport withTraceFile(Path traceFile) {
-    return new RunReport(status, message, checks, counterexample, traceFile, exitCodeOverride);
+    return new RunReport(
+        status, message, checks, counterexample, evaluations, traceFile, exitCodeOverride);
   }
 
   /** For commands that must propagate a foreign exit code (convert passes probcli's through). */
   RunReport withExitCode(int exitCode) {
-    return new RunReport(status, message, checks, counterexample, traceFile, exitCode);
+    return new RunReport(status, message, checks, counterexample, evaluations, traceFile, exitCode);
   }
 
   int exitCode() {

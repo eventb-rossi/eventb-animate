@@ -15,7 +15,8 @@ import java.util.Locale;
  */
 final class JsonReportWriter {
 
-  static final int FORMAT_VERSION = 1;
+  // v2 adds the optional top-level "evaluations" array (--eval and the eval subcommand).
+  static final int FORMAT_VERSION = 2;
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -63,6 +64,22 @@ final class JsonReportWriter {
       if (!counterexample.violatedInvariants().isEmpty()) {
         ArrayNode violated = counterexampleNode.putArray("violatedInvariants");
         counterexample.violatedInvariants().forEach(violated::add);
+      }
+    }
+    if (!report.evaluations().isEmpty()) {
+      ArrayNode evaluations = root.putArray("evaluations");
+      for (RunReport.StateEvaluation stateEvaluation : report.evaluations()) {
+        ObjectNode stateNode = evaluations.addObject();
+        stateNode.put("state", stateEvaluation.state());
+        ArrayNode values = stateNode.putArray("values");
+        for (RunReport.FormulaValue value : stateEvaluation.values()) {
+          ObjectNode valueNode = values.addObject();
+          valueNode.put("formula", value.formula());
+          valueNode.put("value", value.value());
+          if (value.error()) {
+            valueNode.put("error", true);
+          }
+        }
       }
     }
     if (report.traceFile() != null) {

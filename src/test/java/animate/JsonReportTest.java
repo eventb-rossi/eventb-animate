@@ -37,7 +37,7 @@ public class JsonReportTest {
         result.stderr().contains("Error loading model:"));
 
     JsonNode root = MAPPER.readTree(result.stdout());
-    assertEquals(1, root.get("formatVersion").asInt());
+    assertEquals(2, root.get("formatVersion").asInt());
     assertEquals("eventb-animate", root.get("tool").asText());
     assertEquals("check", root.get("command").asText());
     assertEquals("missing.bum", root.get("model").asText());
@@ -52,8 +52,9 @@ public class JsonReportTest {
   }
 
   /**
-   * The top-level key set (and its order) is the formatVersion=1 contract; extending it is fine,
-   * but any change here must be deliberate.
+   * The top-level key set (and its order) is the format-version contract; extending it (as v2 did
+   * with the optional "evaluations" array, omitted here) is fine, but any change must be
+   * deliberate.
    */
   @Test
   public void testDocumentKeysAreStable() throws Exception {
