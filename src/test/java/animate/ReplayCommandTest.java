@@ -30,7 +30,7 @@ public class ReplayCommandTest {
       assertTrue("Counterexample trace should be written", Files.size(traceFile) > 0);
       assertTrue(
           "The save confirmation must stay visible without --debug:\n" + saveResult.output(),
-          saveResult.output().contains("Saving counterexample trace to"));
+          saveResult.output().contains("Saving trace to"));
 
       TestCli.Result replayResult =
           TestCli.execute("replay", "-t", traceFile.toString(), model.toString());

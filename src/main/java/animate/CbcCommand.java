@@ -1,11 +1,7 @@
 package animate;
 
-import de.prob.animator.command.CbcSolveCommand;
 import de.prob.animator.command.GetRedundantInvariantsCommand;
-import de.prob.animator.domainobjects.EvalResult;
 import de.prob.animator.domainobjects.EventB;
-import de.prob.animator.domainobjects.IEvalElement;
-import de.prob.animator.domainobjects.Join;
 import de.prob.check.CBCDeadlockChecker;
 import de.prob.check.CBCDeadlockFound;
 import de.prob.check.CBCInvariantChecker;
@@ -14,8 +10,6 @@ import de.prob.check.IModelCheckingResult;
 import de.prob.check.InvariantCheckCounterExample;
 import de.prob.check.ModelCheckOk;
 import de.prob.model.eventb.EventBMachine;
-import de.prob.model.representation.BEvent;
-import de.prob.model.representation.Extraction;
 import de.prob.statespace.StateSpace;
 import de.prob.statespace.Trace;
 import java.nio.file.Path;
@@ -153,7 +147,7 @@ class CbcCommand implements Callable<Integer> {
     }
     List<RunReport> parts = new ArrayList<>();
     if (!noInvariant) {
-      List<String> machineEvents = preservationEvents(machine);
+      List<String> machineEvents = Animate.operationNames(machine);
       List<String> scope = events != null ? events : machineEvents;
       // An unknown event is an input error, not a usage error: whether the name exists
       // depends on the model, and the requested JSON/JUnit reports must still be written.
@@ -241,30 +235,25 @@ class CbcCommand implements Callable<Integer> {
 
   private RunReport checkFeasibility(StateSpace stateSpace, EventBMachine machine) {
     System.out.println("Feasibility check...");
-    List<String> infeasible = new ArrayList<>();
-    List<String> undecided = new ArrayList<>();
+    // The kernel's FeasibilityAnalysis lumps solver timeouts in with proven-dead events;
+    // Feasibility
+    // solves per event so "no verdict" is never reported as "dead". INITIALISATION is excluded like
+    // the preservation check does: it has no guard, so it is never a dead event.
+    Feasibility.Result result;
     try {
-      // The kernel's FeasibilityAnalysis lumps solver timeouts in with proven-dead
-      // events; solve per event here so "no verdict" is never reported as "dead".
-      List<IEvalElement> invariants = Extraction.getInvariantPredicates(machine);
-      for (BEvent event : machine.getEvents()) {
-        List<IEvalElement> predicates = new ArrayList<>(invariants);
-        predicates.addAll(Extraction.getGuardPredicates(machine, event.getName()));
-        CbcSolveCommand solve =
-            new CbcSolveCommand(Join.conjunct(stateSpace.getModel(), predicates));
-        stateSpace.execute(solve);
-        String satisfiable =
-            solve.getValue() instanceof EvalResult result ? result.getValue() : null;
-        if ("FALSE".equals(satisfiable)) {
-          infeasible.add(event.getName());
-        } else if (!"TRUE".equals(satisfiable)) {
-          undecided.add(event.getName());
-        }
-      }
+      result = Feasibility.analyse(stateSpace, machine, Animate.operationNames(machine));
     } catch (RuntimeException e) {
       logger.debug("Feasibility check failed", e);
       return incomplete("feasibility", "Feasibility check", e.getMessage());
     }
+    if (result.errored()) {
+      // A solver error (not a mere timeout) means the check could not run to completion, so it is a
+      // non-verdict rather than a clean pass -- even without --strict.
+      return incomplete(
+          "feasibility", "Feasibility check", "the constraint solver failed on one or more events");
+    }
+    List<String> infeasible = result.infeasible();
+    List<String> undecided = result.undecided();
     String noVerdict =
         undecided.isEmpty() ? null : "no solver verdict for " + String.join(", ", undecided);
     if (noVerdict != null) {
@@ -287,7 +276,7 @@ class CbcCommand implements Callable<Integer> {
         "feasibility",
         infeasible.size()
             + " infeasible (dead) event"
-            + plural(infeasible.size())
+            + Animate.plural(infeasible.size())
             + ": "
             + String.join(", ", infeasible)
             + (noVerdict == null ? "" : " (" + noVerdict + ")"),
@@ -321,7 +310,7 @@ class CbcCommand implements Callable<Integer> {
         "redundant-invariants",
         redundant.size()
             + " redundant invariant"
-            + plural(redundant.size())
+            + Animate.plural(redundant.size())
             + " implied by the others"
             + timeoutNote
             + ": "
@@ -348,20 +337,6 @@ class CbcCommand implements Callable<Integer> {
     return strict ? "" : " (advisory; use --strict to fail)";
   }
 
-  /**
-   * The events eligible for a preservation check: every machine event except INITIALISATION, whose
-   * obligation is establishment, not preservation (the model-checking command covers it).
-   */
-  private static List<String> preservationEvents(EventBMachine machine) {
-    List<String> names = new ArrayList<>();
-    for (BEvent event : machine.getEvents()) {
-      if (!Animate.INITIALISATION_EVENT.equals(event.getName())) {
-        names.add(event.getName());
-      }
-    }
-    return names;
-  }
-
   private RunReport checkInvariantPreservation(StateSpace stateSpace, List<String> scope) {
     if (scope.isEmpty()) {
       // The kernel command treats an empty event list as "all", so never pass one on.
@@ -375,7 +350,7 @@ class CbcCommand implements Callable<Integer> {
         "Constraint-based invariant check ("
             + scope.size()
             + " event"
-            + plural(scope.size())
+            + Animate.plural(scope.size())
             + ")...");
     IModelCheckingResult result;
     try {
@@ -406,7 +381,7 @@ class CbcCommand implements Callable<Integer> {
           "invariant preservation fails for "
               + violating.size()
               + " event"
-              + plural(violating.size())
+              + Animate.plural(violating.size())
               + ": "
               + String.join(", ", violating);
       System.err.println("Error: " + message);
@@ -451,9 +426,5 @@ class CbcCommand implements Callable<Integer> {
       checks.add(new RunReport.Check("invariant/" + event, outcome, message));
     }
     return checks;
-  }
-
-  private static String plural(int count) {
-    return count == 1 ? "" : "s";
   }
 }

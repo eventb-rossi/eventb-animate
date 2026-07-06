@@ -145,7 +145,7 @@ final class TraceWriter {
             .withModelName(Objects.toString(stateSpace.getMainComponent(), "unknown"))
             .build();
     TraceJsonFile traceJsonFile = new TraceJsonFile(trace, metadata);
-    logger.info("Saving counterexample trace to {}", target);
+    logger.info("Saving trace to {}", target);
     try {
       traceManager.get().save(target, traceJsonFile);
       return Optional.of(target);
