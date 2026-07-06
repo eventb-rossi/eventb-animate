@@ -4,7 +4,6 @@ import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.mapping;
 import static java.util.stream.Collectors.toList;
 
-import ch.qos.logback.classic.Logger;
 import de.prob.animator.CommandInterruptedException;
 import de.prob.check.tracereplay.PersistentTransition;
 import de.prob.check.tracereplay.ReplayedTrace;
@@ -23,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
@@ -38,7 +38,7 @@ import picocli.CommandLine.Spec;
     versionProvider = Animate.VersionProvider.class)
 class ReplayCommand implements Callable<Integer> {
 
-  private static final Logger logger = (Logger) LoggerFactory.getLogger(ReplayCommand.class);
+  private static final Logger logger = LoggerFactory.getLogger(ReplayCommand.class);
 
   /** Shared by the exception path and the short-result guard so the verdict reads identically. */
   static final String NO_ADAPTATION_MESSAGE =

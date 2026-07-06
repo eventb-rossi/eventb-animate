@@ -11,11 +11,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.Callable;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
-import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.ParentCommand;
 import picocli.CommandLine.Spec;
 
@@ -83,8 +83,7 @@ class EvalCommand implements Callable<Integer> {
   private static final Comparator<State> BY_ID =
       Comparator.comparingLong(state -> Long.parseLong(state.getId()));
 
-  private static final ch.qos.logback.classic.Logger logger =
-      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(EvalCommand.class);
+  private static final Logger logger = LoggerFactory.getLogger(EvalCommand.class);
 
   @Override
   public Integer call() {
@@ -97,10 +96,12 @@ class EvalCommand implements Callable<Integer> {
     Animate.validatePositiveBound(spec, states, "--states", "states", "an exhaustive search");
     Animate.validatePositiveBound(spec, timeLimit, "--time-limit", "seconds", "no limit");
     if (where == null && states != -1) {
-      throw usageError("--states only bounds the --where state-space search (add --where)");
+      throw Animate.usageError(
+          spec, "--states only bounds the --where state-space search (add --where)");
     }
     if (where == null && timeLimit != -1) {
-      throw usageError("--time-limit only bounds the --where state-space search (add --where)");
+      throw Animate.usageError(
+          spec, "--time-limit only bounds the --where state-space search (add --where)");
     }
     parsedFormulas = new ArrayList<>();
     for (String formula : formulas) {
@@ -109,10 +110,6 @@ class EvalCommand implements Callable<Integer> {
     if (where != null) {
       parsedWhere = Animate.parsePredicateOption(spec, where, "--where");
     }
-  }
-
-  private ParameterException usageError(String message) {
-    return Animate.usageError(spec, message);
   }
 
   private RunReport runEval(StateSpace stateSpace) {

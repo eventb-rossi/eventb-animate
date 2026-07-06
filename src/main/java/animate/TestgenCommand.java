@@ -14,11 +14,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
-import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.ParentCommand;
 import picocli.CommandLine.Spec;
 
@@ -34,8 +34,7 @@ import picocli.CommandLine.Spec;
     versionProvider = Animate.VersionProvider.class)
 class TestgenCommand implements Callable<Integer> {
 
-  private static final ch.qos.logback.classic.Logger logger =
-      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(TestgenCommand.class);
+  private static final Logger logger = LoggerFactory.getLogger(TestgenCommand.class);
 
   @ParentCommand Animate parent;
   @Spec CommandSpec spec;
@@ -111,28 +110,22 @@ class TestgenCommand implements Callable<Integer> {
   /** Usage errors, raised before the model load like the root check's validation. */
   private void validateTestgenOptions() {
     if (depth < 1) {
-      throw usageError("--depth must be at least 1, got: " + depth);
+      throw Animate.usageError(spec, "--depth must be at least 1, got: " + depth);
     }
     if (timeout < 1) {
-      throw usageError("--timeout must be at least 1 millisecond, got: " + timeout);
+      throw Animate.usageError(spec, "--timeout must be at least 1 millisecond, got: " + timeout);
     }
     if (force && out == null) {
-      throw usageError("--force only applies when writing traces with --out");
+      throw Animate.usageError(spec, "--force only applies when writing traces with --out");
     }
     if (out != null && Files.exists(out) && !Files.isDirectory(out)) {
-      throw usageError("--out is not a directory: " + out);
+      throw Animate.usageError(spec, "--out is not a directory: " + out);
     }
-  }
-
-  private ParameterException usageError(String message) {
-    return Animate.usageError(spec, message);
   }
 
   private RunReport runTestgen(StateSpace stateSpace) {
     if (!(stateSpace.getMainComponent() instanceof EventBMachine machine)) {
-      String message = "testgen requires a machine, but the loaded component is a context";
-      System.err.println("Error: " + message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "coverage", message);
+      return Animate.notAMachine("testgen", "coverage");
     }
 
     List<String> allOps = Animate.operationNames(machine);

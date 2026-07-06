@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -22,8 +23,7 @@ import picocli.CommandLine.ParentCommand;
     versionProvider = Animate.VersionProvider.class)
 class ConvertCommand implements Callable<Integer> {
 
-  private static final ch.qos.logback.classic.Logger logger =
-      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(ConvertCommand.class);
+  private static final Logger logger = LoggerFactory.getLogger(ConvertCommand.class);
 
   @ParentCommand Animate parent;
 

@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -29,8 +30,7 @@ import picocli.CommandLine.ParentCommand;
     versionProvider = Animate.VersionProvider.class)
 class InfoCommand implements Callable<Integer> {
 
-  private static final ch.qos.logback.classic.Logger logger =
-      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(InfoCommand.class);
+  private static final Logger logger = LoggerFactory.getLogger(InfoCommand.class);
 
   @ParentCommand Animate parent;
 

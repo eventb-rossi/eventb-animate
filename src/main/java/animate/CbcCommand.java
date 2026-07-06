@@ -18,11 +18,11 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
-import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.ParentCommand;
 import picocli.CommandLine.Spec;
 
@@ -100,8 +100,7 @@ class CbcCommand implements Callable<Integer> {
   // The first violation of the run owns the --save slot; later ones only report.
   private boolean traceSaved;
 
-  private static final ch.qos.logback.classic.Logger logger =
-      (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(CbcCommand.class);
+  private static final Logger logger = LoggerFactory.getLogger(CbcCommand.class);
 
   @Override
   public Integer call() {
@@ -116,34 +115,31 @@ class CbcCommand implements Callable<Integer> {
   /** Usage errors, raised before the model load like the root check's validation. */
   private void validateCbcOptions() {
     if (noInvariant && !deadlock && !feasibility && !redundantInvariants) {
-      throw usageError(
+      throw Animate.usageError(
+          spec,
           "nothing to check: --no-invariant disables the only requested check (add --deadlock,"
               + " --feasibility, or --redundant-invariants)");
     }
     if (noInvariant && events != null) {
-      throw usageError("--events restricts the invariant check, which --no-invariant disables");
+      throw Animate.usageError(
+          spec, "--events restricts the invariant check, which --no-invariant disables");
     }
     if (strict && !feasibility && !redundantInvariants) {
-      throw usageError(
-          "--strict has nothing to escalate (add --feasibility or --redundant-invariants)");
+      throw Animate.usageError(
+          spec, "--strict has nothing to escalate (add --feasibility or --redundant-invariants)");
     }
     if (where != null && !deadlock) {
-      throw usageError("--where only restricts the --deadlock search (add --deadlock)");
+      throw Animate.usageError(
+          spec, "--where only restricts the --deadlock search (add --deadlock)");
     }
     if (where != null) {
       parsedWhere = Animate.parsePredicateOption(spec, where, "--where");
     }
   }
 
-  private ParameterException usageError(String message) {
-    return Animate.usageError(spec, message);
-  }
-
   private RunReport runCbc(StateSpace stateSpace) {
     if (!(stateSpace.getMainComponent() instanceof EventBMachine machine)) {
-      String message = "cbc requires a machine, but the loaded component is a context";
-      System.err.println("Error: " + message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "invariant", message);
+      return Animate.notAMachine("cbc", "invariant");
     }
     List<RunReport> parts = new ArrayList<>();
     if (!noInvariant) {
