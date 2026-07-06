@@ -26,7 +26,9 @@ import de.prob.check.ModelCheckingOptions;
 import de.prob.check.ModelCheckingSearchStrategy;
 import de.prob.check.StateSpaceStats;
 import de.prob.check.tracereplay.json.TraceManager;
+import de.prob.model.eventb.EventBMachine;
 import de.prob.model.eventb.EventBModel;
+import de.prob.model.representation.BEvent;
 import de.prob.scripting.Api;
 import de.prob.scripting.EventBFactory;
 import de.prob.statespace.*;
@@ -66,7 +68,8 @@ import picocli.CommandLine.Spec;
       ConvertCommand.class,
       WdCommand.class,
       PoCommand.class,
-      CbcCommand.class
+      CbcCommand.class,
+      TestgenCommand.class
     })
 public class Animate implements Callable<Integer> {
 
@@ -477,6 +480,27 @@ public class Animate implements Callable<Integer> {
     if (parentDir != null) {
       Files.createDirectories(parentDir);
     }
+  }
+
+  /**
+   * The names of every event of {@code machine} except INITIALISATION -- the machine's operations.
+   * INITIALISATION establishes the invariant rather than being a guarded operation, so it is never
+   * a preservation, feasibility, or coverage target; shared by the commands that work over this
+   * set.
+   */
+  static List<String> operationNames(EventBMachine machine) {
+    List<String> names = new ArrayList<>();
+    for (BEvent event : machine.getEvents()) {
+      if (!INITIALISATION_EVENT.equals(event.getName())) {
+        names.add(event.getName());
+      }
+    }
+    return names;
+  }
+
+  /** The plural suffix for {@code count} items ("" for one, "s" otherwise). */
+  static String plural(int count) {
+    return count == 1 ? "" : "s";
   }
 
   /** Built-in defaults first; user-supplied -p/--pref values override any of them. */
@@ -1096,8 +1120,16 @@ public class Animate implements Callable<Integer> {
     if (target == null) {
       return report;
     }
-    return report.withTraceFile(
-        traceWriter.save(counterexample, stateSpace, target, probVersionString).orElse(null));
+    return report.withTraceFile(saveTrace(counterexample, stateSpace, target).orElse(null));
+  }
+
+  /**
+   * Persists one trace to {@code target} as ProB trace JSON, stamping the loaded ProB version.
+   * Shared by commands (e.g. {@code testgen}) that write several traces of their own rather than a
+   * single counterexample. Returns the written path, or empty when the write failed.
+   */
+  Optional<Path> saveTrace(Trace trace, StateSpace stateSpace, Path target) {
+    return traceWriter.save(trace, stateSpace, target, probVersionString);
   }
 
   /** The checks this consistency run performs, in a fixed report order. */

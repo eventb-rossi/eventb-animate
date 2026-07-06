@@ -9,6 +9,7 @@ A command-line tool for model-checking Event-B models using ProB.
 - Symbolic invariant model-checking (BMC, IC3, k-induction, t-induction) that can
   prove safety on state spaces too large to enumerate
 - Coverage analysis
+- Constraint-based test generation (operation coverage), saved as replayable traces
 - Counterexample trace saving and replay in JSON format
 - Model visualization export (machine hierarchy, events, properties, invariants)
 - Conversion of Event-B models to Classical B machines
@@ -173,21 +174,23 @@ machine name is unique across all projects.
   explored, or a `--states`/`--time-limit`/`--stop-at-full-coverage` bound was
   reached without a violation), the LTL formula holds, a `--symbolic` run proved
   invariant safety, all proof obligations are discharged (`wd`, `po`), a
-  replay was perfect (`replay`), or a trace was adapted to the target refinement
-  level (`replay --refine`)
+  replay was perfect (`replay`), a trace was adapted to the target refinement
+  level (`replay --refine`), or an operation-coverage run completed (`testgen`)
 - `1` - a definite negative verdict or an input failure: the model could not
   be loaded, an invariant or assertion was violated, a deadlock was reached (a
   state with no enabled events, including legitimate terminal states), a
   `--goal` state was found, an LTL counterexample was found, a `--symbolic` run
   found a reachable invariant violation, a proof obligation was disproved
   (`po --disprove`), a trace replay was not perfect (`replay`), no adaptation of
-  a trace to the target refinement level was found (`replay --refine`), or a
+  a trace to the target refinement level was found (`replay --refine`), a dead
+  target operation was found under `testgen --fail-on-infeasible`, or a
   conversion failed (`convert`)
 - `2` - no verdict: nothing was proven either way. The check could not
   complete (interrupted or a ProB error), a bounded LTL run hit the
   `--states` limit, a `--symbolic` run was inconclusive (the solver/provers were
   too weak, or a bound was reached), a proof obligation remains undischarged
-  (`wd`, `po` -- open means unproven, not disproven), or the command line was
+  (`wd`, `po` -- open means unproven, not disproven), a target operation was
+  left uncovered under `testgen --fail-on-uncovered`, or the command line was
   invalid (usage errors, including unparseable `--goal`/`--ltl` formulas)
 
 If a requested `--json`/`--junit`/`--markdown` report cannot be written, an
@@ -380,6 +383,50 @@ Options:
 - `--save <trace.json>` - Save the counterexample trace. The trace starts
   in the found state, which need not be reachable, so it may not `replay`
   against the model
+
+#### Generate Test Traces
+
+```bash
+eventb-animate testgen path/to/model.bum --out traces/
+eventb-animate testgen --operations inc,reset --depth 8 path/to/model.zip --out traces/
+```
+
+Generates an operation-coverage test suite with ProB's constraint solver,
+without exploring the state space: for each operation it searches for a short
+feasible trace that executes it, extending prefixes breadth-first (up to
+`--depth` operation steps) until the operation is enabled. Every covered
+operation is written to `--out` as a ProB JSON trace named
+`<machine>_<operation>.json`, each of which `replay`s perfectly against the
+model. One `coverage/<operation>` entry per target appears in the
+`--json`/`--junit`/`--markdown` reports.
+
+Coverage is best-effort and model-dependent. An operation is left *uncovered*
+when no feasible witness is found within the depth and solver-time bounds --
+some operations need long or specific sequences, or lie beyond the constraint
+solver's reach (raise `--depth`/`--timeout` to search harder). An operation is
+*infeasible* when its guard is unsatisfiable under the invariant: a dead
+operation that can never be covered. Both are reported and, by default,
+advisory (exit 0); the `--fail-on-*` flags turn them into CI failures.
+
+Options:
+- `--out <dir>` - Directory for the generated traces, one JSON file per
+  covered operation (created if missing). Omit to only report coverage
+  without writing traces
+- `--operations <e1,e2,...>` - Restrict test generation to these target
+  operations (comma-separated or repeated; default: every operation of the
+  machine)
+- `--depth <N>` - Maximum number of operation steps in a generated trace,
+  i.e. how far the search extends prefixes to enable an operation
+  (default: 5)
+- `--final-ops <e1,e2,...>` - Operations after which a trace is complete and
+  is not extended further
+- `--timeout <ms>` - Per-attempt solver time bound; raise it when operations
+  are reported uncovered on complex models (default: 2000)
+- `--fail-on-uncovered` - Exit 2 when any target operation has no witness
+  within the bounds (a non-verdict; advisory otherwise)
+- `--fail-on-infeasible` - Exit 1 when any target operation is a dead
+  operation (advisory otherwise)
+- `--force` - Overwrite existing trace files in `--out`
 
 #### Convert to Classical B
 
