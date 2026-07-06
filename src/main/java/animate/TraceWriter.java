@@ -128,6 +128,13 @@ final class TraceWriter {
     System.out.println(traceBlock(counterexample));
   }
 
+  /**
+   * Reads a ProB trace JSON file; the counterpart to {@link #save}, keeping trace I/O in one place.
+   */
+  TraceJsonFile load(Path source) throws IOException {
+    return traceManager.get().load(source);
+  }
+
   /** Returns the written path, or empty when saving failed (reported on stderr, exit unchanged). */
   Optional<Path> save(Trace trace, StateSpace stateSpace, Path target, String probVersion) {
     JsonMetadata metadata =

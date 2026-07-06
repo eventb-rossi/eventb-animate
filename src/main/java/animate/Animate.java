@@ -778,20 +778,26 @@ public class Animate implements Callable<Integer> {
       }
     }
     for (Target target : targets) {
-      validateReportTarget(target.path(), target.option());
+      validateWritableTarget(spec, target.path(), target.option());
     }
   }
 
-  /** Rejects a bad report destination up front, before it can cost a model load. */
-  private void validateReportTarget(Path path, String option) {
+  /**
+   * Rejects a bad output destination (a directory, or an uncreatable parent) up front, before it
+   * can cost a model load. Shared by the report targets and the subcommands' own always-written
+   * outputs (e.g. replay --refine --save) so every such option rejects the same way with the same
+   * wording.
+   */
+  static void validateWritableTarget(CommandSpec spec, Path path, String option) {
     if (Files.isDirectory(path)) {
-      throw usageError(option + " target is a directory: " + path);
+      throw usageError(spec, option + " target is a directory: " + path);
     }
     try {
-      // force=true: reports overwrite by default, so this only ensures the parent directory.
+      // force=true: these outputs overwrite, so this only ensures the parent directory.
       validateWritableOutput(path, option, true);
     } catch (IOException e) {
-      throw usageError("cannot create the " + option + " parent directory: " + e.getMessage());
+      throw usageError(
+          spec, "cannot create the " + option + " parent directory: " + e.getMessage());
     }
   }
 
@@ -1075,6 +1081,13 @@ public class Animate implements Callable<Integer> {
   private RunReport symbolicIncomplete(String message) {
     System.err.println(message);
     return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "invariant", message);
+  }
+
+  /**
+   * Reads the transition list of a source trace JSON, e.g. the abstract trace of replay --refine.
+   */
+  List<de.prob.check.tracereplay.PersistentTransition> loadTrace(Path source) throws IOException {
+    return traceWriter.load(source).getTransitionList();
   }
 
   /** Saves the counterexample when a --save target was given and records the written path. */

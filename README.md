@@ -172,15 +172,17 @@ machine name is unique across all projects.
 - `0` - success: the requested check found nothing (the full state space was
   explored, or a `--states`/`--time-limit`/`--stop-at-full-coverage` bound was
   reached without a violation), the LTL formula holds, a `--symbolic` run proved
-  invariant safety, all proof obligations are discharged (`wd`, `po`), or a
-  replay was perfect (`replay`)
+  invariant safety, all proof obligations are discharged (`wd`, `po`), a
+  replay was perfect (`replay`), or a trace was adapted to the target refinement
+  level (`replay --refine`)
 - `1` - a definite negative verdict or an input failure: the model could not
   be loaded, an invariant or assertion was violated, a deadlock was reached (a
   state with no enabled events, including legitimate terminal states), a
   `--goal` state was found, an LTL counterexample was found, a `--symbolic` run
   found a reachable invariant violation, a proof obligation was disproved
-  (`po --disprove`), a trace replay was not perfect (`replay`), or a conversion
-  failed (`convert`)
+  (`po --disprove`), a trace replay was not perfect (`replay`), no adaptation of
+  a trace to the target refinement level was found (`replay --refine`), or a
+  conversion failed (`convert`)
 - `2` - no verdict: nothing was proven either way. The check could not
   complete (interrupted or a ProB error), a bounded LTL run hit the
   `--states` limit, a `--symbolic` run was inconclusive (the solver/provers were
@@ -247,6 +249,35 @@ file with them, and does not support `-`.
 ```bash
 eventb-animate replay -t path/to/trace.json path/to/model.bum
 ```
+
+Replays the trace against the selected machine (the most refined by default, or
+`-m/--machine`) and reports the replay status; a perfect replay exits 0.
+
+With `--refine` the trace is instead *adapted* to the `-m` refinement level
+before being reproduced -- migrating a trace saved from an abstract machine onto
+a concrete one, renaming events and inserting skip-refining steps as the
+refinement requires:
+
+```bash
+eventb-animate replay --refine -m M2 -t trace_M1.json model.zip --save trace_M2.json
+```
+
+- `--refine` - adapt the source trace to the target refinement level instead of
+  replaying it verbatim. The target is the `-m` machine; the source may be from
+  any more abstract level (multi-level jumps like M0->M3 need only the source
+  trace and the target model). Exit 0 means an adaptation was found; exit 1 means
+  the target could not reproduce the trace within the search bounds -- a useful
+  regression signal
+- `--save <trace.json>` - write the adapted trace (requires `--refine`; overwrites)
+- `--refine-breadth <N>` - max alternatives explored per step (default 10)
+- `--refine-depth <N>` - max steps the search descends between two matched
+  transitions (default 5)
+
+A non-zero exit reported as "No adaptation found within the configured search
+bounds" means exactly that: the concrete machine could not reproduce the abstract
+trace with these bounds. Raising `--refine-breadth`/`--refine-depth` may help;
+witness-heavy data refinements whose concrete parameters cannot be inferred from
+the abstract trace may have no adaptation at any bound.
 
 #### Model Information
 
