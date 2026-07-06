@@ -50,7 +50,7 @@ class ModelResolver {
         } else {
           Files.createDirectories(entryPath.getParent());
           Files.copy(zis, entryPath);
-          if (entry.getName().endsWith(".bum")) {
+          if (entry.getName().endsWith(RodinNames.BUM)) {
             bumFiles.add(entryPath);
           }
         }
@@ -65,7 +65,7 @@ class ModelResolver {
     try (var stream = Files.walk(dir)) {
       bumFiles =
           stream
-              .filter(p -> p.toString().endsWith(".bum"))
+              .filter(p -> p.toString().endsWith(RodinNames.BUM))
               .filter(Files::isRegularFile)
               .collect(Collectors.toList());
     }
@@ -203,7 +203,7 @@ class ModelResolver {
 
   /** Returns the .bum files named {@code machineName}, sorted by path. */
   private List<Path> machinesNamed(List<Path> bumFiles, String machineName) {
-    String target = machineName + ".bum";
+    String target = machineName + RodinNames.BUM;
     return bumFiles.stream()
         .filter(p -> machineFileName(p).equals(target))
         .sorted()
@@ -214,7 +214,7 @@ class ModelResolver {
    * Renders the projects that hold {@code machineName} as the {@code project/machine} hint form.
    */
   private String qualifiedNames(Map<String, List<Path>> byProject, String machineName) {
-    String target = machineName + ".bum";
+    String target = machineName + RodinNames.BUM;
     return byProject.entrySet().stream()
         .filter(entry -> entry.getValue().stream().anyMatch(p -> machineFileName(p).equals(target)))
         // Render the form the user can actually retry with: the root project takes no prefix.
@@ -298,10 +298,10 @@ class ModelResolver {
 
       try {
         Document doc = factory.newDocumentBuilder().parse(bumFile.toFile());
-        NodeList refines = doc.getElementsByTagName("org.eventb.core.refinesMachine");
+        NodeList refines = doc.getElementsByTagName(RodinNames.REFINES_MACHINE);
         if (refines.getLength() > 0) {
           Element refEl = (Element) refines.item(0);
-          String target = refEl.getAttribute("org.eventb.core.target");
+          String target = refEl.getAttribute(RodinNames.ATTR_TARGET);
           if (!target.isEmpty()) {
             refinesTarget.put(machineName, target);
           }

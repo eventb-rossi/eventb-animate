@@ -23,9 +23,6 @@ import org.xml.sax.helpers.DefaultHandler;
  */
 final class ProofStatusReader extends DefaultHandler {
 
-  private static final String PS_STATUS = "org.eventb.core.psStatus";
-  private static final String PS_BROKEN = "org.eventb.core.psBroken";
-
   private final Set<String> broken = new LinkedHashSet<>();
 
   private ProofStatusReader() {}
@@ -43,8 +40,9 @@ final class ProofStatusReader extends DefaultHandler {
 
   @Override
   public void startElement(String uri, String localName, String qName, Attributes attributes) {
-    if (PS_STATUS.equals(qName) && "true".equals(attributes.getValue(PS_BROKEN))) {
-      broken.add(attributes.getValue("name"));
+    if (RodinNames.PS_STATUS.equals(qName)
+        && "true".equals(attributes.getValue(RodinNames.ATTR_PS_BROKEN))) {
+      broken.add(attributes.getValue(RodinNames.ATTR_NAME));
     }
   }
 }

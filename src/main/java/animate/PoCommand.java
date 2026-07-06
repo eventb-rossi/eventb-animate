@@ -317,7 +317,8 @@ class PoCommand implements Callable<Integer> {
       PoSequentParser sequents = sequentCache.get(qualified.component());
       if (sequents == null) {
         sequents =
-            PoSequentParser.parse(projectDirectory().resolve(qualified.component() + ".bpo"));
+            PoSequentParser.parse(
+                projectDirectory().resolve(qualified.component() + RodinNames.BPO));
         sequentCache.put(qualified.component(), sequents);
       }
       sequent = sequents.sequent(qualified.po().getName());
@@ -330,7 +331,9 @@ class PoCommand implements Callable<Integer> {
     if (sequent == null || sequent.goal() == null) {
       return new DisproveOutcome(
           RunReport.Outcome.ERROR,
-          "solver error: no sequent for this obligation in " + qualified.component() + ".bpo",
+          "solver error: no sequent for this obligation in "
+              + qualified.component()
+              + RodinNames.BPO,
           false);
     }
     try {
@@ -411,7 +414,7 @@ class PoCommand implements Callable<Integer> {
     Path projectDir = projectDirectory();
     Set<String> broken = new LinkedHashSet<>();
     for (String component : componentNames(model)) {
-      Path bps = projectDir.resolve(component + ".bps");
+      Path bps = projectDir.resolve(component + RodinNames.BPS);
       if (!Files.exists(bps)) {
         // A component with obligations but no status file has nothing proved (confidence 0),
         // so its obligations are already open; there is no broken flag to recover.
@@ -425,7 +428,11 @@ class PoCommand implements Callable<Integer> {
         // A malformed .bps must not abort the gate; without its flags the obligations fall
         // back to their kernel confidence, which is the behaviour before broken detection.
         System.err.println(
-            "Warning: cannot read proof status from " + component + ".bps: " + e.getMessage());
+            "Warning: cannot read proof status from "
+                + component
+                + RodinNames.BPS
+                + ": "
+                + e.getMessage());
       }
     }
     return broken;
@@ -435,7 +442,7 @@ class PoCommand implements Callable<Integer> {
   private List<String> missingProofFiles(EventBModel model) {
     Path projectDir = projectDirectory();
     return componentNames(model).stream()
-        .filter(name -> !Files.exists(projectDir.resolve(name + ".bpo")))
+        .filter(name -> !Files.exists(projectDir.resolve(name + RodinNames.BPO)))
         .toList();
   }
 

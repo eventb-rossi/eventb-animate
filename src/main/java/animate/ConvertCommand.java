@@ -96,7 +96,7 @@ class ConvertCommand implements Callable<Integer> {
     // Decide by extension so argument interpretation does not depend on which
     // files happen to exist; directories (Rodin projects) carry no extension.
     String name = path.toString();
-    return name.endsWith(".bum")
+    return name.endsWith(RodinNames.BUM)
         || name.endsWith(".zip")
         || name.endsWith(".eventb")
         || Files.isDirectory(path);

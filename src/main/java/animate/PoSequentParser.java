@@ -34,8 +34,8 @@ final class PoSequentParser extends DefaultHandler {
       List<IEvalElement> selectedHypotheses,
       Map<String, IEvalElement> identifiers) {}
 
-  private static final String PREDICATE_SET_PREFIX = "|org.eventb.core.poPredicateSet#";
-  private static final String PREDICATE_PREFIX = "|org.eventb.core.poPredicate#";
+  private static final String PREDICATE_SET_PREFIX = RodinNames.PREDICATE_SET_HANDLE_PREFIX;
+  private static final String PREDICATE_PREFIX = RodinNames.PREDICATE_HANDLE_PREFIX;
 
   private final Set<String> sequentNames = new LinkedHashSet<>();
   private final Map<String, IEvalElement> goals = new LinkedHashMap<>();
@@ -84,21 +84,21 @@ final class PoSequentParser extends DefaultHandler {
   @Override
   public void startElement(String uri, String localName, String qName, Attributes attributes) {
     switch (qName) {
-      case "org.eventb.core.poSequent" -> {
-        currSequent = attributes.getValue("name");
+      case RodinNames.PO_SEQUENT -> {
+        currSequent = attributes.getValue(RodinNames.ATTR_NAME);
         sequentNames.add(currSequent);
         singleSelectionHints.put(currSequent, new ArrayList<>());
         rangeSelectionHints.put(currSequent, new ArrayList<>());
       }
-      case "org.eventb.core.poPredicateSet" -> {
-        String parentSet = attributes.getValue("org.eventb.core.parentSet");
+      case RodinNames.PO_PREDICATE_SET -> {
+        String parentSet = attributes.getValue(RodinNames.ATTR_PARENT_SET);
         if (currSequent == null) {
-          currHypSet = attributes.getValue("name");
+          currHypSet = attributes.getValue(RodinNames.ATTR_NAME);
         } else {
           // The sequent's local predicate set: its predicates are hypotheses of this
           // obligation alone, so it heads the sequent's hypothesis chain. Local sets
           // all share the name SEQHYP; qualify with the sequent for a unique key.
-          currHypSet = currSequent + "|" + attributes.getValue("name");
+          currHypSet = currSequent + "|" + attributes.getValue(RodinNames.ATTR_NAME);
           poPredicateSets.put(currSequent, currHypSet);
         }
         predicateSetPredicates.put(currHypSet, new LinkedHashMap<>());
@@ -107,20 +107,20 @@ final class PoSequentParser extends DefaultHandler {
           predicateSetParents.put(currHypSet, extractName(parentSet, PREDICATE_SET_PREFIX));
         }
       }
-      case "org.eventb.core.poPredicate" -> {
-        String predicate = attributes.getValue("org.eventb.core.predicate");
+      case RodinNames.PO_PREDICATE -> {
+        String predicate = attributes.getValue(RodinNames.ATTR_PREDICATE);
         if (currHypSet != null) {
           predicateSetPredicates
               .get(currHypSet)
-              .put(attributes.getValue("name"), new EventB(predicate));
+              .put(attributes.getValue(RodinNames.ATTR_NAME), new EventB(predicate));
         } else if (currSequent != null) {
           goals.put(currSequent, new EventB(predicate));
         }
       }
-      case "org.eventb.core.poSelHint" -> {
+      case RodinNames.PO_SEL_HINT -> {
         if (currSequent != null) {
-          String first = attributes.getValue("org.eventb.core.poSelHintFst");
-          String second = attributes.getValue("org.eventb.core.poSelHintSnd");
+          String first = attributes.getValue(RodinNames.ATTR_SEL_HINT_FST);
+          String second = attributes.getValue(RodinNames.ATTR_SEL_HINT_SND);
           if (second == null) {
             int predicateIdx = first.indexOf(PREDICATE_PREFIX);
             String predName = extractName(first, PREDICATE_PREFIX);
@@ -137,13 +137,13 @@ final class PoSequentParser extends DefaultHandler {
           }
         }
       }
-      case "org.eventb.core.poIdentifier" -> {
+      case RodinNames.PO_IDENTIFIER -> {
         if (currHypSet != null) {
           predicateSetIdentifiers
               .get(currHypSet)
               .put(
-                  attributes.getValue("name"),
-                  new EventB(attributes.getValue("org.eventb.core.type")));
+                  attributes.getValue(RodinNames.ATTR_NAME),
+                  new EventB(attributes.getValue(RodinNames.ATTR_TYPE)));
         }
       }
       default -> {}
@@ -152,11 +152,11 @@ final class PoSequentParser extends DefaultHandler {
 
   @Override
   public void endElement(String uri, String localName, String qName) {
-    if ("org.eventb.core.poPredicateSet".equals(qName)) {
+    if (RodinNames.PO_PREDICATE_SET.equals(qName)) {
       // Also inside a sequent: the goal poPredicate follows the local set as a
       // direct child of the sequent and must not be routed into the set.
       currHypSet = null;
-    } else if ("org.eventb.core.poSequent".equals(qName)) {
+    } else if (RodinNames.PO_SEQUENT.equals(qName)) {
       currSequent = null;
     }
   }
@@ -192,7 +192,7 @@ final class PoSequentParser extends DefaultHandler {
     Set<String> selectedSets = new LinkedHashSet<>();
     for (String[] range : rangeSelectionHints.get(poLabel)) {
       String start = range[0];
-      String end = "SEQHYP".equals(range[1]) ? hypSetHead : range[1];
+      String end = RodinNames.LOCAL_HYP_SET.equals(range[1]) ? hypSetHead : range[1];
       while (end != null && !end.equals(start)) {
         selectedSets.add(end);
         end = predicateSetParents.get(end);
