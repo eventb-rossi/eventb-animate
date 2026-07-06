@@ -1284,22 +1284,25 @@ public class Animate implements Callable<Integer> {
     return traceWriter.save(trace, stateSpace, target, probVersionString);
   }
 
+  /** One consistency check: its report name plus the property phrase the verdict wording uses. */
+  private record CheckSpec(boolean enabled, String name, String property) {}
+
+  /**
+   * The consistency checks this run can perform, in fixed report order, each flagged with whether
+   * this run enabled it. {@link #enabledCheckNames} and {@link #checkedProperties} both derive from
+   * this one list, so the enabled set and its ordering live in a single place.
+   */
+  private List<CheckSpec> checkTable() {
+    return List.of(
+        new CheckSpec(!noInvariant, "invariant", "invariant violation"),
+        new CheckSpec(!noDeadlock, "deadlock", "deadlock"),
+        new CheckSpec(assertions, "assertions", "assertion violation"),
+        new CheckSpec(goal != null, "goal", "goal state"));
+  }
+
   /** The checks this consistency run performs, in a fixed report order. */
   private List<String> enabledCheckNames() {
-    List<String> names = new ArrayList<>();
-    if (!noInvariant) {
-      names.add("invariant");
-    }
-    if (!noDeadlock) {
-      names.add("deadlock");
-    }
-    if (assertions) {
-      names.add("assertions");
-    }
-    if (goal != null) {
-      names.add("goal");
-    }
-    return names;
+    return checkTable().stream().filter(CheckSpec::enabled).map(CheckSpec::name).toList();
   }
 
   private RunReport.Check[] enabledChecks(RunReport.Outcome outcome, String message) {
@@ -1428,20 +1431,8 @@ public class Animate implements Callable<Integer> {
 
   /** Names exactly the properties this run checked, so the verdict never overclaims. */
   private String checkedProperties() {
-    List<String> properties = new ArrayList<>();
-    if (!noInvariant) {
-      properties.add("invariant violation");
-    }
-    if (!noDeadlock) {
-      properties.add("deadlock");
-    }
-    if (assertions) {
-      properties.add("assertion violation");
-    }
-    if (goal != null) {
-      properties.add("goal state");
-    }
-    return String.join(" or ", properties);
+    return String.join(
+        " or ", checkTable().stream().filter(CheckSpec::enabled).map(CheckSpec::property).toList());
   }
 
   static final class LazyGuiceFactory implements CommandLine.IFactory {
