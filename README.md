@@ -378,6 +378,16 @@ mask a violation. The check ignores the Rodin proof status shipped with the
 model (`PROOF_INFO=false`), so it proves preservation from scratch rather
 than trusting what `po` gates on.
 
+The per-event solve is bounded only by ProB's internal solver timeout, not
+by an overall wall-clock limit, and its cost grows with the width of the
+state description. In practice `cbc` is best suited to small machines: on
+models with large or unbounded variable domains (for example integer- or
+enumeration-heavy state) a single solve can run for a long time, so treat a
+long-running `cbc` on such a model as expected rather than a hang. `--events`
+can narrow the check to a subset of events, though a hard invariant or
+constant setup dominates every event's solve and narrowing will not help
+there.
+
 Options:
 - `--events <e1,e2,...>` - Restrict the check to these events
   (comma-separated or repeated; default: every event of the machine)
