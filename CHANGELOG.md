@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file.
 
+## [6.0] - 2026-07-07
+
+### Features
+
+- Build self-contained Windows installer and portable ZIP
+- Model-check by default and remove random animation
+- Add -p/--pref to pass arbitrary ProB preferences
+- Add --time-limit to bound model-checking in wall-clock time
+- Add --stop-at-full-coverage to end the check once all events ran
+- Add --assertions and --no-deadlock/--no-invariant check toggles
+- Add --goal to search for a reachable state
+- Add --search-strategy to choose the exploration order
+- Add --progress to report model-checking liveness
+- Add --ltl/--ltl-file to check temporal properties
+- Add info --prefs to list ProB preferences
+- Add wd subcommand checking well-definedness obligations
+- Add --json machine-readable run reports
+- Add --junit XML test reports
+- Surface the JUnit/JSON reports in the CI templates
+- Exit 2 for undischarged wd obligations, reserving exit 1 for disproofs
+- Add po subcommand gating on the Rodin proof status
+- Add cbc subcommand proving per-event invariant preservation
+- Add cbc --deadlock search with an optional --where constraint
+- Add cbc feasibility and redundant-invariant advisories
+- Allow the wd, po and cbc commands in the CI templates
+- Add po --disprove to hunt counterexamples for open obligations
+- Add --symbolic invariant model checking (bmc, ic3, kinduction, tinduction)
+- Add --markdown human-readable run reports
+- Add replay --refine to adapt traces across Event-B refinements
+- Add testgen operation-coverage test generation
+- Add --eval to report formula values in counterexample states
+- Add eval subcommand to evaluate formulas across the state space
+
+### Bug Fixes
+
+- Log expected CLI errors without stack traces
+- Reuse persistent ProB home to avoid Windows temp-dir leak
+- Validate check flags up front and report them as usage errors
+- Report mid-check ProB failures as incomplete, not violations
+- Fail the po gate on broken (stale) Rodin proofs
+
+### Refactoring
+
+- Drop the --check post-conversion validation flag
+- Drop the -b/--bmodel prolog dump flag
+- Derive the model-checking stop condition from the checker result
+- Drop the dead state-bound ternary in the LTL checker call
+- Thread command results through RunReport and a shared TraceWriter
+- Let commands pass their own trace-save target to withSavedTrace
+- Add shared Animate.incomplete and notAMachine report helpers
+- Collapse the report write-guard in emitReports
+- Derive the enabled-check names and properties from one table
+- Centralize the Rodin schema names in RodinNames
+- Derive the machine name one way
+- Unify report writer formatting
+- Tidy the command classes' boilerplate
+
+### Documentation
+
+- Reframe as a model-checker and update CI wrappers
+- Cover all check modes in the exit-code contract and help text
+- Simplify README installation and drop LICENSE/Requirements sections
+- Note cbc scales to small machines and is not wall-clock bounded
+
+### Dependencies
+
+- Bump ch.qos.logback:logback-classic from 1.5.35 to 1.5.37
+- Bump com.gradleup.shadow from 9.4.2 to 9.4.3
+- Bump gradle-wrapper from 9.6.0 to 9.6.1
+- Bump com.diffplug.spotless from 8.7.0 to 8.8.0
+
 ## [5.1] - 2026-06-25
 
 ### Features
