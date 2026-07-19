@@ -2,14 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [6.1] - 2026-07-19
 
 ### Features
 
 - Add LTSmin sequential and symbolic model-checking backends with optional
   partial-order reduction for the sequential backend
 
-### Fixes
+### Bug Fixes
 
 - Disable ProB hash symmetry by default for sequential LTSmin runs so valid
   counterexamples can be replayed reliably
@@ -17,6 +17,13 @@ All notable changes to this project will be documented in this file.
 ### Testing
 
 - Exercise both LTSmin backends and sequential counterexample replay in CI
+
+### Dependencies
+
+- Bump com.gradleup.shadow from 9.4.3 to 9.5.1
+- Bump com.fasterxml.jackson.core:jackson-databind from 2.20.1 to 2.22.1
+- Bump com.github.spotbugs from 6.5.8 to 6.5.9
+- Bump ch.qos.logback:logback-classic from 1.5.37 to 1.5.38
 
 ## [6.0] - 2026-07-07
 

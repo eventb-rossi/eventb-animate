@@ -563,7 +563,7 @@ a legitimate terminal state) as a failure.
 ### GitHub Actions
 
 ```yaml
-- uses: eventb-rossi/eventb-animate@v6.0
+- uses: eventb-rossi/eventb-animate@v6.1
   with:
     model-path: 'path/to/model.bum'
 ```
@@ -581,40 +581,40 @@ a legitimate terminal state) as a failure.
 | `junit-report` | Write a JUnit XML report to this path (one testcase per checked property) | No | — |
 | `trace` | Path to JSON trace file (replay, required) | No | — |
 | `args` | Extra args appended to the assembled command | No | — |
-| `version` | Release version tag (e.g., `v6.0`) | No | `latest` |
+| `version` | Release version tag (e.g., `v6.1`) | No | `latest` |
 | `java-version` | Java version to use (must be 21 or later) | No | `21` |
 
 #### Examples
 
 ```yaml
 # Model-check, bounded to 50000 states
-- uses: eventb-rossi/eventb-animate@v6.0
+- uses: eventb-rossi/eventb-animate@v6.1
   with:
     model-path: 'path/to/model.bum'
     states: 50000
 
 # Replay a trace
-- uses: eventb-rossi/eventb-animate@v6.0
+- uses: eventb-rossi/eventb-animate@v6.1
   with:
     model-path: 'models/system.bum'
     command: 'replay'
     trace: 'tests/trace.json'
 
 # Gate on the Rodin proof status (extra flags go through args)
-- uses: eventb-rossi/eventb-animate@v6.0
+- uses: eventb-rossi/eventb-animate@v6.1
   with:
     model-path: 'models/system.zip'
     command: 'po'
     args: '--allow-reviewed'
 
 # Pin to a specific release
-- uses: eventb-rossi/eventb-animate@v6.0
+- uses: eventb-rossi/eventb-animate@v6.1
   with:
     model-path: 'path/to/model.bum'
-    version: 'v6.0'
+    version: 'v6.1'
 
 # Publish the verdict as a test report rendered on the PR
-- uses: eventb-rossi/eventb-animate@v6.0
+- uses: eventb-rossi/eventb-animate@v6.1
   with:
     model-path: 'path/to/model.bum'
     junit-report: 'report.xml'
@@ -632,7 +632,7 @@ Include the reusable template and extend the `.eventb-animate` hidden job:
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v6.0/.gitlab-ci-template.yml'
+  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v6.1/.gitlab-ci-template.yml'
 
 animate-model:
   extends: .eventb-animate
@@ -653,13 +653,13 @@ animate-model:
 | `EVENTB_ANIMATE_JUNIT` | Write a JUnit XML report to this path (one testcase per checked property) | `''` |
 | `EVENTB_ANIMATE_TRACE` | Path to JSON trace file (replay, required) | `''` |
 | `EVENTB_ANIMATE_ARGS` | Extra args appended to the assembled command | `''` |
-| `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v6.0`) | `latest` |
+| `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v6.1`) | `latest` |
 
 #### Examples
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v6.0/.gitlab-ci-template.yml'
+  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v6.1/.gitlab-ci-template.yml'
 
 # Model-check, bounded to 50000 states
 model-check:
@@ -681,7 +681,7 @@ animate-pinned:
   extends: .eventb-animate
   variables:
     EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
-    EVENTB_ANIMATE_VERSION: 'v6.0'
+    EVENTB_ANIMATE_VERSION: 'v6.1'
 
 # Surface the verdict in the merge-request widget: which property failed,
 # with the counterexample attached, straight from the JUnit report
