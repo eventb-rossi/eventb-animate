@@ -148,7 +148,8 @@ public class Animate implements Callable<Integer> {
       converter = CheckBackendConverter.class,
       description =
           "model-checking backend: ProB's built-in checker, or the LTSmin sequential/symbolic"
-              + " backend (default: ${DEFAULT-VALUE})")
+              + " backend; sequential disables hash symmetry by default for reliable trace replay"
+              + " (default: ${DEFAULT-VALUE})")
   CheckBackend backend = CheckBackend.PROB;
 
   @Option(
@@ -804,7 +805,9 @@ public class Animate implements Callable<Integer> {
     prefs.put("SYMBOLIC", "true");
     prefs.put("TRACE_INFO", "true");
     prefs.put("TRY_FIND_ABORT", "true");
-    prefs.put("SYMMETRY_MODE", "hash");
+    // Hash symmetry can give LTSmin and ProB replay different representatives for deferred-set
+    // values, making a valid sequential counterexample impossible to match by its full state.
+    prefs.put("SYMMETRY_MODE", backend == CheckBackend.LTSMIN_SEQUENTIAL ? "off" : "hash");
     prefs.put("DEFAULT_SETSIZE", String.valueOf(size));
     prefs.put("COMPRESSION", "true");
     prefs.put("CLPFD", "true");

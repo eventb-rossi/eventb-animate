@@ -23,16 +23,32 @@ public class CheckOptionsTest {
   }
 
   @Test
+  public void testSymmetryDefaultDependsOnBackend() {
+    Animate animate = new Animate(null, null, null);
+
+    assertEquals("hash", animate.buildProBPreferences().get("SYMMETRY_MODE"));
+
+    animate.backend = Animate.CheckBackend.LTSMIN_SEQUENTIAL;
+    assertEquals("off", animate.buildProBPreferences().get("SYMMETRY_MODE"));
+
+    animate.backend = Animate.CheckBackend.LTSMIN_SYMBOLIC;
+    assertEquals("hash", animate.buildProBPreferences().get("SYMMETRY_MODE"));
+  }
+
+  @Test
   public void testUserPrefsWinOverDefaultsAndSize() {
     Animate animate = new Animate(null, null, null);
     animate.size = 4;
+    animate.backend = Animate.CheckBackend.LTSMIN_SEQUENTIAL;
     animate.userPrefs.put("DEFAULT_SETSIZE", "2");
     animate.userPrefs.put("COMPRESSION", "false");
+    animate.userPrefs.put("SYMMETRY_MODE", "hash");
 
     Map<String, String> prefs = animate.buildProBPreferences();
 
     assertEquals("2", prefs.get("DEFAULT_SETSIZE"));
     assertEquals("false", prefs.get("COMPRESSION"));
+    assertEquals("hash", prefs.get("SYMMETRY_MODE"));
   }
 
   @Test

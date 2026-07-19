@@ -107,9 +107,11 @@ The normal invariant-and-deadlock contract is preserved: because ProB's LTSmin
 API accepts one of those properties at a time, the default LTSmin run performs
 two full state-space passes in that order and stops at the first violation. The
 sequential backend replays counterexamples through ProB, so `--save` and
-`--eval` work normally. The symbolic backend reports a definite verdict but no
-replayable counterexample; rerun a failure with `ltsmin-sequential` to obtain
-the trace.
+`--eval` work normally. It disables ProB hash symmetry by default because
+symmetry-reduced deferred-set values can prevent ProB from replaying an LTSmin
+trace. An explicit `-p SYMMETRY_MODE=...` still overrides this safety default.
+The symbolic backend reports a definite verdict but no replayable
+counterexample; rerun a failure with `ltsmin-sequential` to obtain the trace.
 
 A Rodin archive exported via Eclipse's *Archive File* wizard may bundle several
 projects, each under its own top-level directory. When the archive holds more
@@ -124,7 +126,8 @@ machine name is unique across all projects.
 - `-p, --pref <KEY=VALUE>` - Set a ProB preference (repeatable). User values
   override the built-in defaults, including `DEFAULT_SETSIZE` from `-z`; for
   example `-p SYMMETRY_MODE=off` (symmetry modes: `off`, `flood`, `nauty`,
-  `hash`; default: `hash`)
+  `hash`; default: `off` for `ltsmin-sequential`, `hash` otherwise). Explicitly
+  enabling symmetry for sequential LTSmin may make counterexample replay fail
 - `--backend <prob|ltsmin-sequential|ltsmin-symbolic>` - Select the
   model-checking backend (default: `prob`). LTSmin supports invariant and
   deadlock checks, `-z`, the report options, and sequential counterexample

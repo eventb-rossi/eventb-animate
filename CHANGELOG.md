@@ -9,6 +9,11 @@ All notable changes to this project will be documented in this file.
 - Add LTSmin sequential and symbolic model-checking backends with optional
   partial-order reduction for the sequential backend
 
+### Fixes
+
+- Disable ProB hash symmetry by default for sequential LTSmin runs so valid
+  counterexamples can be replayed reliably
+
 ### Testing
 
 - Exercise both LTSmin backends and sequential counterexample replay in CI
@@ -424,4 +429,3 @@ All notable changes to this project will be documented in this file.
 ### Build
 
 - Update wrapper properties
-
