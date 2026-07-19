@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- Add LTSmin sequential and symbolic model-checking backends with optional
+  partial-order reduction for the sequential backend
+
+### Testing
+
+- Exercise both LTSmin backends and sequential counterexample replay in CI
+
 ## [6.0] - 2026-07-07
 
 ### Features
@@ -413,5 +424,4 @@ All notable changes to this project will be documented in this file.
 ### Build
 
 - Update wrapper properties
-
 

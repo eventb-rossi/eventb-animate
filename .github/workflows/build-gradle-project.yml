@@ -32,7 +32,22 @@ jobs:
     - name: Static analysis
       run: ./gradlew spotbugsMain --no-daemon
 
+    - name: Install LTSmin integration tools
+      env:
+        LTSMIN_VERSION: '3.0.2'
+        LTSMIN_SHA256: '9112846d1b3f6c4db25179a5712ffc25b98c4c26799250875cba859808de07a1'
+      run: |
+        archive="$RUNNER_TEMP/ltsmin-linux.tgz"
+        curl --fail --location --silent --show-error \
+          --output "$archive" \
+          "https://github.com/utwente-fmt/ltsmin/releases/download/v${LTSMIN_VERSION}/ltsmin-v${LTSMIN_VERSION}-linux.tgz"
+        echo "${LTSMIN_SHA256}  ${archive}" | sha256sum --check --strict
+        tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP"
+        echo "$RUNNER_TEMP/v${LTSMIN_VERSION}/bin" >> "$GITHUB_PATH"
+
     - name: Build and Test
+      env:
+        EVENTB_ANIMATE_REQUIRE_LTSMIN: 'true'
       run: ./gradlew build --no-daemon
 
     - name: Verify jar version

@@ -19,6 +19,7 @@ import de.prob.check.IModelCheckingResult;
 import de.prob.check.LTLChecker;
 import de.prob.check.LTLCounterExample;
 import de.prob.check.LTLOk;
+import de.prob.check.LTSminModelCheckingOptions;
 import de.prob.check.ModelCheckGoalFound;
 import de.prob.check.ModelCheckLimitReached;
 import de.prob.check.ModelCheckOk;
@@ -44,6 +45,7 @@ import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
 import java.util.function.IntFunction;
+import java.util.function.Supplier;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
@@ -138,6 +140,129 @@ public class Animate implements Callable<Integer> {
               + " preferences)",
       scope = ScopeType.INHERIT)
   Map<String, String> userPrefs = new LinkedHashMap<>();
+
+  @Option(
+      names = "--backend",
+      paramLabel = "prob|ltsmin-sequential|ltsmin-symbolic",
+      defaultValue = "prob",
+      converter = CheckBackendConverter.class,
+      description =
+          "model-checking backend: ProB's built-in checker, or the LTSmin sequential/symbolic"
+              + " backend (default: ${DEFAULT-VALUE})")
+  CheckBackend backend = CheckBackend.PROB;
+
+  @Option(
+      names = "--ltsmin-por",
+      description = "enable LTSmin partial-order reduction (requires --backend ltsmin-sequential)")
+  boolean ltsminPor;
+
+  /** The public CLI names and their corresponding optional LTSmin implementations. */
+  enum CheckBackend {
+    PROB("prob", null, null, null, true),
+    LTSMIN_SEQUENTIAL(
+        "ltsmin-sequential",
+        "LTSmin sequential",
+        "prob2lts-seq",
+        LTSminModelCheckingOptions.Backend.SEQUENTIAL,
+        true),
+    LTSMIN_SYMBOLIC(
+        "ltsmin-symbolic",
+        "LTSmin symbolic",
+        "prob2lts-sym",
+        LTSminModelCheckingOptions.Backend.SYMBOLIC,
+        false);
+
+    private final String cliName;
+    private final String displayName;
+    private final String executable;
+    private final LTSminModelCheckingOptions.Backend kernelBackend;
+    private final boolean replayableTrace;
+
+    CheckBackend(
+        String cliName,
+        String displayName,
+        String executable,
+        LTSminModelCheckingOptions.Backend kernelBackend,
+        boolean replayableTrace) {
+      this.cliName = cliName;
+      this.displayName = displayName;
+      this.executable = executable;
+      this.kernelBackend = kernelBackend;
+      this.replayableTrace = replayableTrace;
+    }
+
+    String cliName() {
+      return cliName;
+    }
+
+    String displayName() {
+      return displayName;
+    }
+
+    String executable() {
+      return executable;
+    }
+
+    LTSminModelCheckingOptions.Backend kernelBackend() {
+      return kernelBackend;
+    }
+
+    boolean replayableTrace() {
+      return replayableTrace;
+    }
+
+    boolean isLtsmin() {
+      return kernelBackend != null;
+    }
+  }
+
+  /** Shared identity and verdict wording for every consistency property. */
+  enum CheckProperty {
+    INVARIANT("invariant", "invariant violation", "Invariant violation"),
+    DEADLOCK("deadlock", "deadlock", "Deadlock"),
+    ASSERTIONS("assertions", "assertion violation", "Assertion violation"),
+    GOAL("goal", "goal state", "Goal");
+
+    private final String checkName;
+    private final String propertyName;
+    private final String violationName;
+
+    CheckProperty(String checkName, String propertyName, String violationName) {
+      this.checkName = checkName;
+      this.propertyName = propertyName;
+      this.violationName = violationName;
+    }
+
+    String checkName() {
+      return checkName;
+    }
+
+    String propertyName() {
+      return propertyName;
+    }
+
+    String violationName() {
+      return violationName;
+    }
+  }
+
+  /** Picocli converter for the hyphenated backend names. */
+  public static final class CheckBackendConverter
+      implements CommandLine.ITypeConverter<CheckBackend> {
+    @Override
+    public CheckBackend convert(String value) {
+      for (CheckBackend backend : CheckBackend.values()) {
+        if (backend.cliName().equals(value)) {
+          return backend;
+        }
+      }
+      String expected =
+          String.join(
+              ", ", Arrays.stream(CheckBackend.values()).map(CheckBackend::cliName).toList());
+      throw new CommandLine.TypeConversionException(
+          "expected one of: " + expected + " (got '" + value + "')");
+    }
+  }
 
   // -1 (the field default, applied both by picocli and by direct construction in tests) means no
   // limit -- ConsistencyChecker explores the full state space.
@@ -359,6 +484,13 @@ public class Animate implements Callable<Integer> {
   private void validateCheckOptions() {
     validatePositiveBound(spec, states, "--states", "states", "an exhaustive check");
     validatePositiveBound(spec, timeLimit, "--time-limit", "seconds", "no limit");
+    if (isLtsminRun()) {
+      validateLtsminCheckOptions();
+      return;
+    }
+    if (ltsminPor) {
+      throw usageError("--ltsmin-por requires --backend ltsmin-sequential");
+    }
     if (isSymbolicRun()) {
       // Verdict-only mode: a single blocking call that reports no trace and no incremental
       // progress, checks invariants only, and takes no bound, so --save and the flags below are
@@ -416,6 +548,58 @@ public class Animate implements Callable<Integer> {
     }
   }
 
+  /** Validates the narrower property/options surface exposed by ProB's LTSmin Java API. */
+  private void validateLtsminCheckOptions() {
+    if (ltsminPor && backend == CheckBackend.LTSMIN_SYMBOLIC) {
+      throw usageError(
+          "--ltsmin-por is incompatible with --backend ltsmin-symbolic"
+              + " (omit --ltsmin-por or use --backend ltsmin-sequential)");
+    }
+    if (noDeadlock && noInvariant) {
+      throw usageError(
+          "nothing to check: --no-deadlock and --no-invariant disable every LTSmin check");
+    }
+
+    List<String> unsupported = new ArrayList<>(unsupportedConsistencyFlags(false));
+    if (ltlFormula != null) {
+      unsupported.add("--ltl");
+    }
+    if (ltlFile != null) {
+      unsupported.add("--ltl-file");
+    }
+    if (symbolic != null) {
+      unsupported.add("--symbolic");
+    }
+    if (states > 0) {
+      unsupported.add("--states");
+    }
+    if (progress) {
+      unsupported.add("--progress");
+    }
+    rejectUnsupported(
+        backend.cliName(),
+        unsupported,
+        "(ProB's LTSmin API checks invariants/deadlocks without bounds or progress)");
+
+    if (!backend.replayableTrace()) {
+      if (jsonTrace != null) {
+        throw usageError(
+            "--backend ltsmin-symbolic produces no replayable counterexample trace, so --save"
+                + " is unsupported (use --backend ltsmin-sequential for a trace)");
+      }
+      if (!evalFormulas.isEmpty()) {
+        throw usageError(
+            "--backend ltsmin-symbolic produces no counterexample state, so --eval has nothing"
+                + " to evaluate (use --backend ltsmin-sequential)");
+      }
+      return;
+    }
+
+    // Sequential LTSmin counterexamples are replayed into the ProB state space, so they support
+    // the same eager --eval validation and evidence path as the built-in consistency checker.
+    parsedEvalFormulas = parseEvalFormulas();
+  }
+
   /** Parses every --eval formula (predicate or expression) up front; empty when none were given. */
   private List<Evaluations.Formula> parseEvalFormulas() {
     if (evalFormulas.isEmpty()) {
@@ -434,6 +618,10 @@ public class Animate implements Callable<Integer> {
    * refused by both without being re-listed.
    */
   private List<String> unsupportedConsistencyFlags() {
+    return unsupportedConsistencyFlags(true);
+  }
+
+  private List<String> unsupportedConsistencyFlags(boolean includePropertyToggles) {
     List<String> unsupported = new ArrayList<>();
     if (goal != null) {
       unsupported.add("--goal");
@@ -441,11 +629,13 @@ public class Animate implements Callable<Integer> {
     if (assertions) {
       unsupported.add("--assertions");
     }
-    if (noDeadlock) {
-      unsupported.add("--no-deadlock");
-    }
-    if (noInvariant) {
-      unsupported.add("--no-invariant");
+    if (includePropertyToggles) {
+      if (noDeadlock) {
+        unsupported.add("--no-deadlock");
+      }
+      if (noInvariant) {
+        unsupported.add("--no-invariant");
+      }
     }
     if (timeLimit > 0) {
       unsupported.add("--time-limit");
@@ -679,6 +869,28 @@ public class Animate implements Callable<Integer> {
    * and temp-directory cleanup. A model that could not be loaded is an ERROR report (exit 1).
    */
   RunReport withStateSpace(Function<StateSpace, RunReport> body) {
+    return withStateSpace(() -> null, body);
+  }
+
+  /**
+   * Resolves the model, runs an optional backend preflight, then loads ProB and executes {@code
+   * body}. A non-null preflight report stops before model loading; every exit path owns cleanup.
+   */
+  private RunReport withStateSpace(
+      Supplier<RunReport> preflight, Function<StateSpace, RunReport> body) {
+    initLogging();
+    RunReport preflightReport;
+    try {
+      resolveComponentPath();
+      preflightReport = preflight.get();
+    } catch (Exception e) {
+      return recordLoadError(e);
+    }
+    if (preflightReport != null) {
+      modelResolver.cleanupTempDir();
+      return preflightReport;
+    }
+
     StateSpace stateSpace = initAndLoadModel();
     if (stateSpace == null) {
       return RunReport.of(RunReport.Status.ERROR, loadErrorMessage);
@@ -717,12 +929,20 @@ public class Animate implements Callable<Integer> {
    * ProB-loading and extraction-only paths so both stamp the same name into reports.
    */
   private void resolveComponent() throws IOException {
+    resolveComponentPath();
+    System.out.println("Machine: " + resolvedMachineName);
+  }
+
+  /** Resolves input without starting ProB or printing run output, for backend preflight checks. */
+  private void resolveComponentPath() throws IOException {
+    if (resolvedModelPath != null) {
+      return;
+    }
     validateInput();
     resolvedModelPath = modelResolver.resolve(model, machineName);
     // The resolver always returns a component file, never a filesystem root; it also owns the
     // component-suffix stripping so the reported name is derived one way.
     resolvedMachineName = modelResolver.machineName(resolvedModelPath);
-    System.out.println("Machine: " + resolvedMachineName);
   }
 
   /** Where the resolved component file lives; its siblings are the Rodin project files. */
@@ -950,8 +1170,11 @@ public class Animate implements Callable<Integer> {
 
   /** Shuts down the ProB instance and removes any extracted temp directory. */
   void releaseStateSpace(StateSpace stateSpace) {
-    stateSpace.kill();
-    modelResolver.cleanupTempDir();
+    try {
+      stateSpace.kill();
+    } finally {
+      modelResolver.cleanupTempDir();
+    }
   }
 
   Trace initializeTrace(final StateSpace stateSpace, boolean failOnInitializationError) {
@@ -1022,6 +1245,9 @@ public class Animate implements Callable<Integer> {
   @Override
   public Integer call() {
     validateCheckOptions();
+    if (isLtsminRun()) {
+      return finishRun(withStateSpace(this::configureLtsmin, this::runLtsminModelCheck));
+    }
     if (isLtlRun()) {
       return finishRun(runLtl());
     }
@@ -1037,6 +1263,35 @@ public class Animate implements Callable<Integer> {
 
   private boolean isSymbolicRun() {
     return symbolic != null;
+  }
+
+  private boolean isLtsminRun() {
+    return backend.isLtsmin();
+  }
+
+  /**
+   * Points the temporary ProB installation at external LTSmin tools before model loading. An
+   * explicit ProB preference wins over PATH discovery, but is normalized to an absolute path so
+   * ProB does not resolve it relative to its own temporary installation directory.
+   */
+  private RunReport configureLtsmin() {
+    boolean explicitlyConfigured = userPrefs.containsKey("LTSMIN");
+    String configured = explicitlyConfigured ? userPrefs.get("LTSMIN") : null;
+    LtsminSupport.Discovery discovery =
+        LtsminSupport.discover(backend, configured, System.getenv("PATH"));
+    if (!discovery.available()) {
+      String message = backend.displayName() + " backend unavailable: " + discovery.error();
+      System.err.println(message);
+      return incompleteConsistencyReport(message);
+    }
+
+    String directory = discovery.directory().toString();
+    if (explicitlyConfigured) {
+      userPrefs.put("LTSMIN", directory);
+    } else {
+      commandPrefs.put("LTSMIN", directory);
+    }
+    return null;
   }
 
   /** Parses the LTL formula before paying for a model load. */
@@ -1113,6 +1368,97 @@ public class Animate implements Callable<Integer> {
     // proves nothing about temporal properties, so unlike the consistency check a
     // limited run is a non-verdict, not a pass.
     return incomplete("ltl", "LTL checking did not complete: " + result.getMessage());
+  }
+
+  /**
+   * Runs the requested LTSmin properties. ProB/LTSmin cannot check invariants and deadlocks in one
+   * invocation, so the default contract is preserved with two ordered full-state-space passes.
+   */
+  private RunReport runLtsminModelCheck(StateSpace stateSpace) {
+    List<CheckProperty> properties =
+        checkTable().stream().filter(CheckSpec::enabled).map(CheckSpec::property).toList();
+
+    String exploration =
+        ltsminPor ? "complete partial-order-reduced exploration" : "full state space explored";
+    List<RunReport.Check> checks = new ArrayList<>();
+    for (int i = 0; i < properties.size(); i++) {
+      CheckProperty property = properties.get(i);
+      String label = backend.displayName() + " " + property.checkName() + " checking";
+      System.out.println(label + "...");
+      LtsminSupport.Result result = LtsminSupport.check(stateSpace, backend, property, ltsminPor);
+
+      if (result.verdict() == LtsminSupport.Verdict.OK) {
+        String message = ltsminSuccessMessage(property.propertyName(), exploration);
+        System.out.println(message);
+        checks.add(new RunReport.Check(property.checkName(), RunReport.Outcome.PASSED, message));
+        continue;
+      }
+
+      if (result.verdict() == LtsminSupport.Verdict.INCOMPLETE) {
+        String message = label + " did not complete: " + result.detail();
+        System.err.println(message);
+        checks.add(new RunReport.Check(property.checkName(), RunReport.Outcome.ERROR, message));
+        appendUnrunLtsminChecks(
+            checks, properties, i + 1, "an earlier LTSmin pass did not complete");
+        return RunReport.of(RunReport.Status.INCOMPLETE, message, checks);
+      }
+
+      String message = property.violationName() + " found using " + backend.displayName() + ".";
+      System.err.println("Error: " + message);
+      checks.add(new RunReport.Check(property.checkName(), RunReport.Outcome.FAILED, message));
+      appendUnrunLtsminChecks(checks, properties, i + 1, "search stopped at the first violation");
+      RunReport report = RunReport.of(RunReport.Status.VIOLATION, message, checks);
+      Trace counterexample = result.trace();
+      if (counterexample == null) {
+        if (!backend.replayableTrace()) {
+          System.out.println(
+              "Hint: LTSmin symbolic counterexamples have no replayable trace; rerun with"
+                  + " --backend ltsmin-sequential to obtain one.");
+        } else {
+          System.err.println("Warning: LTSmin returned no replayable counterexample trace.");
+        }
+        return report;
+      }
+
+      TraceWriter.Counterexample described = TraceWriter.describe(stateSpace, counterexample, true);
+      TraceWriter.printViolatedInvariants(described);
+      TraceWriter.printTrace(described);
+      return withSavedTrace(
+          evaluateInCounterexample(report.withCounterexample(described), counterexample),
+          counterexample,
+          stateSpace,
+          jsonTrace);
+    }
+
+    String checked =
+        String.join(" or ", properties.stream().map(CheckProperty::propertyName).toList());
+    String scope =
+        properties.size() == 1
+            ? exploration
+            : ltsminPor
+                ? "two complete partial-order-reduced passes"
+                : "two full state-space passes";
+    String message = ltsminSuccessMessage(checked, scope);
+    if (properties.size() > 1) {
+      System.out.println(message);
+    }
+    // LTSmin explores through the PINS protocol in a separate process; it does not populate the
+    // Java StateSpace used by ComputeCoverageCommand. Printing that partial ProB view would
+    // incorrectly label every event uncovered.
+    System.out.println("Coverage unavailable for external LTSmin exploration.");
+    return RunReport.of(RunReport.Status.OK, message, checks);
+  }
+
+  private String ltsminSuccessMessage(String properties, String scope) {
+    return "No " + properties + " found using " + backend.displayName() + " (" + scope + ").";
+  }
+
+  private static void appendUnrunLtsminChecks(
+      List<RunReport.Check> checks, List<CheckProperty> properties, int start, String reason) {
+    for (int i = start; i < properties.size(); i++) {
+      checks.add(
+          new RunReport.Check(properties.get(i).checkName(), RunReport.Outcome.SKIPPED, reason));
+    }
   }
 
   private RunReport runModelCheck(StateSpace stateSpace) {
@@ -1283,7 +1629,7 @@ public class Animate implements Callable<Integer> {
   }
 
   /** One consistency check: its report name plus the property phrase the verdict wording uses. */
-  private record CheckSpec(boolean enabled, String name, String property) {}
+  private record CheckSpec(boolean enabled, CheckProperty property) {}
 
   /**
    * The consistency checks this run can perform, in fixed report order, each flagged with whether
@@ -1292,15 +1638,18 @@ public class Animate implements Callable<Integer> {
    */
   private List<CheckSpec> checkTable() {
     return List.of(
-        new CheckSpec(!noInvariant, "invariant", "invariant violation"),
-        new CheckSpec(!noDeadlock, "deadlock", "deadlock"),
-        new CheckSpec(assertions, "assertions", "assertion violation"),
-        new CheckSpec(goal != null, "goal", "goal state"));
+        new CheckSpec(!noInvariant, CheckProperty.INVARIANT),
+        new CheckSpec(!noDeadlock, CheckProperty.DEADLOCK),
+        new CheckSpec(assertions, CheckProperty.ASSERTIONS),
+        new CheckSpec(goal != null, CheckProperty.GOAL));
   }
 
   /** The checks this consistency run performs, in a fixed report order. */
   private List<String> enabledCheckNames() {
-    return checkTable().stream().filter(CheckSpec::enabled).map(CheckSpec::name).toList();
+    return checkTable().stream()
+        .filter(CheckSpec::enabled)
+        .map(spec -> spec.property().checkName())
+        .toList();
   }
 
   private RunReport.Check[] enabledChecks(RunReport.Outcome outcome, String message) {
@@ -1430,7 +1779,11 @@ public class Animate implements Callable<Integer> {
   /** Names exactly the properties this run checked, so the verdict never overclaims. */
   private String checkedProperties() {
     return String.join(
-        " or ", checkTable().stream().filter(CheckSpec::enabled).map(CheckSpec::property).toList());
+        " or ",
+        checkTable().stream()
+            .filter(CheckSpec::enabled)
+            .map(spec -> spec.property().propertyName())
+            .toList());
   }
 
   static final class LazyGuiceFactory implements CommandLine.IFactory {

@@ -6,6 +6,8 @@ A command-line tool for model-checking Event-B models using ProB.
 
 - Exhaustive bounded model-checking of Event-B models (deadlocks and invariants),
   working at any refinement level
+- Optional LTSmin sequential and symbolic backends, with partial-order reduction
+  for sequential exploration
 - Symbolic invariant model-checking (BMC, IC3, k-induction, t-induction) that can
   prove safety on state spaces too large to enumerate
 - Coverage analysis
@@ -48,6 +50,12 @@ emerge sci-mathematics/eventb-animate
 
 For Windows machines without a JVM, each [release](https://github.com/eventb-rossi/eventb-animate/releases) also ships self-contained `x64` artifacts that bundle their own Java runtime: the `.msi` installer adds an *Event-B Animate* Start Menu group (but not `PATH`), and the `.zip` is portable (unzip and run `eventb-animate.exe`; add its folder to `PATH` to call it from anywhere).
 
+The LTSmin backends are optional and unavailable on Windows. Install
+[LTSmin](https://ltsmin.utwente.nl/) separately and make `prob2lts-seq`,
+`prob2lts-sym`, and `ltsmin-printtrace` available on `PATH`. With the Copr
+repository above enabled, Fedora/RHEL users can run `sudo dnf install ltsmin`.
+For a custom installation directory, pass `-p LTSMIN=/absolute/path`.
+
 ## Building
 
 ```bash
@@ -87,6 +95,22 @@ eventb-animate --symbolic ic3 path/to/model.bum
 This reports only a verdict (no counterexample trace); see the `--symbolic`
 option below for the trade-offs.
 
+To delegate the state-space exploration to LTSmin, select its sequential or
+symbolic backend:
+
+```bash
+eventb-animate --backend ltsmin-sequential --ltsmin-por path/to/model.bum
+eventb-animate --backend ltsmin-symbolic --no-deadlock path/to/model.bum
+```
+
+The normal invariant-and-deadlock contract is preserved: because ProB's LTSmin
+API accepts one of those properties at a time, the default LTSmin run performs
+two full state-space passes in that order and stops at the first violation. The
+sequential backend replays counterexamples through ProB, so `--save` and
+`--eval` work normally. The symbolic backend reports a definite verdict but no
+replayable counterexample; rerun a failure with `ltsmin-sequential` to obtain
+the trace.
+
 A Rodin archive exported via Eclipse's *Archive File* wizard may bundle several
 projects, each under its own top-level directory. When the archive holds more
 than one project, name the machine you want with its project prefix, for example
@@ -101,6 +125,19 @@ machine name is unique across all projects.
   override the built-in defaults, including `DEFAULT_SETSIZE` from `-z`; for
   example `-p SYMMETRY_MODE=off` (symmetry modes: `off`, `flood`, `nauty`,
   `hash`; default: `hash`)
+- `--backend <prob|ltsmin-sequential|ltsmin-symbolic>` - Select the
+  model-checking backend (default: `prob`). LTSmin supports invariant and
+  deadlock checks, `-z`, the report options, and sequential counterexample
+  saving/evaluation. It does not support the ProB-only check modes and controls:
+  `--assertions`, `--goal`, `--ltl`, `--symbolic`, `--states`, `--time-limit`,
+  `--stop-at-full-coverage`, `--search-strategy`, or `--progress`. If the
+  external commands are not on `PATH`, set their directory with
+  `-p LTSMIN=/absolute/path`. LTSmin explores out of process, so ProB's event
+  coverage summary is unavailable for these runs
+- `--ltsmin-por` - Enable LTSmin partial-order reduction (requires
+  `--backend ltsmin-sequential`; LTSmin's symbolic checker is incompatible with
+  POR). Successful runs report a complete reduced exploration rather than
+  claiming that every unreduced interleaving was visited
 - `--states <N>` - Bound model-checking to at most `N` explored states (default:
   exhaustive)
 - `--time-limit <seconds>` - Bound model-checking to the given wall-clock time
@@ -150,7 +187,8 @@ machine name is unique across all projects.
   specific project of a multi-project archive
 - `--perf` - Print ProB performance information
 - `--save <file.json>` - Save the counterexample trace to a JSON file when a
-  violation is found
+  violation is found (unsupported by `ltsmin-symbolic`, whose verdict has no
+  replayable trace)
 - `--eval <formula>` - Also evaluate an Event-B expression or predicate (ASCII or
   Unicode operators) in the counterexample state and report its value next to the
   trace and in the `--json`/`--markdown` reports (repeatable). This answers "the
@@ -161,7 +199,7 @@ machine name is unique across all projects.
   [`eval`](#evaluate-formulas) subcommand). A
   formula that cannot be evaluated in the state is shown as an error but never
   changes the check's own verdict. Rejected with `--symbolic`, which reports no
-  state
+  state, and with `--backend ltsmin-symbolic` for the same reason
 - `--json <file|->` - Write a machine-readable JSON report of the run (works
   with every command; see [Machine-Readable Reports](#machine-readable-reports)).
   `-` writes the report to stdout and moves all other output to stderr, so
@@ -184,7 +222,8 @@ machine name is unique across all projects.
 - `0` - success: the requested check found nothing (the full state space was
   explored, or a `--states`/`--time-limit`/`--stop-at-full-coverage` bound was
   reached without a violation), the LTL formula holds, a `--symbolic` run proved
-  invariant safety, all proof obligations are discharged (`wd`, `po`), a
+  invariant safety, all requested LTSmin passes completed cleanly, all proof
+  obligations are discharged (`wd`, `po`), a
   replay was perfect (`replay`), a trace was adapted to the target refinement
   level (`replay --refine`), an operation-coverage run completed (`testgen`), or
   every requested formula was evaluated (`eval`, including a `--where` query that
@@ -193,7 +232,7 @@ machine name is unique across all projects.
   be loaded, an invariant or assertion was violated, a deadlock was reached (a
   state with no enabled events, including legitimate terminal states), a
   `--goal` state was found, an LTL counterexample was found, a `--symbolic` run
-  found a reachable invariant violation, a proof obligation was disproved
+  or LTSmin backend found a reachable violation, a proof obligation was disproved
   (`po --disprove`), a trace replay was not perfect (`replay`), no adaptation of
   a trace to the target refinement level was found (`replay --refine`), a dead
   target operation was found under `testgen --fail-on-infeasible`, or a
@@ -201,7 +240,8 @@ machine name is unique across all projects.
 - `2` - no verdict: nothing was proven either way. The check could not
   complete (interrupted or a ProB error), a bounded LTL run hit the
   `--states` limit, a `--symbolic` run was inconclusive (the solver/provers were
-  too weak, or a bound was reached), a proof obligation remains undischarged
+  too weak, or a bound was reached), the selected LTSmin tools were unavailable
+  or an LTSmin pass did not complete, a proof obligation remains undischarged
   (`wd`, `po` -- open means unproven, not disproven), a target operation was
   left uncovered under `testgen --fail-on-uncovered`, an `eval` formula could not
   be evaluated (a query with no answer), or the command line was invalid (usage
