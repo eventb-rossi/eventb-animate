@@ -1,9 +1,17 @@
 package animate;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
+import de.prob.animator.domainobjects.ErrorItem;
+import de.prob.check.CheckError;
+import de.prob.check.CheckInterrupted;
+import de.prob.check.ModelCheckLimitReached;
+import de.prob.check.ModelCheckOk;
+import de.prob.exception.ProBError;
 import java.nio.file.Path;
 import java.util.List;
 import org.junit.Test;
@@ -46,6 +54,8 @@ public class RunReportTest {
     RunReport report =
         RunReport.of(RunReport.Status.VIOLATION, "boom", check)
             .withCounterexample(counterexample)
+            .withCompletion(RunReport.CompletionReason.PROPERTY_VIOLATION)
+            .withSearchStatistics(new RunReport.SearchStatistics(3, 2, 4))
             .withTraceFile(Path.of("trace.json"));
 
     assertEquals(RunReport.Status.VIOLATION, report.status());
@@ -53,8 +63,59 @@ public class RunReportTest {
     assertEquals(List.of(check), report.checks());
     assertEquals(counterexample, report.counterexample());
     assertEquals(Path.of("trace.json"), report.traceFile());
+    assertEquals(RunReport.CompletionReason.PROPERTY_VIOLATION, report.completion().reason());
+    assertEquals(new RunReport.SearchStatistics(3, 2, 4), report.searchStatistics());
     assertNull(report.exitCodeOverride());
     assertEquals(1, report.exitCode());
+  }
+
+  @Test
+  public void testConsistencyCompletionNormalizesEveryStopCategory() {
+    assertCompletion(
+        Animate.consistencyCompletion(
+            new ModelCheckOk("Model Checking complete. No more error nodes found.")),
+        RunReport.CompletionReason.EXHAUSTIVE);
+    assertCompletion(
+        Animate.consistencyCompletion(
+            new ModelCheckOk("Model Checking complete. All operations were covered.")),
+        RunReport.CompletionReason.COVERAGE_LIMIT);
+    assertCompletion(
+        Animate.consistencyCompletion(
+            new ModelCheckOk(
+                "Model Checking complete. No more error nodes found."
+                    + " Not all nodes were considered.")),
+        RunReport.CompletionReason.PARTIAL);
+    assertCompletion(
+        Animate.consistencyCompletion(new ModelCheckOk("A future partial result")),
+        RunReport.CompletionReason.PARTIAL);
+    assertCompletion(
+        Animate.consistencyCompletion(
+            new ModelCheckOk("model checking complete. all operations were covered.")),
+        RunReport.CompletionReason.COVERAGE_LIMIT);
+    assertCompletion(
+        Animate.consistencyCompletion(new ModelCheckOk(null)), RunReport.CompletionReason.PARTIAL);
+    assertCompletion(
+        Animate.consistencyCompletion(new ModelCheckLimitReached("State limit reached")),
+        RunReport.CompletionReason.STATE_LIMIT);
+    assertCompletion(
+        Animate.consistencyCompletion(new ModelCheckLimitReached("Time limit reached")),
+        RunReport.CompletionReason.TIME_LIMIT);
+    assertCompletion(
+        Animate.consistencyCompletion(new CheckInterrupted()),
+        RunReport.CompletionReason.INTERRUPTED);
+    assertCompletion(
+        Animate.consistencyCompletion(new CheckError("kernel failed")),
+        RunReport.CompletionReason.MODEL_CHECK_FAILURE);
+  }
+
+  @Test
+  public void testConstantSetupExceptionDistinguishesInfeasibilityFromFailure() {
+    assertTrue(
+        Animate.hasUnsatisfiableAxioms(
+            new IllegalStateException(
+                setupError("AXIOMS are unsatisfiable (but some valued)"))));
+    assertFalse(
+        Animate.hasUnsatisfiableAxioms(setupError("AXIOMS are unknown (but some valued)")));
   }
 
   @Test
@@ -71,5 +132,20 @@ public class RunReportTest {
     assertEquals("check", report.checks().get(0).name());
     assertEquals("message", report.checks().get(0).message());
     return report.checks().get(0).outcome();
+  }
+
+  private static ProBError setupError(String headline) {
+    return new ProBError(
+        "ProB reported Errors",
+        List.of(
+            new ErrorItem(headline, ErrorItem.Type.ERROR, List.of()),
+            new ErrorItem(
+                "AXIOMS are not true and no value was found", ErrorItem.Type.MESSAGE, List.of())));
+  }
+
+  private static void assertCompletion(
+      RunReport.Completion completion, RunReport.CompletionReason reason) {
+    assertEquals(reason, completion.reason());
+    assertEquals(reason.classification(), completion.classification());
   }
 }

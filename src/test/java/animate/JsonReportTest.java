@@ -1,6 +1,7 @@
 package animate;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -11,6 +12,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.MatchResult;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -26,6 +30,8 @@ public class JsonReportTest {
       Paths.get("src/test/resources/models/traffic-light/M0.bum").toString();
   private static final String TRAFFIC_LIGHT_M2 =
       Paths.get("src/test/resources/models/traffic-light/M2.bum").toString();
+  private static final String FILE_SYSTEM_M0 =
+      Paths.get("src/test/resources/models/file-system/M0.bum").toString();
 
   @Test
   public void testLoadFailureReportIsWrittenWithErrorStatus() throws Exception {
@@ -37,11 +43,12 @@ public class JsonReportTest {
         result.stderr().contains("Error loading model:"));
 
     JsonNode root = MAPPER.readTree(result.stdout());
-    assertEquals(2, root.get("formatVersion").asInt());
+    assertEquals(3, root.get("formatVersion").asInt());
     assertEquals("eventb-animate", root.get("tool").asText());
     assertEquals("check", root.get("command").asText());
     assertEquals("missing.bum", root.get("model").asText());
     assertEquals("error", root.get("status").asText());
+    assertCompletion(root, "error", "model_load_failure");
     assertEquals(1, root.get("exitCode").asInt());
     assertTrue(root.get("message").asText().contains("Error loading model"));
     assertEquals(0, root.get("checks").size());
@@ -49,6 +56,7 @@ public class JsonReportTest {
     assertNull("no machine was resolved", root.get("machine"));
     assertNull("ProB never ran", root.get("probVersion"));
     assertNull("there is no counterexample", root.get("counterexample"));
+    assertNull("search never started", root.get("searchStatistics"));
   }
 
   /**
@@ -73,6 +81,7 @@ public class JsonReportTest {
             "timestamp",
             "durationMs",
             "status",
+            "completion",
             "exitCode",
             "message",
             "checks"),
@@ -123,6 +132,8 @@ public class JsonReportTest {
 
       JsonNode root = MAPPER.readTree(Files.readString(report));
       assertEquals("violation", root.get("status").asText());
+      assertCompletion(root, "counterexample", "property_violation");
+      assertSearchStatistics(root);
       assertEquals("M1", root.get("machine").asText());
       assertTrue(root.get("probVersion").asText().length() > 0);
       assertTrue(root.get("durationMs").asLong() > 0);
@@ -178,11 +189,71 @@ public class JsonReportTest {
 
     JsonNode root = MAPPER.readTree(result.stdout());
     assertEquals("ok", root.get("status").asText());
+    assertCompletion(root, "complete", "exhaustive");
+    assertSearchStatistics(root);
+    assertFalse(
+        "statistics must not require --progress:\n" + result.stderr(),
+        result.stderr().contains("Progress:"));
     assertEquals(0, root.get("exitCode").asInt());
     for (JsonNode check : root.get("checks")) {
       assertEquals("passed", check.get("outcome").asText());
     }
     assertEquals(RunReport.Status.OK, result.command().lastReport.status());
+  }
+
+  @Test(timeout = 120000)
+  public void testStateBoundHasIncompleteCompletionAndFinalStatistics() throws Exception {
+    TestCli.SplitResult result =
+        TestCli.executeSplit("--json", "-", "--states", "1", TRAFFIC_LIGHT_M2);
+
+    assertEquals(0, result.exitCode());
+    JsonNode root = MAPPER.readTree(result.stdout());
+    assertEquals("ok", root.get("status").asText());
+    assertCompletion(root, "incomplete", "state_limit");
+    assertSearchStatistics(root);
+  }
+
+  @Test(timeout = 120000)
+  public void testTimeBoundHasDistinctCompletionReason() throws Exception {
+    TestCli.SplitResult result =
+        TestCli.executeSplit("--json", "-", "--time-limit", "1", "-z", "8", FILE_SYSTEM_M0);
+
+    assertEquals(0, result.exitCode());
+    JsonNode root = MAPPER.readTree(result.stdout());
+    assertCompletion(root, "incomplete", "time_limit");
+    assertSearchStatistics(root);
+  }
+
+  @Test(timeout = 120000)
+  public void testCoverageBoundHasDistinctCompletionReason() throws Exception {
+    TestCli.SplitResult result =
+        TestCli.executeSplit("--json", "-", "--stop-at-full-coverage", TRAFFIC_LIGHT_M2);
+
+    assertEquals(0, result.exitCode());
+    JsonNode root = MAPPER.readTree(result.stdout());
+    assertCompletion(root, "incomplete", "coverage_limit");
+    assertSearchStatistics(root);
+  }
+
+  @Test(timeout = 120000)
+  public void testJsonStatisticsMatchFinalProgressCounters() throws Exception {
+    TestCli.SplitResult result =
+        TestCli.executeSplit("--json", "-", "--progress", TRAFFIC_LIGHT_M2);
+
+    assertEquals(0, result.exitCode());
+    Matcher matcher =
+        Pattern.compile("Progress: (\\d+)/(\\d+) states processed, (\\d+) transitions")
+            .matcher(result.stderr());
+    MatchResult finalLine = null;
+    while (matcher.find()) {
+      finalLine = matcher.toMatchResult();
+    }
+    assertTrue("a final progress line should contain engine counters", finalLine != null);
+
+    JsonNode statistics = MAPPER.readTree(result.stdout()).get("searchStatistics");
+    assertEquals(Integer.parseInt(finalLine.group(1)), statistics.get("statesProcessed").asInt());
+    assertEquals(Integer.parseInt(finalLine.group(2)), statistics.get("statesDiscovered").asInt());
+    assertEquals(Integer.parseInt(finalLine.group(3)), statistics.get("transitions").asInt());
   }
 
   @Test(timeout = 120000)
@@ -227,5 +298,18 @@ public class JsonReportTest {
     } finally {
       Files.deleteIfExists(report);
     }
+  }
+
+  private static void assertCompletion(JsonNode root, String classification, String reason) {
+    assertEquals(classification, root.get("completion").get("classification").asText());
+    assertEquals(reason, root.get("completion").get("reason").asText());
+  }
+
+  private static void assertSearchStatistics(JsonNode root) {
+    JsonNode statistics = root.get("searchStatistics");
+    assertTrue("search statistics should be present", statistics != null);
+    assertTrue(statistics.get("statesDiscovered").asInt() > 0);
+    assertTrue(statistics.get("statesProcessed").asInt() >= 0);
+    assertTrue(statistics.get("transitions").asInt() >= 0);
   }
 }

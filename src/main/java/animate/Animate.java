@@ -13,6 +13,7 @@ import de.prob.animator.command.ComputeCoverageCommand.ComputeCoverageResult;
 import de.prob.animator.command.GetVersionCommand;
 import de.prob.animator.command.SymbolicModelcheckCommand;
 import de.prob.animator.domainobjects.*;
+import de.prob.check.CheckInterrupted;
 import de.prob.check.ConsistencyChecker;
 import de.prob.check.IModelCheckListener;
 import de.prob.check.IModelCheckingResult;
@@ -20,6 +21,7 @@ import de.prob.check.LTLChecker;
 import de.prob.check.LTLCounterExample;
 import de.prob.check.LTLOk;
 import de.prob.check.LTSminModelCheckingOptions;
+import de.prob.check.ModelCheckErrorUncovered;
 import de.prob.check.ModelCheckGoalFound;
 import de.prob.check.ModelCheckLimitReached;
 import de.prob.check.ModelCheckOk;
@@ -27,6 +29,8 @@ import de.prob.check.ModelCheckingOptions;
 import de.prob.check.ModelCheckingSearchStrategy;
 import de.prob.check.StateSpaceStats;
 import de.prob.check.tracereplay.json.TraceManager;
+import de.prob.exception.ProBError;
+import de.prob.model.eventb.Context;
 import de.prob.model.eventb.EventBMachine;
 import de.prob.model.eventb.EventBModel;
 import de.prob.model.representation.BEvent;
@@ -1249,15 +1253,47 @@ public class Animate implements Callable<Integer> {
   public Integer call() {
     validateCheckOptions();
     if (isLtsminRun()) {
-      return finishRun(withStateSpace(this::configureLtsmin, this::runLtsminModelCheck));
+      return finishCheckRun(withStateSpace(this::configureLtsmin, this::runLtsminModelCheck));
     }
     if (isLtlRun()) {
-      return finishRun(runLtl());
+      return finishCheckRun(runLtl());
     }
     if (isSymbolicRun()) {
-      return finishRun(withStateSpace(this::runSymbolic));
+      return finishCheckRun(withStateSpace(this::runSymbolic));
     }
-    return finishRun(withStateSpace(this::runModelCheck));
+    return finishCheckRun(withStateSpace(this::runModelCheck));
+  }
+
+  /**
+   * Ensures every top-level check report has a structured completion, including failures before a
+   * mode-specific checker starts. Individual check implementations replace these conservative
+   * defaults when they know the exact stop reason.
+   */
+  private int finishCheckRun(RunReport report) {
+    if (report.completion() == null) {
+      if (loadErrorMessage != null) {
+        report =
+            report.withCompletion(
+                RunReport.CompletionPhase.LOAD, RunReport.CompletionReason.INPUT_FAILURE);
+      } else {
+        report = report.withCompletion(defaultCheckCompletion(report.status()));
+      }
+    }
+    return finishRun(report);
+  }
+
+  private static RunReport.Completion defaultCheckCompletion(RunReport.Status status) {
+    return switch (status) {
+      case OK ->
+          new RunReport.Completion(
+              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.EXHAUSTIVE);
+      case VIOLATION ->
+          new RunReport.Completion(
+              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PROPERTY_VIOLATION);
+      case INCOMPLETE, ERROR ->
+          new RunReport.Completion(
+              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
+    };
   }
 
   private boolean isLtlRun() {
@@ -1465,13 +1501,21 @@ public class Animate implements Callable<Integer> {
   }
 
   private RunReport runModelCheck(StateSpace stateSpace) {
+    System.out.println("Model checking...");
+    RunReport initializationFailure = checkInitializationPhases(stateSpace);
+    if (initializationFailure != null) {
+      return initializationFailure;
+    }
+
     ModelCheckingOptions options =
         applyBounds(
             new ModelCheckingOptions()
                 .searchStrategy(searchStrategy.kernelStrategy)
                 .checkDeadlocks(!noDeadlock)
                 .checkInvariantViolations(!noInvariant)
-                .checkAssertions(assertions),
+                .checkAssertions(assertions)
+                .checkOtherErrors(true)
+                .recheckExisting(true),
             states,
             timeLimit);
     if (stopAtFullCoverage) {
@@ -1482,29 +1526,35 @@ public class Animate implements Callable<Integer> {
       options = options.customGoal(parsedGoal);
     }
 
-    System.out.println("Model checking...");
+    FinalStatisticsListener statistics =
+        new FinalStatisticsListener(progress ? new ProgressPrinter() : null);
     IModelCheckingResult result;
     try {
-      result =
-          new ConsistencyChecker(stateSpace, options, progress ? new ProgressPrinter() : null)
-              .call();
+      result = new ConsistencyChecker(stateSpace, options, statistics).call();
     } catch (RuntimeException e) {
       // Same contract as the LTL path: a mid-check kernel failure is a non-verdict.
       logger.debug("Model checking failed", e);
       String message = "Model checking did not complete: " + e.getMessage();
       System.err.println(message);
-      return incompleteConsistencyReport(message);
+      return withConsistencyOutcome(
+          incompleteConsistencyReport(message),
+          new RunReport.Completion(
+              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE),
+          statistics);
     }
 
     if (result instanceof ModelCheckOk || result instanceof ModelCheckLimitReached) {
-      String message = noViolationMessage(result);
+      RunReport.Completion completion = consistencyCompletion(result);
+      String message = noViolationMessage(completion.reason());
       System.out.println(message);
-      printCoverage(stateSpace);
-      return RunReport.of(
-          RunReport.Status.OK, message, enabledChecks(RunReport.Outcome.PASSED, null));
+      printCoverageSafely(stateSpace);
+      return withConsistencyOutcome(
+          RunReport.of(RunReport.Status.OK, message, enabledChecks(RunReport.Outcome.PASSED, null)),
+          completion,
+          statistics);
     }
 
-    if (result instanceof ITraceDescription) {
+    if (result instanceof ITraceDescription traceDescription) {
       // A real counterexample: an invariant violation, a reachable deadlock, or a goal hit.
       // A found goal is what the user asked for, not a model error, so no "Error:" prefix.
       String message;
@@ -1515,16 +1565,41 @@ public class Animate implements Callable<Integer> {
         message = result.getMessage();
         System.err.println("Error: " + message);
       }
-      Trace counterexample = ((ITraceDescription) result).getTrace(stateSpace);
-      TraceWriter.Counterexample described = TraceWriter.describe(stateSpace, counterexample, true);
-      TraceWriter.printViolatedInvariants(described);
-      TraceWriter.printTrace(described);
-      return withSavedTrace(
-          evaluateInCounterexample(
-              violationReport(result, message).withCounterexample(described), counterexample),
-          counterexample,
-          stateSpace,
-          jsonTrace);
+      Trace counterexample;
+      try {
+        counterexample = traceDescription.getTrace(stateSpace);
+        counterexample.getCurrentState().exploreIfNeeded();
+      } catch (RuntimeException e) {
+        logger.debug("Could not reconstruct the model-check terminal state", e);
+        counterexample = null;
+      }
+
+      RunReport.Completion completion = consistencyCompletion(result, counterexample);
+      if (completion.phase() != RunReport.CompletionPhase.SEARCH) {
+        return withConsistencyOutcome(
+            initializationFailureReport(completion, message), completion, statistics);
+      }
+
+      RunReport report =
+          withConsistencyOutcome(violationReport(result, message), completion, statistics);
+      if (counterexample == null) {
+        return report;
+      }
+      Trace finalCounterexample = counterexample;
+      return withCounterexampleEvidence(
+          report,
+          "Could not reconstruct the model-check counterexample evidence",
+          () -> {
+            TraceWriter.Counterexample described =
+                TraceWriter.describe(stateSpace, finalCounterexample, true);
+            TraceWriter.printViolatedInvariants(described);
+            TraceWriter.printTrace(described);
+            return withSavedTrace(
+                evaluateInCounterexample(report.withCounterexample(described), finalCounterexample),
+                finalCounterexample,
+                stateSpace,
+                jsonTrace);
+          });
     }
 
     // Neither a clean result nor a counterexample: the check did not complete
@@ -1532,7 +1607,123 @@ public class Animate implements Callable<Integer> {
     // rather than as a violation, and exit 2 to keep it separate from a real one.
     String message = "Model checking did not complete: " + result.getMessage();
     System.err.println(message);
-    return incompleteConsistencyReport(message);
+    return withConsistencyOutcome(
+        incompleteConsistencyReport(message), consistencyCompletion(result), statistics);
+  }
+
+  /**
+   * Establishes that at least one constant-setup and initialization path is feasible before the
+   * full search. ProB otherwise reports these as a generic checker error or root deadlock, losing
+   * the semantic phase that downstream consumers need.
+   */
+  private RunReport checkInitializationPhases(StateSpace stateSpace) {
+    List<Trace> setupTraces = new ArrayList<>();
+    Trace root = new Trace(stateSpace);
+    try {
+      State rootState = root.getCurrentState().exploreIfNeeded();
+      if (rootState.isConstantsSetUp()) {
+        setupTraces.add(root);
+      } else {
+        for (Transition transition : rootState.getOutTransitions()) {
+          if (SETUP_CONSTANTS_EVENT.equals(transition.getName())) {
+            setupTraces.add(root.add(transition));
+          }
+        }
+      }
+    } catch (RuntimeException e) {
+      RunReport.CompletionPhase phase =
+          hasConstantSetup(stateSpace)
+              ? RunReport.CompletionPhase.CONSTANT_SETUP
+              : RunReport.CompletionPhase.INITIALIZATION;
+      RunReport.CompletionReason reason =
+          phase == RunReport.CompletionPhase.CONSTANT_SETUP && hasUnsatisfiableAxioms(e)
+                  || phase == RunReport.CompletionPhase.INITIALIZATION
+                      && Objects.toString(e.getMessage(), "").contains("INITIALISATION FAILS")
+              ? RunReport.CompletionReason.INFEASIBLE
+              : RunReport.CompletionReason.EVALUATION_ERROR;
+      return phaseFailure(
+          phase,
+          reason,
+          reason == RunReport.CompletionReason.INFEASIBLE ? null : exceptionDetail(e));
+    }
+
+    if (setupTraces.isEmpty()) {
+      return phaseFailure(
+          RunReport.CompletionPhase.CONSTANT_SETUP, RunReport.CompletionReason.INFEASIBLE, null);
+    }
+
+    boolean evaluationError = false;
+    String errorDetail = null;
+    for (Trace setupTrace : setupTraces) {
+      try {
+        State state = setupTrace.getCurrentState().exploreIfNeeded();
+        if (state.isInitialised()
+            || state.getOutTransitions().stream()
+                .anyMatch(
+                    transition ->
+                        INITIALISE_MACHINE_EVENT.equals(transition.getName())
+                            || INITIALISATION_EVENT.equals(transition.getName()))) {
+          return null;
+        }
+        if (!state.getStateErrors().isEmpty()) {
+          evaluationError = true;
+          errorDetail = state.getStateErrors().iterator().next().getLongDescription();
+        }
+      } catch (RuntimeException e) {
+        evaluationError = true;
+        errorDetail = exceptionDetail(e);
+      }
+    }
+    return phaseFailure(
+        RunReport.CompletionPhase.INITIALIZATION,
+        evaluationError
+            ? RunReport.CompletionReason.EVALUATION_ERROR
+            : RunReport.CompletionReason.INFEASIBLE,
+        errorDetail);
+  }
+
+  static boolean hasUnsatisfiableAxioms(Throwable error) {
+    for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+      if (cause instanceof ProBError probError
+          && probError.getErrors().stream()
+              .anyMatch(
+                  item ->
+                      item.getType() == ErrorItem.Type.ERROR
+                          && Objects.toString(item.getMessage(), "")
+                              .startsWith("AXIOMS are unsatisfiable"))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasConstantSetup(StateSpace stateSpace) {
+    if (!(stateSpace.getMainComponent() instanceof EventBMachine machine)) {
+      return true;
+    }
+    return machine.getSees().stream().anyMatch(Animate::hasConstants);
+  }
+
+  private static boolean hasConstants(Context context) {
+    return !context.getConstants().isEmpty()
+        || context.getExtends().stream().anyMatch(Animate::hasConstants);
+  }
+
+  private RunReport phaseFailure(
+      RunReport.CompletionPhase phase, RunReport.CompletionReason reason, String detail) {
+    RunReport.Completion completion = new RunReport.Completion(phase, reason);
+    return initializationFailureReport(completion, detail).withCompletion(completion);
+  }
+
+  private static RunReport withConsistencyOutcome(
+      RunReport report,
+      RunReport.Completion completion,
+      FinalStatisticsListener statisticsListener) {
+    report = report.withCompletion(completion);
+    RunReport.SearchStatistics statistics = statisticsListener.finalStatistics();
+    return statistics == null || completion.phase() != RunReport.CompletionPhase.SEARCH
+        ? report
+        : report.withSearchStatistics(statistics);
   }
 
   /**
@@ -1613,6 +1804,28 @@ public class Animate implements Callable<Integer> {
     return report.withEvaluations(List.of(block));
   }
 
+  /**
+   * Attaches best-effort counterexample diagnostics without losing an already definitive verdict.
+   * Trace replay, state evaluation, and trace persistence are evidence enrichment; a failure in any
+   * of them must not turn a known violation into an unreported command exception.
+   */
+  static RunReport withCounterexampleEvidence(
+      RunReport report, String failureMessage, Supplier<RunReport> enrichment) {
+    try {
+      return enrichment.get();
+    } catch (RuntimeException e) {
+      logger.debug(failureMessage, e);
+      System.err.println("Warning: " + failureMessage + ": " + exceptionDetail(e));
+      return report;
+    }
+  }
+
+  private static String exceptionDetail(RuntimeException error) {
+    return error.getMessage() == null || error.getMessage().isBlank()
+        ? error.getClass().getSimpleName()
+        : error.getMessage();
+  }
+
   /** Saves the counterexample when a --save target was given and records the written path. */
   RunReport withSavedTrace(
       RunReport report, Trace counterexample, StateSpace stateSpace, Path target) {
@@ -1633,6 +1846,15 @@ public class Animate implements Callable<Integer> {
 
   /** One consistency check: its report name plus the property phrase the verdict wording uses. */
   private record CheckSpec(boolean enabled, CheckProperty property) {}
+
+  private static RunReport.FindingCategory findingCategory(CheckProperty property) {
+    return switch (property) {
+      case INVARIANT -> RunReport.FindingCategory.INVARIANT_VIOLATION;
+      case DEADLOCK -> RunReport.FindingCategory.DEADLOCK;
+      case ASSERTIONS -> RunReport.FindingCategory.ASSERTION_VIOLATION;
+      case GOAL -> RunReport.FindingCategory.GOAL_REACHED;
+    };
+  }
 
   /**
    * The consistency checks this run can perform, in fixed report order, each flagged with whether
@@ -1667,26 +1889,30 @@ public class Animate implements Callable<Integer> {
   }
 
   /**
-   * Names the check a counterexample fired. Apart from goals, which have their own result type, the
-   * kernel encodes the violated property only in the result message ("Invariant violation found.",
-   * "Deadlock found.", "Assertion violation found."); unrecognized wordings (state or
-   * well-definedness errors) degrade to a synthetic "consistency" check so the report stays valid.
+   * Names the check a counterexample fired. Goals have their own result type; the current kernel
+   * collapses every other known error functor into {@link ModelCheckErrorUncovered} with one fixed
+   * message. Exact matches keep future wording changes in the conservative unknown category.
    */
-  private static String firedCheck(IModelCheckingResult result) {
+  static RunReport.Finding findingFor(IModelCheckingResult result) {
     if (result instanceof ModelCheckGoalFound) {
-      return "goal";
+      return new RunReport.Finding(RunReport.FindingCategory.GOAL_REACHED, "goal");
     }
-    String message = result.getMessage();
-    if (message.contains("Invariant violation")) {
-      return "invariant";
-    }
-    if (message.contains("Deadlock")) {
-      return "deadlock";
-    }
-    if (message.contains("Assertion violation")) {
-      return "assertions";
-    }
-    return "consistency";
+    String message = Objects.toString(result.getMessage(), "");
+    return switch (message) {
+      case "Invariant violation found." ->
+          new RunReport.Finding(RunReport.FindingCategory.INVARIANT_VIOLATION, "invariant");
+      case "Deadlock found." ->
+          new RunReport.Finding(RunReport.FindingCategory.DEADLOCK, "deadlock");
+      case "Assertion violation found." ->
+          new RunReport.Finding(RunReport.FindingCategory.ASSERTION_VIOLATION, "assertions");
+      case "A state error occured.", "XTL error (unsafe state) found." ->
+          new RunReport.Finding(
+              RunReport.FindingCategory.STATE_EVALUATION_ERROR, "state-evaluation");
+      case "A well definedness error occured." ->
+          new RunReport.Finding(
+              RunReport.FindingCategory.WELL_DEFINEDNESS_ERROR, "well-definedness");
+      default -> new RunReport.Finding(RunReport.FindingCategory.UNKNOWN, "consistency");
+    };
   }
 
   /**
@@ -1694,7 +1920,8 @@ public class Animate implements Callable<Integer> {
    * passed -- the search stopped at the first violation, so nothing was proven about them.
    */
   private RunReport violationReport(IModelCheckingResult result, String message) {
-    String fired = firedCheck(result);
+    RunReport.Finding finding = findingFor(result);
+    String fired = finding.check();
     List<String> names = enabledCheckNames();
     List<RunReport.Check> checks = new ArrayList<>();
     for (String name : names) {
@@ -1707,7 +1934,107 @@ public class Animate implements Callable<Integer> {
     if (!names.contains(fired)) {
       checks.add(new RunReport.Check(fired, RunReport.Outcome.FAILED, message));
     }
-    return RunReport.of(RunReport.Status.VIOLATION, message, checks);
+    return RunReport.of(RunReport.Status.VIOLATION, message, checks)
+        .withFinding(finding.category(), finding.check());
+  }
+
+  private RunReport initializationFailureReport(
+      RunReport.Completion completion, String fallbackMessage) {
+    String check;
+    String message;
+    if (completion.phase() == RunReport.CompletionPhase.CONSTANT_SETUP) {
+      check = "constant-setup";
+      message =
+          completion.reason() == RunReport.CompletionReason.INFEASIBLE
+              ? "No feasible constant setup exists."
+              : "Constant setup could not be evaluated.";
+    } else {
+      check = "initialization";
+      message =
+          completion.reason() == RunReport.CompletionReason.INFEASIBLE
+              ? "No feasible initialization exists."
+              : "Initialization could not be evaluated.";
+    }
+    if (fallbackMessage != null && !fallbackMessage.isBlank()) {
+      message += " " + fallbackMessage;
+    }
+    System.err.println("Error: " + message);
+    RunReport.Outcome outcome =
+        completion.reason() == RunReport.CompletionReason.INFEASIBLE
+            ? RunReport.Outcome.FAILED
+            : RunReport.Outcome.ERROR;
+    return RunReport.of(
+        RunReport.Status.ERROR, message, new RunReport.Check(check, outcome, message));
+  }
+
+  /** Maps ProB's result classes and stop messages onto the stable JSON completion vocabulary. */
+  static RunReport.Completion consistencyCompletion(IModelCheckingResult result) {
+    return consistencyCompletion(result, null);
+  }
+
+  static RunReport.Completion consistencyCompletion(IModelCheckingResult result, Trace trace) {
+    if (result instanceof ModelCheckErrorUncovered && trace != null) {
+      State terminal = trace.getCurrentState();
+      RunReport.CompletionPhase phase =
+          !terminal.isConstantsSetUp()
+              ? RunReport.CompletionPhase.CONSTANT_SETUP
+              : !terminal.isInitialised() ? RunReport.CompletionPhase.INITIALIZATION : null;
+      if (phase != null) {
+        RunReport.CompletionReason reason =
+            terminal.getStateErrors().isEmpty()
+                ? RunReport.CompletionReason.INFEASIBLE
+                : RunReport.CompletionReason.EVALUATION_ERROR;
+        return new RunReport.Completion(phase, reason);
+      }
+    }
+    if (result instanceof ModelCheckGoalFound) {
+      return new RunReport.Completion(
+          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.GOAL_REACHED);
+    }
+    if (result instanceof ITraceDescription) {
+      RunReport.Finding finding = findingFor(result);
+      RunReport.CompletionReason reason =
+          finding.category() == RunReport.FindingCategory.STATE_EVALUATION_ERROR
+                  || finding.category() == RunReport.FindingCategory.WELL_DEFINEDNESS_ERROR
+                  || finding.category() == RunReport.FindingCategory.UNKNOWN
+              ? RunReport.CompletionReason.EVALUATION_ERROR
+              : RunReport.CompletionReason.PROPERTY_VIOLATION;
+      return new RunReport.Completion(RunReport.CompletionPhase.SEARCH, reason);
+    }
+    if (result instanceof ModelCheckLimitReached) {
+      String message = Objects.toString(result.getMessage(), "").toLowerCase(Locale.ROOT);
+      RunReport.CompletionReason reason =
+          message.contains("state limit")
+              ? RunReport.CompletionReason.STATE_LIMIT
+              : message.contains("time limit")
+                  ? RunReport.CompletionReason.TIME_LIMIT
+                  : RunReport.CompletionReason.PARTIAL;
+      return new RunReport.Completion(RunReport.CompletionPhase.SEARCH, reason);
+    }
+    if (result instanceof ModelCheckOk) {
+      String message = Objects.toString(result.getMessage(), "").toLowerCase(Locale.ROOT);
+      if (message.contains("all operations were covered")) {
+        return new RunReport.Completion(
+            RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.COVERAGE_LIMIT);
+      }
+      if (message.contains("not all nodes were considered")) {
+        return new RunReport.Completion(
+            RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PARTIAL);
+      }
+      if (message.contains("no more error nodes found")) {
+        return new RunReport.Completion(
+            RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.EXHAUSTIVE);
+      }
+      // A newly introduced successful-looking result must not silently overclaim exhaustiveness.
+      return new RunReport.Completion(
+          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PARTIAL);
+    }
+    if (result instanceof CheckInterrupted) {
+      return new RunReport.Completion(
+          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.INTERRUPTED);
+    }
+    return new RunReport.Completion(
+        RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   /**
@@ -1715,23 +2042,64 @@ public class Animate implements Callable<Integer> {
    * CI logs never overstate what was proven. The checker result carries which stop condition fired,
    * so derive the caveat from it instead of guessing from the requested options.
    */
-  private String noViolationMessage(IModelCheckingResult result) {
+  private String noViolationMessage(RunReport.CompletionReason reason) {
     String noViolation = "No " + checkedProperties() + " found ";
-    if (result instanceof ModelCheckLimitReached) {
-      // ProB's message names the bound: "State limit reached" or "Time limit reached".
-      return noViolation
-          + "("
-          + result.getMessage().toLowerCase(Locale.ROOT)
-          + "; not an exhaustive check).";
+    return switch (reason) {
+      case STATE_LIMIT -> noViolation + "(state limit reached; not an exhaustive check).";
+      case TIME_LIMIT -> noViolation + "(time limit reached; not an exhaustive check).";
+      case COVERAGE_LIMIT -> noViolation + "(all events covered; not an exhaustive check).";
+      case PARTIAL -> noViolation + "(not all states were considered; not an exhaustive check).";
+      case EXHAUSTIVE -> noViolation + "(full state space explored).";
+      default -> throw new IllegalArgumentException("not a clean consistency-check result");
+    };
+  }
+
+  /** Coverage is informational and must not erase a completed model-check verdict. */
+  private void printCoverageSafely(StateSpace stateSpace) {
+    try {
+      printCoverage(stateSpace);
+    } catch (RuntimeException e) {
+      logger.debug("Could not compute post-check coverage", e);
+      System.err.println("Warning: Could not compute post-check coverage: " + exceptionDetail(e));
     }
-    String message = result.getMessage();
-    if (message.contains("All operations were covered")) {
-      return noViolation + "(all events covered; not an exhaustive check).";
+  }
+
+  /** Captures final engine counters and optionally forwards callbacks to the progress printer. */
+  private static final class FinalStatisticsListener implements IModelCheckListener {
+    private final IModelCheckListener delegate;
+    private StateSpaceStats finalStats;
+
+    private FinalStatisticsListener(IModelCheckListener delegate) {
+      this.delegate = delegate;
     }
-    if (message.contains("Not all nodes were considered")) {
-      return noViolation + "(not all states were considered; not an exhaustive check).";
+
+    @Override
+    public void updateStats(
+        String jobId, long timeElapsed, IModelCheckingResult result, StateSpaceStats stats) {
+      if (delegate != null) {
+        delegate.updateStats(jobId, timeElapsed, result, stats);
+      }
     }
-    return noViolation + "(full state space explored).";
+
+    @Override
+    public void isFinished(
+        String jobId, long timeElapsed, IModelCheckingResult result, StateSpaceStats stats) {
+      if (stats != null) {
+        finalStats = stats;
+      }
+      if (delegate != null) {
+        delegate.isFinished(jobId, timeElapsed, result, stats);
+      }
+    }
+
+    private RunReport.SearchStatistics finalStatistics() {
+      return finalStats == null
+          ? null
+          : new RunReport.SearchStatistics(
+              finalStats.getNrTotalNodes(),
+              finalStats.getNrProcessedNodes(),
+              finalStats.getNrTotalTransitions());
+    }
   }
 
   /**

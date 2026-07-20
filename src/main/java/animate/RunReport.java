@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 /**
  * The findings of one command run. Every command returns one of these and {@link Animate#finishRun}
@@ -16,9 +17,12 @@ record RunReport(
     Status status,
     String message,
     List<Check> checks,
+    Finding finding,
     TraceWriter.Counterexample counterexample,
     List<StateEvaluation> evaluations,
     Path traceFile,
+    Completion completion,
+    SearchStatistics searchStatistics,
     Integer exitCodeOverride) {
 
   RunReport {
@@ -67,6 +71,124 @@ record RunReport(
     }
   }
 
+  /** Machine-readable classification of how a model-checking run finished. */
+  enum CompletionClassification {
+    COMPLETE,
+    COUNTEREXAMPLE,
+    INCOMPLETE,
+    ERROR;
+
+    String label() {
+      return name().toLowerCase(Locale.ROOT);
+    }
+  }
+
+  /** The terminal phase in which a top-level model check stopped. */
+  enum CompletionPhase {
+    LOAD,
+    CONSTANT_SETUP,
+    INITIALIZATION,
+    SEARCH;
+
+    String label() {
+      return name().toLowerCase(Locale.ROOT);
+    }
+  }
+
+  /** Stable machine-readable reason for a model-checking completion classification. */
+  enum CompletionReason {
+    EXHAUSTIVE,
+    PROOF,
+    PROPERTY_VIOLATION,
+    GOAL_REACHED,
+    STATE_LIMIT,
+    TIME_LIMIT,
+    COVERAGE_LIMIT,
+    PARTIAL,
+    INTERRUPTED,
+    INPUT_FAILURE,
+    INFEASIBLE,
+    EVALUATION_ERROR,
+    ENGINE_FAILURE;
+
+    String label() {
+      return name().toLowerCase(Locale.ROOT);
+    }
+
+    CompletionClassification classification() {
+      return switch (this) {
+        case EXHAUSTIVE, PROOF -> CompletionClassification.COMPLETE;
+        case PROPERTY_VIOLATION, GOAL_REACHED -> CompletionClassification.COUNTEREXAMPLE;
+        case STATE_LIMIT, TIME_LIMIT, COVERAGE_LIMIT, PARTIAL, INTERRUPTED ->
+            CompletionClassification.INCOMPLETE;
+        case INPUT_FAILURE, INFEASIBLE, EVALUATION_ERROR, ENGINE_FAILURE ->
+            CompletionClassification.ERROR;
+      };
+    }
+
+    boolean validIn(CompletionPhase phase) {
+      return switch (phase) {
+        case LOAD -> this == INPUT_FAILURE;
+        case CONSTANT_SETUP, INITIALIZATION ->
+            this == INFEASIBLE
+                || this == EVALUATION_ERROR
+                || this == ENGINE_FAILURE
+                || this == INTERRUPTED;
+        case SEARCH -> this != INPUT_FAILURE && this != INFEASIBLE;
+      };
+    }
+  }
+
+  /** The structured outcome of the top-level model-check command. */
+  record Completion(CompletionPhase phase, CompletionReason reason) {
+    Completion {
+      Objects.requireNonNull(phase, "phase");
+      Objects.requireNonNull(reason, "reason");
+      if (!reason.validIn(phase)) {
+        throw new IllegalArgumentException(
+            "completion reason " + reason.label() + " is invalid in phase " + phase.label());
+      }
+    }
+
+    CompletionClassification classification() {
+      return reason.classification();
+    }
+  }
+
+  /** Stable identity for the one definite finding that stopped a check. */
+  enum FindingCategory {
+    INVARIANT_VIOLATION,
+    ASSERTION_VIOLATION,
+    DEADLOCK,
+    GOAL_REACHED,
+    STATE_EVALUATION_ERROR,
+    WELL_DEFINEDNESS_ERROR,
+    LTL_VIOLATION,
+    UNKNOWN;
+
+    String label() {
+      return name().toLowerCase(Locale.ROOT);
+    }
+  }
+
+  record Finding(FindingCategory category, String check) {
+    Finding {
+      Objects.requireNonNull(category, "category");
+      if (check == null || check.isBlank()) {
+        throw new IllegalArgumentException("finding check must not be blank");
+      }
+    }
+  }
+
+  /** Final counters supplied by the model-checking engine. */
+  record SearchStatistics(int statesDiscovered, int statesProcessed, int transitions) {
+    SearchStatistics {
+      if (statesDiscovered < 0 || statesProcessed < 0 || transitions < 0) {
+        throw new IllegalArgumentException("search statistics must be non-negative");
+      }
+    }
+  }
+
   record Check(String name, Outcome outcome, String message) {}
 
   /**
@@ -92,7 +214,7 @@ record RunReport(
   }
 
   static RunReport of(Status status, String message, List<Check> checks) {
-    return new RunReport(status, message, checks, null, List.of(), null, null);
+    return new RunReport(status, message, checks, null, null, List.of(), null, null, null, null);
   }
 
   /**
@@ -125,6 +247,7 @@ record RunReport(
     }
     String message = null;
     TraceWriter.Counterexample counterexample = null;
+    Finding finding = null;
     Path traceFile = null;
     List<Check> checks = new ArrayList<>();
     List<StateEvaluation> evaluations = new ArrayList<>();
@@ -135,13 +258,17 @@ record RunReport(
       if (counterexample == null) {
         counterexample = part.counterexample();
       }
+      if (finding == null) {
+        finding = part.finding();
+      }
       if (traceFile == null) {
         traceFile = part.traceFile();
       }
       checks.addAll(part.checks());
       evaluations.addAll(part.evaluations());
     }
-    return new RunReport(status, message, checks, counterexample, evaluations, traceFile, null);
+    return new RunReport(
+        status, message, checks, finding, counterexample, evaluations, traceFile, null, null, null);
   }
 
   /**
@@ -174,23 +301,106 @@ record RunReport(
 
   RunReport withCounterexample(TraceWriter.Counterexample counterexample) {
     return new RunReport(
-        status, message, checks, counterexample, evaluations, traceFile, exitCodeOverride);
+        status,
+        message,
+        checks,
+        finding,
+        counterexample,
+        evaluations,
+        traceFile,
+        completion,
+        searchStatistics,
+        exitCodeOverride);
   }
 
   /** Attaches the per-state formula evaluations surfaced by --eval and the eval subcommand. */
   RunReport withEvaluations(List<StateEvaluation> evaluations) {
     return new RunReport(
-        status, message, checks, counterexample, evaluations, traceFile, exitCodeOverride);
+        status,
+        message,
+        checks,
+        finding,
+        counterexample,
+        evaluations,
+        traceFile,
+        completion,
+        searchStatistics,
+        exitCodeOverride);
   }
 
   RunReport withTraceFile(Path traceFile) {
     return new RunReport(
-        status, message, checks, counterexample, evaluations, traceFile, exitCodeOverride);
+        status,
+        message,
+        checks,
+        finding,
+        counterexample,
+        evaluations,
+        traceFile,
+        completion,
+        searchStatistics,
+        exitCodeOverride);
+  }
+
+  RunReport withCompletion(CompletionPhase phase, CompletionReason reason) {
+    return withCompletion(new Completion(phase, reason));
+  }
+
+  RunReport withCompletion(Completion completion) {
+    return new RunReport(
+        status,
+        message,
+        checks,
+        finding,
+        counterexample,
+        evaluations,
+        traceFile,
+        completion,
+        searchStatistics,
+        exitCodeOverride);
+  }
+
+  RunReport withSearchStatistics(SearchStatistics searchStatistics) {
+    return new RunReport(
+        status,
+        message,
+        checks,
+        finding,
+        counterexample,
+        evaluations,
+        traceFile,
+        completion,
+        searchStatistics,
+        exitCodeOverride);
   }
 
   /** For commands that must propagate a foreign exit code (convert passes probcli's through). */
   RunReport withExitCode(int exitCode) {
-    return new RunReport(status, message, checks, counterexample, evaluations, traceFile, exitCode);
+    return new RunReport(
+        status,
+        message,
+        checks,
+        finding,
+        counterexample,
+        evaluations,
+        traceFile,
+        completion,
+        searchStatistics,
+        exitCode);
+  }
+
+  RunReport withFinding(FindingCategory category, String check) {
+    return new RunReport(
+        status,
+        message,
+        checks,
+        new Finding(category, check),
+        counterexample,
+        evaluations,
+        traceFile,
+        completion,
+        searchStatistics,
+        exitCodeOverride);
   }
 
   int exitCode() {

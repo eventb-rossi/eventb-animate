@@ -13,8 +13,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 final class JsonReportWriter {
 
-  // v2 adds the optional top-level "evaluations" array (--eval and the eval subcommand).
-  static final int FORMAT_VERSION = 2;
+  // v3 adds structured model-check completion and final search statistics.
+  static final int FORMAT_VERSION = 3;
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -40,6 +40,18 @@ final class JsonReportWriter {
     root.put("timestamp", envelope.isoTimestamp());
     root.put("durationMs", envelope.durationMs());
     root.put("status", report.status().label());
+    if (report.completion() != null) {
+      ObjectNode completion = root.putObject("completion");
+      completion.put("classification", report.completion().classification().label());
+      completion.put("phase", report.completion().phase().label());
+      completion.put("reason", report.completion().reason().label());
+    }
+    if (report.searchStatistics() != null) {
+      ObjectNode statistics = root.putObject("searchStatistics");
+      statistics.put("statesDiscovered", report.searchStatistics().statesDiscovered());
+      statistics.put("statesProcessed", report.searchStatistics().statesProcessed());
+      statistics.put("transitions", report.searchStatistics().transitions());
+    }
     root.put("exitCode", envelope.exitCode());
     if (report.message() != null) {
       root.put("message", report.message());
@@ -52,6 +64,11 @@ final class JsonReportWriter {
       if (check.message() != null) {
         checkNode.put("message", check.message());
       }
+    }
+    if (report.finding() != null) {
+      ObjectNode finding = root.putObject("finding");
+      finding.put("category", report.finding().category().label());
+      finding.put("check", report.finding().check());
     }
     TraceWriter.Counterexample counterexample = report.counterexample();
     if (counterexample != null) {
