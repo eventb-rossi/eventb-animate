@@ -268,6 +268,8 @@ public class JsonReportTest {
 
       JsonNode root = MAPPER.readTree(Files.readString(report));
       assertEquals("violation", root.get("status").asText());
+      assertCompletion(root, "counterexample", "property_violation");
+      assertNull("LTL does not expose compatible counters", root.get("searchStatistics"));
       assertEquals(1, root.get("checks").size());
       assertEquals("ltl", root.get("checks").get(0).get("name").asText());
       assertEquals("failed", root.get("checks").get(0).get("outcome").asText());
@@ -293,11 +295,24 @@ public class JsonReportTest {
 
       JsonNode root = MAPPER.readTree(Files.readString(report));
       assertEquals("incomplete", root.get("status").asText());
+      assertCompletion(root, "error", "model_check_failure");
+      assertNull("the LTL check failed before returning counters", root.get("searchStatistics"));
       assertEquals(2, root.get("exitCode").asInt());
       assertEquals("error", root.get("checks").get(0).get("outcome").asText());
     } finally {
       Files.deleteIfExists(report);
     }
+  }
+
+  @Test(timeout = 120000)
+  public void testLtlCleanReportHasStructuredCompletion() throws Exception {
+    TestCli.SplitResult clean =
+        TestCli.executeSplit("--json", "-", "--ltl", "G {cars_go = cars_go}", TRAFFIC_LIGHT_M0);
+
+    assertEquals(0, clean.exitCode());
+    JsonNode cleanRoot = MAPPER.readTree(clean.stdout());
+    assertCompletion(cleanRoot, "complete", "exhaustive");
+    assertNull("LTL does not expose compatible counters", cleanRoot.get("searchStatistics"));
   }
 
   private static void assertCompletion(JsonNode root, String classification, String reason) {

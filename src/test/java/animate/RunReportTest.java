@@ -7,8 +7,11 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import de.prob.animator.domainobjects.ErrorItem;
+import de.prob.animator.domainobjects.LTL;
 import de.prob.check.CheckError;
 import de.prob.check.CheckInterrupted;
+import de.prob.check.LTLNotYetFinished;
+import de.prob.check.LTLOk;
 import de.prob.check.ModelCheckLimitReached;
 import de.prob.check.ModelCheckOk;
 import de.prob.exception.ProBError;
@@ -119,6 +122,18 @@ public class RunReportTest {
   }
 
   @Test
+  public void testLtlCompletionNormalizesSuccessLimitInterruptionAndFailure() throws Exception {
+    LTL formula = LTL.parseEventB("G {TRUE}");
+    assertLtlCompletion(new LTLOk(formula), false, RunReport.CompletionReason.EXHAUSTIVE);
+    assertLtlCompletion(
+        new LTLNotYetFinished(formula), true, RunReport.CompletionReason.STATE_LIMIT);
+    assertLtlCompletion(new LTLNotYetFinished(formula), false, RunReport.CompletionReason.PARTIAL);
+    assertLtlCompletion(new CheckInterrupted(), false, RunReport.CompletionReason.INTERRUPTED);
+    assertLtlCompletion(
+        new CheckError("formula failed"), false, RunReport.CompletionReason.MODEL_CHECK_FAILURE);
+  }
+
+  @Test
   public void testSingleCheckDerivesTheOutcomeFromTheStatus() {
     assertEquals(RunReport.Outcome.PASSED, singleCheckOutcome(RunReport.Status.OK));
     assertEquals(RunReport.Outcome.FAILED, singleCheckOutcome(RunReport.Status.VIOLATION));
@@ -147,5 +162,12 @@ public class RunReportTest {
       RunReport.Completion completion, RunReport.CompletionReason reason) {
     assertEquals(reason, completion.reason());
     assertEquals(reason.classification(), completion.classification());
+  }
+
+  private static void assertLtlCompletion(
+      de.prob.check.IModelCheckingResult result,
+      boolean stateLimitConfigured,
+      RunReport.CompletionReason reason) {
+    assertCompletion(Animate.ltlCompletion(result, stateLimitConfigured), reason);
   }
 }

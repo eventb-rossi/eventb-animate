@@ -19,6 +19,7 @@ import de.prob.check.IModelCheckListener;
 import de.prob.check.IModelCheckingResult;
 import de.prob.check.LTLChecker;
 import de.prob.check.LTLCounterExample;
+import de.prob.check.LTLNotYetFinished;
 import de.prob.check.LTLOk;
 import de.prob.check.LTSminModelCheckingOptions;
 import de.prob.check.ModelCheckErrorUncovered;
@@ -1346,11 +1347,13 @@ public class Animate implements Callable<Integer> {
               + " is not valid UTF-8 text (re-save the file"
               + " as UTF-8)";
       System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "ltl", message);
+      return RunReport.singleCheck(RunReport.Status.ERROR, "ltl", message)
+          .withCompletion(RunReport.CompletionPhase.LOAD, RunReport.CompletionReason.INPUT_FAILURE);
     } catch (IOException e) {
       String message = "Error reading --ltl-file: " + e.getMessage();
       System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "ltl", message);
+      return RunReport.singleCheck(RunReport.Status.ERROR, "ltl", message)
+          .withCompletion(RunReport.CompletionPhase.LOAD, RunReport.CompletionReason.INPUT_FAILURE);
     }
     LTL formula;
     try {
@@ -1359,7 +1362,8 @@ public class Animate implements Callable<Integer> {
       // The check never ran, so nothing was proven.
       String message = "invalid LTL formula: " + e.getMessage();
       System.err.println("Error: " + message);
-      return RunReport.singleCheck(RunReport.Status.INCOMPLETE, "ltl", message);
+      return RunReport.singleCheck(RunReport.Status.ERROR, "ltl", message)
+          .withCompletion(RunReport.CompletionPhase.LOAD, RunReport.CompletionReason.INPUT_FAILURE);
     }
     return withStateSpace(stateSpace -> runLtlCheck(stateSpace, formula));
   }
@@ -1377,36 +1381,72 @@ public class Animate implements Callable<Integer> {
       // after recording them; without this catch they would escape as a stack trace
       // with exit 1, the code reserved for real violations.
       logger.debug("LTL checking failed", e);
-      return incomplete("ltl", "LTL checking did not complete: " + e.getMessage());
+      return incomplete("ltl", "LTL checking did not complete: " + e.getMessage())
+          .withCompletion(
+              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
     }
 
     if (result instanceof LTLOk) {
       String message = "LTL formula holds (full state space explored).";
       System.out.println(message);
-      return RunReport.singleCheck(RunReport.Status.OK, "ltl", message);
+      return RunReport.singleCheck(RunReport.Status.OK, "ltl", message)
+          .withCompletion(ltlCompletion(result, states > 0));
     }
 
     if (result instanceof LTLCounterExample) {
       String message = "the LTL formula is violated.";
       System.err.println("Error: " + message);
-      Trace counterexample = ((LTLCounterExample) result).getTrace(stateSpace);
-      TraceWriter.Counterexample described =
-          TraceWriter.describe(stateSpace, counterexample, false);
-      TraceWriter.printTrace(described);
-      return withSavedTrace(
-          evaluateInCounterexample(
-              RunReport.singleCheck(RunReport.Status.VIOLATION, "ltl", message)
-                  .withCounterexample(described),
-              counterexample),
-          counterexample,
-          stateSpace,
-          jsonTrace);
+      RunReport report =
+          RunReport.singleCheck(RunReport.Status.VIOLATION, "ltl", message)
+              .withFinding(RunReport.FindingCategory.LTL_VIOLATION, "ltl")
+              .withCompletion(ltlCompletion(result, states > 0));
+      return withCounterexampleEvidence(
+          report,
+          "Could not reconstruct the LTL counterexample evidence",
+          () -> {
+            Trace counterexample = ((LTLCounterExample) result).getTrace(stateSpace);
+            TraceWriter.Counterexample described =
+                TraceWriter.describe(stateSpace, counterexample, false);
+            TraceWriter.printTrace(described);
+            return withSavedTrace(
+                evaluateInCounterexample(report.withCounterexample(described), counterexample),
+                counterexample,
+                stateSpace,
+                jsonTrace);
+          });
     }
 
     // LTLError or LTLNotYetFinished (e.g. the --states limit): a bounded LTL check
     // proves nothing about temporal properties, so unlike the consistency check a
     // limited run is a non-verdict, not a pass.
-    return incomplete("ltl", "LTL checking did not complete: " + result.getMessage());
+    return incomplete("ltl", "LTL checking did not complete: " + result.getMessage())
+        .withCompletion(ltlCompletion(result, states > 0));
+  }
+
+  /** Maps LTL checker results onto the shared completion vocabulary. */
+  static RunReport.Completion ltlCompletion(
+      IModelCheckingResult result, boolean stateLimitConfigured) {
+    if (result instanceof LTLOk) {
+      return new RunReport.Completion(
+          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.EXHAUSTIVE);
+    }
+    if (result instanceof LTLCounterExample) {
+      return new RunReport.Completion(
+          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PROPERTY_VIOLATION);
+    }
+    if (result instanceof CheckInterrupted) {
+      return new RunReport.Completion(
+          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.INTERRUPTED);
+    }
+    if (result instanceof LTLNotYetFinished) {
+      return new RunReport.Completion(
+          RunReport.CompletionPhase.SEARCH,
+          stateLimitConfigured
+              ? RunReport.CompletionReason.STATE_LIMIT
+              : RunReport.CompletionReason.PARTIAL);
+    }
+    return new RunReport.Completion(
+        RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   /**
