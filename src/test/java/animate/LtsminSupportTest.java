@@ -10,7 +10,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import org.junit.Assume;
 import org.junit.Test;
 
 /** Environment-independent tests for locating the optional external LTSmin executables. */
@@ -100,6 +103,7 @@ public class LtsminSupportTest {
 
   @Test
   public void symbolicCompatibilityWrapperRemovesTraceArguments() throws Exception {
+    Assume.assumeFalse(System.getProperty("os.name", "").toLowerCase().startsWith("windows"));
     Path source = Files.createTempDirectory("ltsmin-source-");
     LtsminSupport.ToolDirectory tools = null;
     try {
@@ -114,14 +118,17 @@ public class LtsminSupportTest {
                   "endpoint",
                   "--stats",
                   "--when",
+                  "--invariant=inv1",
                   "--trace",
                   "trace.gcf",
-                  "--invariant=inv1",
                   "argument with spaces")
               .start();
+      assertTrue(
+          "Compatibility wrapper did not exit within " + Duration.ofSeconds(5),
+          process.waitFor(5, TimeUnit.SECONDS));
       String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
 
-      assertEquals(0, process.waitFor());
+      assertEquals(0, process.exitValue());
       assertEquals(
           List.of("endpoint", "--stats", "--when", "--invariant=inv1", "argument with spaces"),
           output.lines().toList());

@@ -8,9 +8,11 @@ import static org.junit.Assert.assertTrue;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.io.MoreFiles;
 import com.google.common.io.RecursiveDeleteOption;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import org.junit.Assume;
 import org.junit.BeforeClass;
 import org.junit.Test;
@@ -156,7 +158,8 @@ public class LtsminIntegrationTest {
   public void symbolicViolationIsAVerdictWithoutATrace() {
     assumeLtsmin(Animate.CheckBackend.LTSMIN_SYMBOLIC);
     TestCli.Result result =
-        TestCli.execute("--backend", "ltsmin-symbolic", "--no-deadlock", BASE_MODEL_M1);
+        TestCli.execute(
+            "--backend", "ltsmin-symbolic", "--no-deadlock", "--time-limit", "60", BASE_MODEL_M1);
 
     assertEquals("M1 violates its invariant:\n" + result.output(), 1, result.exitCode());
     assertTrue(result.output().contains("Invariant violation found using LTSmin symbolic"));
@@ -168,5 +171,141 @@ public class LtsminIntegrationTest {
         result.command().lastReport.completion().reason());
     assertNull(result.command().lastReport.searchStatistics());
     assertNull(result.command().lastReport.counterexample());
+  }
+
+  @Test(timeout = 30000)
+  public void hangingBackendTimesOutAndReapsItsProcessTree() throws Exception {
+    Assume.assumeFalse(System.getProperty("os.name", "").toLowerCase().startsWith("windows"));
+    Path directory = Files.createTempDirectory("animate-ltsmin-hang-");
+    Path parentPid = directory.resolve("parent.pid");
+    Path childPid = directory.resolve("child.pid");
+    Path report = directory.resolve("report.json");
+    Process unrelated = new ProcessBuilder("/bin/sh", "-c", "sleep 30").start();
+    try {
+      executable(
+          directory,
+          "prob2lts-seq",
+          "#!/bin/sh\n"
+              + "echo $$ > "
+              + shellQuote(parentPid)
+              + "\n"
+              + "(trap '' TERM; while :; do sleep 1; done) &\n"
+              + "child=$!\n"
+              + "echo \"$child\" > "
+              + shellQuote(childPid)
+              + "\n"
+              + "trap '' TERM\n"
+              + "wait \"$child\"\n");
+      executable(directory, "ltsmin-printtrace", "#!/bin/sh\nexit 2\n");
+
+      long started = System.nanoTime();
+      TestCli.Result result =
+          TestCli.execute(
+              "--backend",
+              "ltsmin-sequential",
+              "--no-deadlock",
+              "--time-limit",
+              "2",
+              "--json",
+              report.toString(),
+              "-p",
+              "LTSMIN=" + directory,
+              TRAFFIC_LIGHT_M2);
+      Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
+
+      assertEquals("A backend timeout is a non-verdict:\n" + result.output(), 2, result.exitCode());
+      assertTrue(
+          "The timeout must be bounded: " + elapsed, elapsed.compareTo(Duration.ofSeconds(10)) < 0);
+      JsonNode root = TestCli.parseJson(Files.readString(report));
+      assertEquals("incomplete", root.get("completion").get("classification").asText());
+      assertEquals("search", root.get("completion").get("phase").asText());
+      assertEquals("time_limit", root.get("completion").get("reason").asText());
+
+      assertTrue(
+          "The fake backend should have started:\n" + result.output(),
+          Files.isRegularFile(parentPid));
+      assertTrue("The fake backend child should have started", Files.isRegularFile(childPid));
+      assertProcessExited(Long.parseLong(Files.readString(parentPid).trim()));
+      assertProcessExited(Long.parseLong(Files.readString(childPid).trim()));
+      assertTrue("Timeout cleanup must not kill unrelated JVM children", unrelated.isAlive());
+    } finally {
+      unrelated.destroyForcibly();
+      terminateRecordedProcess(parentPid);
+      terminateRecordedProcess(childPid);
+      MoreFiles.deleteRecursively(directory, RecursiveDeleteOption.ALLOW_INSECURE);
+    }
+  }
+
+  @Test(timeout = 30000)
+  public void failedBackendReturnsABoundedStructuredIncompleteResult() throws Exception {
+    Assume.assumeFalse(System.getProperty("os.name", "").toLowerCase().startsWith("windows"));
+    Path directory = Files.createTempDirectory("animate-ltsmin-failure-");
+    Path report = directory.resolve("report.json");
+    try {
+      executable(directory, "prob2lts-seq", "#!/bin/sh\nexit 2\n");
+      executable(directory, "ltsmin-printtrace", "#!/bin/sh\nexit 2\n");
+
+      long started = System.nanoTime();
+      TestCli.Result result =
+          TestCli.execute(
+              "--backend",
+              "ltsmin-sequential",
+              "--no-deadlock",
+              "--time-limit",
+              "1",
+              "--json",
+              report.toString(),
+              "-p",
+              "LTSMIN=" + directory,
+              TRAFFIC_LIGHT_M2);
+      Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
+
+      assertEquals("A backend failure is a non-verdict:\n" + result.output(), 2, result.exitCode());
+      assertTrue(
+          "The backend failure must be bounded: " + elapsed,
+          elapsed.compareTo(Duration.ofSeconds(10)) < 0);
+      JsonNode root = TestCli.parseJson(Files.readString(report));
+      assertEquals("incomplete", root.get("completion").get("classification").asText());
+      assertEquals("search", root.get("completion").get("phase").asText());
+      assertEquals("time_limit", root.get("completion").get("reason").asText());
+    } finally {
+      MoreFiles.deleteRecursively(directory, RecursiveDeleteOption.ALLOW_INSECURE);
+    }
+  }
+
+  private static void executable(Path directory, String name, String contents) throws Exception {
+    Path executable = Files.writeString(directory.resolve(name), contents);
+    assertTrue("Could not make executable: " + executable, executable.toFile().setExecutable(true));
+  }
+
+  private static String shellQuote(Path path) {
+    return "'" + path.toString().replace("'", "'\\''") + "'";
+  }
+
+  private static void assertProcessExited(long pid) throws Exception {
+    long deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();
+    while (ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false)
+        && System.nanoTime() < deadline) {
+      Thread.sleep(25);
+    }
+    assertFalse(
+        "LTSmin process still alive: " + pid,
+        ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false));
+  }
+
+  private static void terminateRecordedProcess(Path pidFile) {
+    if (!Files.isRegularFile(pidFile)) {
+      return;
+    }
+    try {
+      ProcessHandle.of(Long.parseLong(Files.readString(pidFile).trim()))
+          .ifPresent(
+              process -> {
+                process.descendants().forEach(ProcessHandle::destroyForcibly);
+                process.destroyForcibly();
+              });
+    } catch (IOException | NumberFormatException ignored) {
+      // Best-effort test teardown; the assertion retains the primary failure.
+    }
   }
 }

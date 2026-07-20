@@ -261,6 +261,7 @@ public class RunReportTest {
         LtsminSupport.Verdict.INTERRUPTED, RunReport.CompletionReason.INTERRUPTED);
     assertLtsminCompletion(
         LtsminSupport.Verdict.INCOMPLETE, RunReport.CompletionReason.ENGINE_FAILURE);
+    assertLtsminCompletion(LtsminSupport.Verdict.TIMED_OUT, RunReport.CompletionReason.TIME_LIMIT);
   }
 
   @Test

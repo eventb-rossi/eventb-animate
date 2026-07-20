@@ -16,9 +16,19 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,16 +48,31 @@ final class LtsminSupport {
   private static final String EMPTY_SYMBOLIC_TRACE = "LTSmin trace file is empty";
   private static final String SYMBOLIC_WRAPPER =
       """
-      #!/bin/sh
-      if [ "$#" -lt 5 ] || [ "$4" != "--trace" ]; then
-        echo "Unexpected ProB symbolic LTSmin command line" >&2
-        exit 2
+      #!/bin/bash
+      script_dir=${0%/*}
+      if [[ "$script_dir" == "$0" ]]; then
+        script_dir=.
       fi
-      endpoint=$1
-      stats=$2
-      when=$3
-      shift 5
-      exec "$(dirname "$0")/prob2lts-sym.real" "$endpoint" "$stats" "$when" "$@"
+      arguments=()
+      while (( $# )); do
+        case "$1" in
+          --trace)
+            if (( $# < 2 )); then
+              echo "Missing value for ProB symbolic LTSmin --trace option" >&2
+              exit 2
+            fi
+            shift 2
+            ;;
+          --trace=*)
+            shift
+            ;;
+          *)
+            arguments+=("$1")
+            shift
+            ;;
+        esac
+      done
+      exec "$script_dir/prob2lts-sym.real" "${arguments[@]}"
       """;
   private static final Logger LOGGER = LoggerFactory.getLogger(LtsminSupport.class);
 
@@ -57,7 +82,8 @@ final class LtsminSupport {
     OK,
     VIOLATION,
     INCOMPLETE,
-    INTERRUPTED
+    INTERRUPTED,
+    TIMED_OUT
   }
 
   record Result(Verdict verdict, String detail, Trace trace) {
@@ -75,6 +101,10 @@ final class LtsminSupport {
 
     static Result interrupted(String detail) {
       return new Result(Verdict.INTERRUPTED, detail, null);
+    }
+
+    static Result timedOut(String detail) {
+      return new Result(Verdict.TIMED_OUT, detail, null);
     }
   }
 
@@ -129,6 +159,57 @@ final class LtsminSupport {
       StateSpace stateSpace,
       Animate.CheckBackend backend,
       Animate.CheckProperty property,
+      boolean por,
+      Duration timeout) {
+    if (timeout.isZero() || timeout.isNegative()) {
+      return Result.timedOut("the overall LTSmin time limit was reached");
+    }
+
+    ExecutorService executor =
+        Executors.newSingleThreadExecutor(
+            runnable -> {
+              Thread thread = new Thread(runnable, "eventb-animate-ltsmin-check");
+              thread.setDaemon(true);
+              return thread;
+            });
+    Future<Result> future =
+        executor.submit(() -> checkWithoutDeadline(stateSpace, backend, property, por));
+    try {
+      Result result = future.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
+      if (result.verdict() == Verdict.INCOMPLETE || result.verdict() == Verdict.INTERRUPTED) {
+        terminateStateSpace(stateSpace, backend);
+      }
+      return result;
+    } catch (TimeoutException e) {
+      future.cancel(true);
+      terminateStateSpace(stateSpace, backend);
+      return Result.timedOut("the overall LTSmin time limit was reached");
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      future.cancel(true);
+      terminateStateSpace(stateSpace, backend);
+      return Result.interrupted("the LTSmin check was interrupted");
+    } catch (ExecutionException e) {
+      terminateStateSpace(stateSpace, backend);
+      Throwable cause = e.getCause();
+      LOGGER.debug("LTSmin model checking failed", cause);
+      return Result.incomplete(message(cause));
+    } finally {
+      executor.shutdownNow();
+      try {
+        if (!executor.awaitTermination(2, TimeUnit.SECONDS)) {
+          LOGGER.warn("LTSmin checker thread did not terminate after process cleanup");
+        }
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  private static Result checkWithoutDeadline(
+      StateSpace stateSpace,
+      Animate.CheckBackend backend,
+      Animate.CheckProperty property,
       boolean por) {
     LTSminModelCheckingOptions options =
         LTSminModelCheckingOptions.DEFAULT
@@ -172,6 +253,94 @@ final class LtsminSupport {
       return Result.interrupted(result.getMessage());
     }
     return Result.incomplete(result == null ? "no result returned" : result.getMessage());
+  }
+
+  /** Terminates this check's external LTSmin processes and ProB state space, then reaps them. */
+  private static void terminateStateSpace(StateSpace stateSpace, Animate.CheckBackend backend) {
+    Set<ProcessHandle> processes = ltsminProcesses(backend);
+    terminateProcesses(processes, false);
+    awaitExit(processes, Duration.ofMillis(500));
+
+    processes.addAll(ltsminProcesses(backend));
+    terminateProcesses(processes, true);
+    awaitExit(processes, Duration.ofSeconds(2));
+
+    try {
+      stateSpace.kill();
+    } catch (RuntimeException e) {
+      LOGGER.debug("Could not mark the timed-out ProB state space as killed", e);
+    }
+  }
+
+  private static Set<ProcessHandle> ltsminProcesses(Animate.CheckBackend backend) {
+    Set<ProcessHandle> processes = new LinkedHashSet<>();
+    ProcessHandle.current()
+        .descendants()
+        .filter(process -> isLtsminProcess(process, backend))
+        .forEach(
+            process -> {
+              processes.add(process);
+              process.descendants().forEach(processes::add);
+            });
+    return processes;
+  }
+
+  private static boolean isLtsminProcess(ProcessHandle process, Animate.CheckBackend backend) {
+    ProcessHandle.Info info = process.info();
+    String commandLine =
+        info.commandLine()
+            .orElseGet(
+                () ->
+                    info.command().orElse("")
+                        + " "
+                        + String.join(" ", info.arguments().orElse(new String[0])));
+    return commandLine.contains(backend.executable()) || commandLine.contains(PRINT_TRACE);
+  }
+
+  private static void terminateProcesses(Set<ProcessHandle> processes, boolean forcibly) {
+    processes.stream()
+        .filter(ProcessHandle::isAlive)
+        .sorted(Comparator.comparingInt(LtsminSupport::processDepth).reversed())
+        .forEach(
+            process -> {
+              if (forcibly) {
+                process.destroyForcibly();
+              } else {
+                process.destroy();
+              }
+            });
+  }
+
+  private static int processDepth(ProcessHandle process) {
+    int depth = 0;
+    ProcessHandle current = process;
+    ProcessHandle parent;
+    while ((parent = current.parent().orElse(null)) != null) {
+      depth++;
+      current = parent;
+    }
+    return depth;
+  }
+
+  private static void awaitExit(Set<ProcessHandle> processes, Duration timeout) {
+    long deadline = System.nanoTime() + timeout.toNanos();
+    for (ProcessHandle process : processes) {
+      if (!process.isAlive()) {
+        continue;
+      }
+      long remaining = deadline - System.nanoTime();
+      if (remaining <= 0) {
+        return;
+      }
+      try {
+        process.onExit().get(remaining, TimeUnit.NANOSECONDS);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        return;
+      } catch (ExecutionException | TimeoutException ignored) {
+        return;
+      }
+    }
   }
 
   /**
@@ -221,13 +390,12 @@ final class LtsminSupport {
       return new ToolDirectory(sourceDirectory, false);
     }
 
-    Path directory = Files.createTempDirectory("eventb-animate-ltsmin-");
+    Path directory = createExecutableTempDirectory(sourceDirectory);
     try {
-      Files.createSymbolicLink(
-          directory.resolve(REAL_SYMBOLIC_EXECUTABLE),
-          sourceDirectory.resolve(SYMBOLIC_EXECUTABLE));
-      Files.createSymbolicLink(
-          directory.resolve(PRINT_TRACE), sourceDirectory.resolve(PRINT_TRACE));
+      copyExecutable(
+          sourceDirectory.resolve(SYMBOLIC_EXECUTABLE),
+          directory.resolve(REAL_SYMBOLIC_EXECUTABLE));
+      copyExecutable(sourceDirectory.resolve(PRINT_TRACE), directory.resolve(PRINT_TRACE));
 
       Path wrapper = directory.resolve(SYMBOLIC_EXECUTABLE);
       Files.writeString(wrapper, SYMBOLIC_WRAPPER);
@@ -235,13 +403,70 @@ final class LtsminSupport {
         throw new IOException("could not make symbolic LTSmin compatibility wrapper executable");
       }
       return new ToolDirectory(directory, true);
-    } catch (IOException e) {
-      try {
-        MoreFiles.deleteRecursively(directory, RecursiveDeleteOption.ALLOW_INSECURE);
-      } catch (IOException cleanupError) {
-        e.addSuppressed(cleanupError);
-      }
+    } catch (IOException | RuntimeException e) {
+      cleanupTemporaryDirectory(directory, e);
       throw e;
+    }
+  }
+
+  private static Path createExecutableTempDirectory(Path sourceDirectory) throws IOException {
+    LinkedHashSet<Path> bases = new LinkedHashSet<>();
+    bases.add(sourceDirectory);
+    bases.add(Path.of("").toAbsolutePath().normalize());
+    bases.add(Path.of(System.getProperty("java.io.tmpdir")));
+    IOException failure = null;
+    for (Path base : bases) {
+      Path directory = null;
+      try {
+        directory = Files.createTempDirectory(base, ".eventb-animate-ltsmin-");
+        Path probe = Files.writeString(directory.resolve("exec-probe"), "#!/bin/sh\nexit 0\n");
+        if (!probe.toFile().setExecutable(true, true)) {
+          throw new IOException("could not make executable probe: " + probe);
+        }
+        Process process = new ProcessBuilder(probe.toString()).start();
+        if (!process.waitFor(5, TimeUnit.SECONDS) || process.exitValue() != 0) {
+          process.destroyForcibly();
+          throw new IOException("temporary directory does not permit executable files: " + base);
+        }
+        Files.delete(probe);
+        return directory;
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        IOException interrupted =
+            new IOException("interrupted while testing temporary directory", e);
+        if (failure != null) {
+          interrupted.addSuppressed(failure);
+        }
+        cleanupTemporaryDirectory(directory, interrupted);
+        throw interrupted;
+      } catch (IOException | RuntimeException e) {
+        IOException attempt =
+            e instanceof IOException io ? io : new IOException("cannot use " + base, e);
+        if (failure != null) {
+          attempt.addSuppressed(failure);
+        }
+        cleanupTemporaryDirectory(directory, attempt);
+        failure = attempt;
+      }
+    }
+    throw new IOException("could not create an executable LTSmin compatibility directory", failure);
+  }
+
+  private static void copyExecutable(Path source, Path target) throws IOException {
+    Files.copy(source, target);
+    if (!target.toFile().setExecutable(true, true)) {
+      throw new IOException("could not make copied LTSmin tool executable: " + target);
+    }
+  }
+
+  private static void cleanupTemporaryDirectory(Path directory, Exception failure) {
+    if (directory == null) {
+      return;
+    }
+    try {
+      MoreFiles.deleteRecursively(directory, RecursiveDeleteOption.ALLOW_INSECURE);
+    } catch (IOException cleanupError) {
+      failure.addSuppressed(cleanupError);
     }
   }
 

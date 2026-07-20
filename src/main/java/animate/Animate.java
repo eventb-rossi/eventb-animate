@@ -295,7 +295,9 @@ public class Animate implements Callable<Integer> {
   @Option(
       names = "--time-limit",
       paramLabel = "seconds",
-      description = "bound model-checking to the given wall-clock time (default: unlimited)")
+      description =
+          "bound model-checking to the given wall-clock time"
+              + " (default: unlimited; LTSmin: 600 seconds)")
   int timeLimit = -1;
 
   @Option(
@@ -580,6 +582,7 @@ public class Animate implements Callable<Integer> {
     }
 
     List<String> unsupported = new ArrayList<>(unsupportedConsistencyFlags(false));
+    unsupported.remove("--time-limit");
     if (ltlFormula != null) {
       unsupported.add("--ltl");
     }
@@ -1468,12 +1471,16 @@ public class Animate implements Callable<Integer> {
 
     String exploration =
         ltsminPor ? "complete partial-order-reduced exploration" : "full state space explored";
+    Duration overallTimeout = Duration.ofSeconds(timeLimit > 0 ? timeLimit : 600);
+    long deadline = System.nanoTime() + overallTimeout.toNanos();
     List<RunReport.Check> checks = new ArrayList<>();
     for (int i = 0; i < properties.size(); i++) {
       CheckProperty property = properties.get(i);
       String label = backend.displayName() + " " + property.checkName() + " checking";
       System.out.println(label + "...");
-      LtsminSupport.Result result = LtsminSupport.check(stateSpace, backend, property, ltsminPor);
+      Duration remaining = Duration.ofNanos(Math.max(0, deadline - System.nanoTime()));
+      LtsminSupport.Result result =
+          LtsminSupport.check(stateSpace, backend, property, ltsminPor, remaining);
 
       if (result.verdict() == LtsminSupport.Verdict.OK) {
         String message = ltsminSuccessMessage(property.propertyName(), exploration);
@@ -1483,7 +1490,8 @@ public class Animate implements Callable<Integer> {
       }
 
       if (result.verdict() == LtsminSupport.Verdict.INCOMPLETE
-          || result.verdict() == LtsminSupport.Verdict.INTERRUPTED) {
+          || result.verdict() == LtsminSupport.Verdict.INTERRUPTED
+          || result.verdict() == LtsminSupport.Verdict.TIMED_OUT) {
         String message = label + " did not complete: " + result.detail();
         System.err.println(message);
         checks.add(new RunReport.Check(property.checkName(), RunReport.Outcome.ERROR, message));
@@ -1555,6 +1563,7 @@ public class Animate implements Callable<Integer> {
       case OK -> RunReport.Completion.search(RunReport.CompletionReason.EXHAUSTIVE);
       case VIOLATION -> RunReport.Completion.search(RunReport.CompletionReason.PROPERTY_VIOLATION);
       case INTERRUPTED -> RunReport.Completion.search(RunReport.CompletionReason.INTERRUPTED);
+      case TIMED_OUT -> RunReport.Completion.search(RunReport.CompletionReason.TIME_LIMIT);
       case INCOMPLETE -> RunReport.Completion.search(RunReport.CompletionReason.ENGINE_FAILURE);
     };
   }

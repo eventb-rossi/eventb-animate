@@ -118,6 +118,28 @@ public class LtsminOptionsTest {
   }
 
   @Test
+  public void acceptsTimeLimitForLtsminChecks() throws Exception {
+    Path emptyDirectory = Files.createTempDirectory("ltsmin-unavailable-");
+    try {
+      TestCli.Result result =
+          TestCli.execute(
+              "--backend",
+              "ltsmin-sequential",
+              "--time-limit",
+              "1",
+              "-p",
+              "LTSMIN=" + emptyDirectory,
+              MODEL);
+
+      assertEquals(2, result.exitCode());
+      assertTrue(result.output().contains("backend unavailable"));
+      assertFalse(result.output().contains("does not support --time-limit"));
+    } finally {
+      Files.deleteIfExists(emptyDirectory);
+    }
+  }
+
+  @Test
   public void invalidModelIsReportedBeforeBackendAvailability() throws Exception {
     Path emptyDirectory = Files.createTempDirectory("ltsmin-unavailable-");
     try {

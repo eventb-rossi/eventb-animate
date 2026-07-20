@@ -130,11 +130,11 @@ machine name is unique across all projects.
   enabling symmetry for sequential LTSmin may make counterexample replay fail
 - `--backend <prob|ltsmin-sequential|ltsmin-symbolic>` - Select the
   model-checking backend (default: `prob`). LTSmin supports invariant and
-  deadlock checks, `-z`, the report options, and sequential counterexample
-  saving/evaluation. It does not support the ProB-only check modes and controls:
-  `--assertions`, `--goal`, `--ltl`, `--symbolic`, `--states`, `--time-limit`,
-  `--stop-at-full-coverage`, `--search-strategy`, or `--progress`. If the
-  external commands are not on `PATH`, set their directory with
+  deadlock checks, `-z`, `--time-limit`, the report options, and sequential
+  counterexample saving/evaluation. It does not support the ProB-only check
+  modes and controls: `--assertions`, `--goal`, `--ltl`, `--symbolic`,
+  `--states`, `--stop-at-full-coverage`, `--search-strategy`, or `--progress`.
+  If the external commands are not on `PATH`, set their directory with
   `-p LTSMIN=/absolute/path`. LTSmin explores out of process, so ProB's event
   coverage summary is unavailable for these runs
 - `--ltsmin-por` - Enable LTSmin partial-order reduction (requires
@@ -144,8 +144,9 @@ machine name is unique across all projects.
 - `--states <N>` - Bound model-checking to at most `N` explored states (default:
   exhaustive)
 - `--time-limit <seconds>` - Bound model-checking to the given wall-clock time
-  (default: unlimited). Like `--states`, a run stopped by the limit is reported
-  as not exhaustive
+  (default: unlimited for ProB and 600 seconds for LTSmin). Like `--states`, a
+  run stopped by the limit is reported as not exhaustive. The LTSmin limit is
+  shared by both external passes and cleans up their complete process tree
 - `--stop-at-full-coverage` - Stop model-checking once every event has been
   covered (a bounded check, reported as not exhaustive)
 - `--assertions` - Also check assertions (theorems) for violations
