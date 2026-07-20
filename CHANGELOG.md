@@ -4,10 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [6.2] - 2026-07-20
+
 ### Features
 
 - Add structured completion classifications, stop reasons, and final built-in
   search statistics to JSON report format v3
+- Distinguish load, constant-setup, initialization, and search termination
+  without parsing human-readable messages
+- Add stable categories and failed-check identities for definite findings
+
+### Bug Fixes
+
+- Bound LTSmin checks by default, honor explicit time limits across both passes,
+  and reap the complete external process tree after failures or timeouts
+- Preserve definite symbolic LTSmin violations when no replay trace is available
 
 ### Documentation
 
@@ -16,7 +27,18 @@ All notable changes to this project will be documented in this file.
 
 ### Testing
 
-- Validate example and generated reports against the published v3 schema
+- Validate the full generated outcome matrix against the published v3 schema
+- Exercise parameterized format-6 trace saving and replay
+- Bound forced LTSmin hangs and communication failures in integration tests
+
+### Build
+
+- Verify that the shaded jar merges every runtime service provider
+
+### CI/CD
+
+- Smoke-test release jars before publishing them
+- Publish versioned v3 schema and example artifacts with SHA-256 digests
 
 ## [6.1] - 2026-07-19
 
