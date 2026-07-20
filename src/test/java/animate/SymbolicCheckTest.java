@@ -2,8 +2,10 @@ package animate;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.file.Paths;
 import org.junit.Test;
 
@@ -22,39 +24,45 @@ public class SymbolicCheckTest {
       Paths.get("src/test/resources/models/counter/M0.bum").toString();
 
   @Test(timeout = 120000)
-  public void testInductionProvesSafeMachine() {
+  public void testInductionProvesSafeMachine() throws Exception {
     // ic3/k-induction can prove invariant safety, unlike the explicit check they replace.
-    TestCli.Result result = TestCli.execute("--symbolic", "ic3", TRAFFIC_LIGHT_M0);
+    TestCli.SplitResult result =
+        TestCli.executeSplit("--json", "-", "--symbolic", "ic3", TRAFFIC_LIGHT_M0);
 
-    assertEquals("A proven-safe machine exits 0:\n" + result.output(), 0, result.exitCode());
+    assertEquals("A proven-safe machine exits 0:\n" + result.stderr(), 0, result.exitCode());
     assertTrue(
-        "The verdict should report no reachable violation:\n" + result.output(),
-        result.output().contains("No invariant violation reachable"));
+        "The verdict should report no reachable violation:\n" + result.stderr(),
+        result.stderr().contains("No invariant violation reachable"));
+    assertCompletion(result, "complete", "proof");
   }
 
   @Test(timeout = 120000)
-  public void testCounterexampleExitsOneWithTraceHint() {
-    TestCli.Result result = TestCli.execute("--symbolic", "bmc", COUNTER_M0);
+  public void testCounterexampleExitsOneWithTraceHint() throws Exception {
+    TestCli.SplitResult result =
+        TestCli.executeSplit("--json", "-", "--symbolic", "bmc", COUNTER_M0);
 
-    assertEquals("A reachable violation exits 1:\n" + result.output(), 1, result.exitCode());
+    assertEquals("A reachable violation exits 1:\n" + result.stderr(), 1, result.exitCode());
     assertTrue(
-        "The verdict should report a reachable violation:\n" + result.output(),
-        result.output().contains("Invariant violation reachable"));
+        "The verdict should report a reachable violation:\n" + result.stderr(),
+        result.stderr().contains("Invariant violation reachable"));
     assertTrue(
-        "A counterexample should point back at the default check for a trace:\n" + result.output(),
-        result.output().contains("rerun the default check"));
+        "A counterexample should point back at the default check for a trace:\n" + result.stderr(),
+        result.stderr().contains("rerun the default check"));
+    assertCompletion(result, "counterexample", "property_violation");
   }
 
   @Test(timeout = 120000)
-  public void testInconclusiveIsNonVerdict() {
+  public void testInconclusiveIsNonVerdict() throws Exception {
     // BMC cannot prove safety, so on a safe machine it is inconclusive -- a non-verdict (exit 2),
     // never a false pass.
-    TestCli.Result result = TestCli.execute("--symbolic", "bmc", TRAFFIC_LIGHT_M0);
+    TestCli.SplitResult result =
+        TestCli.executeSplit("--json", "-", "--symbolic", "bmc", TRAFFIC_LIGHT_M0);
 
-    assertEquals("An inconclusive run is a non-verdict:\n" + result.output(), 2, result.exitCode());
+    assertEquals("An inconclusive run is a non-verdict:\n" + result.stderr(), 2, result.exitCode());
     assertTrue(
-        "The verdict should say the run was inconclusive:\n" + result.output(),
-        result.output().contains("inconclusive"));
+        "The verdict should say the run was inconclusive:\n" + result.stderr(),
+        result.stderr().contains("inconclusive"));
+    assertCompletion(result, "incomplete", "partial");
   }
 
   @Test
@@ -123,5 +131,14 @@ public class SymbolicCheckTest {
         result.exitCode());
     assertTrue(
         "The error should name --ltl:\n" + result.output(), result.output().contains("--ltl"));
+  }
+
+  private static void assertCompletion(
+      TestCli.SplitResult result, String classification, String reason) throws Exception {
+    JsonNode root = TestCli.parseJson(result.stdout());
+    assertEquals(classification, root.get("completion").get("classification").asText());
+    assertEquals("search", root.get("completion").get("phase").asText());
+    assertEquals(reason, root.get("completion").get("reason").asText());
+    assertNull("symbolic checking exposes no search counters", root.get("searchStatistics"));
   }
 }

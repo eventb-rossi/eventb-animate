@@ -8,6 +8,7 @@ import com.google.inject.Injector;
 import com.google.inject.Provider;
 import com.google.inject.Stage;
 import de.be4.ltl.core.parser.LtlParseException;
+import de.prob.animator.CommandInterruptedException;
 import de.prob.animator.command.ComputeCoverageCommand;
 import de.prob.animator.command.ComputeCoverageCommand.ComputeCoverageResult;
 import de.prob.animator.command.GetVersionCommand;
@@ -1782,20 +1783,22 @@ public class Animate implements Callable<Integer> {
     } catch (RuntimeException e) {
       // Same contract as runModelCheck: a mid-check kernel failure is a non-verdict, not a pass.
       logger.debug("Symbolic model checking failed", e);
-      return symbolicIncomplete(label + " did not complete: " + e.getMessage());
+      return incomplete("invariant", label + " did not complete: " + e.getMessage())
+          .withCompletion(symbolicFailureCompletion(e));
     }
 
     SymbolicModelcheckCommand.ResultType result = cmd.getResult();
     if (result == null) {
       // Defensive: an unrecognized Prolog result term leaves getResult() null.
-      return symbolicIncomplete(label + " returned no recognized result.");
+      return symbolicIncomplete(label + " returned no recognized result.", null);
     }
 
     return switch (result) {
       case SUCCESSFUL -> {
         String message = "No invariant violation reachable (symbolic " + symbolic + ").";
         System.out.println(message);
-        yield RunReport.singleCheck(RunReport.Status.OK, "invariant", message);
+        yield RunReport.singleCheck(RunReport.Status.OK, "invariant", message)
+            .withCompletion(symbolicCompletion(result));
       }
       case COUNTER_EXAMPLE -> {
         String message = "Invariant violation reachable (symbolic " + symbolic + ").";
@@ -1803,21 +1806,56 @@ public class Animate implements Callable<Integer> {
         System.out.println(
             "Hint: symbolic model checking reports no trace; rerun the default check"
                 + " to obtain a saveable counterexample.");
-        yield RunReport.singleCheck(RunReport.Status.VIOLATION, "invariant", message);
+        yield RunReport.singleCheck(RunReport.Status.VIOLATION, "invariant", message)
+            .withFinding(RunReport.FindingCategory.INVARIANT_VIOLATION, "invariant")
+            .withCompletion(symbolicCompletion(result));
       }
       // The kernel maps "solver_and_provers_too_weak" -- the routine Event-B outcome -- to TIMEOUT.
       case TIMEOUT ->
           symbolicIncomplete(
-              label + " was inconclusive: the solver/provers were too weak or timed out.");
+              label + " was inconclusive: the solver/provers were too weak or timed out.", result);
       case LIMIT_REACHED ->
-          symbolicIncomplete(label + " was inconclusive: a bound was reached before a verdict.");
-      case INTERRUPTED -> symbolicIncomplete(label + " was interrupted.");
+          symbolicIncomplete(
+              label + " was inconclusive: a bound was reached before a verdict.", result);
+      case INTERRUPTED -> symbolicIncomplete(label + " was interrupted.", result);
     };
   }
 
   /** Reports a symbolic non-verdict: prints it to stderr and maps it to INCOMPLETE (exit 2). */
-  private RunReport symbolicIncomplete(String message) {
-    return incomplete("invariant", message);
+  private RunReport symbolicIncomplete(
+      String message, SymbolicModelcheckCommand.ResultType result) {
+    return incomplete("invariant", message).withCompletion(symbolicCompletion(result));
+  }
+
+  /** Maps symbolic proof-engine outcomes onto the shared completion vocabulary. */
+  static RunReport.Completion symbolicCompletion(SymbolicModelcheckCommand.ResultType result) {
+    if (result == null) {
+      return new RunReport.Completion(
+          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
+    }
+    return switch (result) {
+      case SUCCESSFUL ->
+          new RunReport.Completion(
+              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PROOF);
+      case COUNTER_EXAMPLE ->
+          new RunReport.Completion(
+              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PROPERTY_VIOLATION);
+      case TIMEOUT, LIMIT_REACHED ->
+          new RunReport.Completion(
+              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PARTIAL);
+      case INTERRUPTED ->
+          new RunReport.Completion(
+              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.INTERRUPTED);
+    };
+  }
+
+  /** Distinguishes an exception-based ProB interrupt from an ordinary symbolic checker failure. */
+  static RunReport.Completion symbolicFailureCompletion(RuntimeException error) {
+    return error instanceof CommandInterruptedException
+        ? new RunReport.Completion(
+            RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.INTERRUPTED)
+        : new RunReport.Completion(
+            RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   /**

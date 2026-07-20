@@ -3,9 +3,12 @@ package animate;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
+import de.prob.animator.CommandInterruptedException;
+import de.prob.animator.command.SymbolicModelcheckCommand;
 import de.prob.animator.domainobjects.ErrorItem;
 import de.prob.animator.domainobjects.LTL;
 import de.prob.check.CheckError;
@@ -134,6 +137,58 @@ public class RunReportTest {
   }
 
   @Test
+  public void testSymbolicCompletionNormalizesEveryResult() {
+    assertSymbolicCompletion(
+        SymbolicModelcheckCommand.ResultType.SUCCESSFUL, RunReport.CompletionReason.PROOF);
+    assertSymbolicCompletion(
+        SymbolicModelcheckCommand.ResultType.COUNTER_EXAMPLE,
+        RunReport.CompletionReason.PROPERTY_VIOLATION);
+    assertSymbolicCompletion(
+        SymbolicModelcheckCommand.ResultType.TIMEOUT, RunReport.CompletionReason.PARTIAL);
+    assertSymbolicCompletion(
+        SymbolicModelcheckCommand.ResultType.LIMIT_REACHED, RunReport.CompletionReason.PARTIAL);
+    assertSymbolicCompletion(
+        SymbolicModelcheckCommand.ResultType.INTERRUPTED, RunReport.CompletionReason.INTERRUPTED);
+    assertSymbolicCompletion(null, RunReport.CompletionReason.MODEL_CHECK_FAILURE);
+  }
+
+  @Test
+  public void testSymbolicExceptionDistinguishesInterruptionFromFailure() {
+    RunReport.Completion interrupted =
+        Animate.symbolicFailureCompletion(
+            new CommandInterruptedException("interrupted", List.of()));
+    assertCompletion(interrupted, RunReport.CompletionReason.INTERRUPTED);
+
+    RunReport.Completion failed =
+        Animate.symbolicFailureCompletion(new IllegalStateException("failed"));
+    assertCompletion(failed, RunReport.CompletionReason.MODEL_CHECK_FAILURE);
+  }
+
+  @Test
+  public void testCompletionDerivesClassificationFromReason() {
+    for (RunReport.CompletionReason reason : RunReport.CompletionReason.values()) {
+      assertCompletion(new RunReport.Completion(reason), reason);
+    }
+  }
+
+  @Test
+  public void testCounterexampleEvidenceFailurePreservesDefiniteReport() {
+    RunReport report =
+        RunReport.singleCheck(RunReport.Status.VIOLATION, "invariant", "violated")
+            .withCompletion(RunReport.CompletionReason.PROPERTY_VIOLATION);
+
+    RunReport preserved =
+        Animate.withCounterexampleEvidence(
+            report,
+            "simulated evidence failure",
+            () -> {
+              throw new IllegalStateException("trace unavailable");
+            });
+
+    assertSame(report, preserved);
+  }
+
+  @Test
   public void testSingleCheckDerivesTheOutcomeFromTheStatus() {
     assertEquals(RunReport.Outcome.PASSED, singleCheckOutcome(RunReport.Status.OK));
     assertEquals(RunReport.Outcome.FAILED, singleCheckOutcome(RunReport.Status.VIOLATION));
@@ -169,5 +224,10 @@ public class RunReportTest {
       boolean stateLimitConfigured,
       RunReport.CompletionReason reason) {
     assertCompletion(Animate.ltlCompletion(result, stateLimitConfigured), reason);
+  }
+
+  private static void assertSymbolicCompletion(
+      SymbolicModelcheckCommand.ResultType result, RunReport.CompletionReason reason) {
+    assertCompletion(Animate.symbolicCompletion(result), reason);
   }
 }
