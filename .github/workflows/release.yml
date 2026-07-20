@@ -5,12 +5,16 @@ on:
     tags:
       - 'v*'
 
+env:
+  GH_REPO: ${{ github.repository }}
+  RELEASE_TAG: ${{ github.ref_name }}
+
 jobs:
-  release:
+  prepare-release:
     runs-on: ubuntu-latest
     permissions:
       actions: read
-      contents: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -26,7 +30,7 @@ jobs:
           OUTPUT: RELEASE_NOTES.md
 
       - name: Verify version consistency
-        run: scripts/check-version.sh "${{ github.ref_name }}"
+        run: scripts/check-version.sh "$RELEASE_TAG"
 
       - name: Download JAR from build workflow
         env:
@@ -51,17 +55,100 @@ jobs:
           done
 
           echo "::error::No successful Build and Test run found for commit ${{ github.sha }}."
-          echo "::error::Push the branch and wait for Build and Test to pass before pushing the release tag."
-          echo "::error::Then rerun this Release workflow or push the release tag."
+          echo "::error::Push the branch and wait for Build and Test to pass before tagging."
           exit 1
 
-      - name: Rename JAR
-        run: mv eventb-animate-*.jar eventb-animate.jar
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Stage versioned common assets
+        run: |
+          version="${RELEASE_TAG#v}"
+          source_jars=(eventb-animate-*.jar)
+          test "${#source_jars[@]}" -eq 1
+          mkdir -p release-bundle/assets
+          mv "${source_jars[0]}" \
+            "release-bundle/assets/eventb-animate-${version}.jar"
+          cp "release-bundle/assets/eventb-animate-${version}.jar" \
+            release-bundle/assets/eventb-animate.jar
+          cp RELEASE_NOTES.md release-bundle/RELEASE_NOTES.md
+          cp docs/json-report-v3.schema.json \
+            "release-bundle/assets/eventb-animate-${version}-json-report-v3.schema.json"
+
+          report_directory="$RUNNER_TEMP/eventb-animate-${version}-report-v3"
+          mkdir -p "$report_directory/examples"
+          cp docs/json-report-v3.schema.json \
+            "$report_directory/json-report-v3.schema.json"
+          example_symlink=$(find docs/examples -type l -print -quit)
+          if [ -n "$example_symlink" ]; then
+            echo "::error::Release examples must not contain symlinks: $example_symlink"
+            exit 1
+          fi
+          find docs/examples -maxdepth 1 -type f \
+            -name 'json-report-v3-*.json' \
+            -exec cp {} "$report_directory/examples/" \;
+          (
+            cd "$RUNNER_TEMP"
+            zip -q -r -y \
+              "$GITHUB_WORKSPACE/release-bundle/assets/eventb-animate-${version}-report-v3.zip" \
+              "eventb-animate-${version}-report-v3"
+          )
+
+      - name: Smoke test common release jar
+        timeout-minutes: 10
+        run: |
+          version="${RELEASE_TAG#v}"
+          scripts/smoke-release.sh \
+            "release-bundle/assets/eventb-animate-${version}.jar"
+
+      - name: Upload common release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-common
+          path: release-bundle/
+          if-no-files-found: error
+
+  release:
+    needs: [prepare-release]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download common release assets
+        uses: actions/download-artifact@v8
+        with:
+          name: release-common
+          path: release-bundle
+
+      - name: Verify assets and record SHA-256 digests
+        run: |
+          version="${RELEASE_TAG#v}"
+          assets="release-bundle/assets"
+          test -f "$assets/eventb-animate-${version}.jar"
+          test -f "$assets/eventb-animate.jar"
+          test -f "$assets/eventb-animate-${version}-json-report-v3.schema.json"
+          test -f "$assets/eventb-animate-${version}-report-v3.zip"
+
+          (
+            cd "$assets"
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' \
+              | LC_ALL=C sort \
+              | xargs sha256sum
+          ) > "$RUNNER_TEMP/SHA256SUMS"
+          mv "$RUNNER_TEMP/SHA256SUMS" "$assets/SHA256SUMS"
 
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create ${{ github.ref_name }} eventb-animate.jar --notes-file RELEASE_NOTES.md --title "Event-B Animate ${{ github.ref_name }}"
+        run: >
+          gh release create "$RELEASE_TAG"
+          release-bundle/assets/*
+          --notes-file release-bundle/RELEASE_NOTES.md
+          --title "Event-B Animate $RELEASE_TAG"
 
   # Build self-contained Windows artifacts (bundled JRE, no Java required) with
   # jpackage and attach them to the release created above. Needs [release] so the
@@ -91,7 +178,7 @@ jobs:
       - name: Stage jar and resolve version
         shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}".TrimStart('v')
+          $ver = $env:RELEASE_TAG.TrimStart('v')
           "APP_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
           New-Item -ItemType Directory staging | Out-Null
           Copy-Item build/libs/eventb-animate-*.jar staging/eventb-animate.jar
@@ -144,10 +231,23 @@ jobs:
         shell: pwsh
         run: Copy-Item msi/eventb-animate-*.msi eventb-animate.msi
 
+      - name: Record Windows SHA-256 digests
+        shell: pwsh
+        run: |
+          $assets = @('eventb-animate-win-x64.zip', 'eventb-animate.msi')
+          $lines = foreach ($asset in $assets) {
+            $hash = (Get-FileHash -Path $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $asset"
+          }
+          $lines | Out-File -FilePath SHA256SUMS.windows -Encoding ascii
+
       - name: Upload Windows assets to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload ${{ github.ref_name }} eventb-animate-win-x64.zip eventb-animate.msi --clobber
+        run: >
+          gh release upload "$RELEASE_TAG"
+          eventb-animate-win-x64.zip eventb-animate.msi SHA256SUMS.windows
+          --clobber
 
   # Tell the eventb-rossi packaging repos a new release exists, so their
   # version-check workflows run immediately instead of waiting for the daily cron.

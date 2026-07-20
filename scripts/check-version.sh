@@ -6,6 +6,12 @@ set -euo pipefail
 
 TAG="${1:?Usage: check-version.sh <tag>}"
 TAG_VERSION="${TAG#v}"
+VERSION_PATTERN='v[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?'
+
+if [[ ! "$TAG" =~ ^${VERSION_PATTERN}$ ]]; then
+  echo "ERROR: release tag is not a supported semantic version: $TAG"
+  exit 1
+fi
 
 GRADLE_VERSION=$(sed -n "s/^version = '\\([^']*\\)'$/\\1/p" build.gradle)
 if [ "$GRADLE_VERSION" != "$TAG_VERSION" ]; then
@@ -27,12 +33,37 @@ for expected in "${EXPECTED_README_REFERENCES[@]}"; do
   fi
 done
 
-README_TAGS=$(grep -oE 'v[0-9]+\.[0-9]+(\.[0-9]+)?' README.md | sort -u || true)
+README_TAGS=$(
+  grep -oE "$VERSION_PATTERN" \
+    README.md | sort -u || true
+)
 STALE_TAGS=$(printf '%s\n' "$README_TAGS" | grep -vxF -- "$TAG" || true)
 if [ -n "$STALE_TAGS" ]; then
   echo "ERROR: README.md contains stale version tags:"
-  printf '  %s\n' $STALE_TAGS
+  while IFS= read -r stale_tag; do
+    printf '  %s\n' "$stale_tag"
+  done <<< "$STALE_TAGS"
   exit 1
 fi
 
-echo "Version check passed: build.gradle=$GRADLE_VERSION, README.md references are up to date"
+while IFS= read -r example; do
+  EXAMPLE_VERSION=$(
+    sed -n 's/.*"toolVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+      "$example"
+  )
+  if [ "$EXAMPLE_VERSION" != "$TAG_VERSION" ]; then
+    echo "ERROR: $example has toolVersion '$EXAMPLE_VERSION' (expected '$TAG_VERSION')"
+    exit 1
+  fi
+done < <(
+  find docs/examples -type f -name 'json-report-v3-*.json' | LC_ALL=C sort
+)
+
+CHANGELOG_HEADING=$(grep -F "## [$TAG_VERSION] - " CHANGELOG.md || true)
+if ! printf '%s\n' "$CHANGELOG_HEADING" \
+  | grep -Eq '^## \[[^]]+\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+  echo "ERROR: CHANGELOG.md has no dated [$TAG_VERSION] release heading"
+  exit 1
+fi
+
+echo "Version check passed for $TAG: build, docs, examples, and changelog agree"
