@@ -1,6 +1,10 @@
 package animate;
 
 import com.google.common.base.Throwables;
+import com.google.common.io.MoreFiles;
+import com.google.common.io.RecursiveDeleteOption;
+import de.prob.animator.CommandInterruptedException;
+import de.prob.check.CheckInterrupted;
 import de.prob.check.IModelCheckingResult;
 import de.prob.check.LTSminModelChecker;
 import de.prob.check.LTSminModelCheckingOptions;
@@ -8,6 +12,7 @@ import de.prob.check.ModelCheckOk;
 import de.prob.statespace.ITraceDescription;
 import de.prob.statespace.StateSpace;
 import de.prob.statespace.Trace;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -28,7 +33,22 @@ import org.slf4j.LoggerFactory;
 final class LtsminSupport {
 
   private static final String PRINT_TRACE = "ltsmin-printtrace";
+  private static final String SYMBOLIC_EXECUTABLE = "prob2lts-sym";
+  private static final String REAL_SYMBOLIC_EXECUTABLE = SYMBOLIC_EXECUTABLE + ".real";
   private static final String EMPTY_SYMBOLIC_TRACE = "LTSmin trace file is empty";
+  private static final String SYMBOLIC_WRAPPER =
+      """
+      #!/bin/sh
+      if [ "$#" -lt 5 ] || [ "$4" != "--trace" ]; then
+        echo "Unexpected ProB symbolic LTSmin command line" >&2
+        exit 2
+      fi
+      endpoint=$1
+      stats=$2
+      when=$3
+      shift 5
+      exec "$(dirname "$0")/prob2lts-sym.real" "$endpoint" "$stats" "$when" "$@"
+      """;
   private static final Logger LOGGER = LoggerFactory.getLogger(LtsminSupport.class);
 
   private LtsminSupport() {}
@@ -36,7 +56,8 @@ final class LtsminSupport {
   enum Verdict {
     OK,
     VIOLATION,
-    INCOMPLETE
+    INCOMPLETE,
+    INTERRUPTED
   }
 
   record Result(Verdict verdict, String detail, Trace trace) {
@@ -51,6 +72,10 @@ final class LtsminSupport {
     static Result incomplete(String detail) {
       return new Result(Verdict.INCOMPLETE, detail, null);
     }
+
+    static Result interrupted(String detail) {
+      return new Result(Verdict.INTERRUPTED, detail, null);
+    }
   }
 
   record Discovery(Path directory, String error) {
@@ -64,6 +89,36 @@ final class LtsminSupport {
 
     boolean available() {
       return directory != null;
+    }
+  }
+
+  /**
+   * The tool directory handed to ProB. Symbolic checks use a temporary compatibility directory;
+   * sequential checks use the discovered installation directly.
+   */
+  static final class ToolDirectory implements AutoCloseable {
+    private final Path directory;
+    private final boolean temporary;
+
+    private ToolDirectory(Path directory, boolean temporary) {
+      this.directory = directory;
+      this.temporary = temporary;
+    }
+
+    Path directory() {
+      return directory;
+    }
+
+    @Override
+    public void close() {
+      if (!temporary) {
+        return;
+      }
+      try {
+        MoreFiles.deleteRecursively(directory, RecursiveDeleteOption.ALLOW_INSECURE);
+      } catch (IOException e) {
+        LOGGER.warn("Could not remove temporary LTSmin compatibility directory {}", directory, e);
+      }
     }
   }
 
@@ -94,6 +149,9 @@ final class LtsminSupport {
         return Result.violation(null);
       }
       LOGGER.debug("LTSmin model checking failed", e);
+      if (causedBy(e, CommandInterruptedException.class)) {
+        return Result.interrupted(message(e));
+      }
       return Result.incomplete(message(e));
     }
 
@@ -109,6 +167,9 @@ final class LtsminSupport {
         LOGGER.debug("Could not reconstruct the LTSmin counterexample trace", e);
         return Result.violation(null);
       }
+    }
+    if (result instanceof CheckInterrupted) {
+      return Result.interrupted(result.getMessage());
     }
     return Result.incomplete(result == null ? "no result returned" : result.getMessage());
   }
@@ -146,6 +207,42 @@ final class LtsminSupport {
             + " and "
             + PRINT_TRACE
             + " in one PATH directory; install LTSmin or set -p LTSMIN=/absolute/path");
+  }
+
+  /**
+   * Prepares the directory ProB will execute. The symbolic LTSmin backend does not produce traces,
+   * but ProB 1.15.1 still supplies {@code --trace}; with LTSmin 3.0.2 a counterexample then closes
+   * the client without terminating the PINS session, leaving ProB blocked. The wrapper removes that
+   * unsupported argument so ProB receives the exit-1 verdict normally.
+   */
+  static ToolDirectory prepareTools(Animate.CheckBackend backend, Path sourceDirectory)
+      throws IOException {
+    if (backend.replayableTrace()) {
+      return new ToolDirectory(sourceDirectory, false);
+    }
+
+    Path directory = Files.createTempDirectory("eventb-animate-ltsmin-");
+    try {
+      Files.createSymbolicLink(
+          directory.resolve(REAL_SYMBOLIC_EXECUTABLE),
+          sourceDirectory.resolve(SYMBOLIC_EXECUTABLE));
+      Files.createSymbolicLink(
+          directory.resolve(PRINT_TRACE), sourceDirectory.resolve(PRINT_TRACE));
+
+      Path wrapper = directory.resolve(SYMBOLIC_EXECUTABLE);
+      Files.writeString(wrapper, SYMBOLIC_WRAPPER);
+      if (!wrapper.toFile().setExecutable(true, true)) {
+        throw new IOException("could not make symbolic LTSmin compatibility wrapper executable");
+      }
+      return new ToolDirectory(directory, true);
+    } catch (IOException e) {
+      try {
+        MoreFiles.deleteRecursively(directory, RecursiveDeleteOption.ALLOW_INSECURE);
+      } catch (IOException cleanupError) {
+        e.addSuppressed(cleanupError);
+      }
+      throw e;
+    }
   }
 
   private static Discovery validateDirectory(Animate.CheckBackend backend, Path directory) {
@@ -197,6 +294,10 @@ final class LtsminSupport {
       }
     }
     return false;
+  }
+
+  private static boolean causedBy(Throwable error, Class<? extends Throwable> type) {
+    return Throwables.getCausalChain(error).stream().anyMatch(type::isInstance);
   }
 
   private static String message(Throwable error) {

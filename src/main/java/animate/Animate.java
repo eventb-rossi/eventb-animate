@@ -100,6 +100,7 @@ public class Animate implements Callable<Integer> {
   private Path resolvedModelPath;
   private String loadErrorMessage;
   private EventB parsedGoal;
+  private LtsminSupport.ToolDirectory ltsminTools;
 
   // The last finished run's findings, consumed by the report emission in executeRun
   // and by tests via TestCli.Result.command().
@@ -225,23 +226,30 @@ public class Animate implements Callable<Integer> {
 
   /** Shared identity and verdict wording for every consistency property. */
   enum CheckProperty {
-    INVARIANT("invariant", "invariant violation", "Invariant violation"),
-    DEADLOCK("deadlock", "deadlock", "Deadlock"),
-    ASSERTIONS("assertions", "assertion violation", "Assertion violation"),
-    GOAL("goal", "goal state", "Goal");
+    INVARIANT(
+        "invariant violation",
+        "Invariant violation",
+        RunReport.FindingCategory.INVARIANT_VIOLATION),
+    DEADLOCK("deadlock", "Deadlock", RunReport.FindingCategory.DEADLOCK),
+    ASSERTIONS(
+        "assertion violation",
+        "Assertion violation",
+        RunReport.FindingCategory.ASSERTION_VIOLATION),
+    GOAL("goal state", "Goal", RunReport.FindingCategory.GOAL_REACHED);
 
-    private final String checkName;
     private final String propertyName;
     private final String violationName;
+    private final RunReport.FindingCategory findingCategory;
 
-    CheckProperty(String checkName, String propertyName, String violationName) {
-      this.checkName = checkName;
+    CheckProperty(
+        String propertyName, String violationName, RunReport.FindingCategory findingCategory) {
       this.propertyName = propertyName;
       this.violationName = violationName;
+      this.findingCategory = findingCategory;
     }
 
     String checkName() {
-      return checkName;
+      return findingCategory.check();
     }
 
     String propertyName() {
@@ -250,6 +258,10 @@ public class Animate implements Callable<Integer> {
 
     String violationName() {
       return violationName;
+    }
+
+    RunReport.FindingCategory findingCategory() {
+      return findingCategory;
     }
   }
 
@@ -1255,7 +1267,14 @@ public class Animate implements Callable<Integer> {
   public Integer call() {
     validateCheckOptions();
     if (isLtsminRun()) {
-      return finishCheckRun(withStateSpace(this::configureLtsmin, this::runLtsminModelCheck));
+      try {
+        return finishCheckRun(withStateSpace(this::configureLtsmin, this::runLtsminModelCheck));
+      } finally {
+        if (ltsminTools != null) {
+          ltsminTools.close();
+          ltsminTools = null;
+        }
+      }
     }
     if (isLtlRun()) {
       return finishCheckRun(runLtl());
@@ -1323,10 +1342,20 @@ public class Animate implements Callable<Integer> {
     if (!discovery.available()) {
       String message = backend.displayName() + " backend unavailable: " + discovery.error();
       System.err.println(message);
-      return incompleteConsistencyReport(message);
+      return incompleteConsistencyReport(message)
+          .withCompletion(RunReport.CompletionPhase.LOAD, RunReport.CompletionReason.INPUT_FAILURE);
     }
 
-    String directory = discovery.directory().toString();
+    try {
+      ltsminTools = LtsminSupport.prepareTools(backend, discovery.directory());
+    } catch (IOException e) {
+      String message = backend.displayName() + " backend unavailable: " + e.getMessage();
+      System.err.println(message);
+      return incompleteConsistencyReport(message)
+          .withCompletion(RunReport.CompletionPhase.LOAD, RunReport.CompletionReason.INPUT_FAILURE);
+    }
+
+    String directory = ltsminTools.directory().toString();
     if (explicitlyConfigured) {
       userPrefs.put("LTSMIN", directory);
     } else {
@@ -1399,7 +1428,7 @@ public class Animate implements Callable<Integer> {
       System.err.println("Error: " + message);
       RunReport report =
           RunReport.singleCheck(RunReport.Status.VIOLATION, "ltl", message)
-              .withFinding(RunReport.FindingCategory.LTL_VIOLATION, "ltl")
+              .withFinding(RunReport.FindingCategory.LTL_VIOLATION)
               .withCompletion(ltlCompletion(result, states > 0));
       return withCounterexampleEvidence(
           report,
@@ -1428,26 +1457,21 @@ public class Animate implements Callable<Integer> {
   static RunReport.Completion ltlCompletion(
       IModelCheckingResult result, boolean stateLimitConfigured) {
     if (result instanceof LTLOk) {
-      return new RunReport.Completion(
-          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.EXHAUSTIVE);
+      return RunReport.Completion.search(RunReport.CompletionReason.EXHAUSTIVE);
     }
     if (result instanceof LTLCounterExample) {
-      return new RunReport.Completion(
-          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PROPERTY_VIOLATION);
+      return RunReport.Completion.search(RunReport.CompletionReason.PROPERTY_VIOLATION);
     }
     if (result instanceof CheckInterrupted) {
-      return new RunReport.Completion(
-          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.INTERRUPTED);
+      return RunReport.Completion.search(RunReport.CompletionReason.INTERRUPTED);
     }
     if (result instanceof LTLNotYetFinished) {
-      return new RunReport.Completion(
-          RunReport.CompletionPhase.SEARCH,
+      return RunReport.Completion.search(
           stateLimitConfigured
               ? RunReport.CompletionReason.STATE_LIMIT
               : RunReport.CompletionReason.PARTIAL);
     }
-    return new RunReport.Completion(
-        RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
+    return RunReport.Completion.search(RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   /**
@@ -1474,20 +1498,25 @@ public class Animate implements Callable<Integer> {
         continue;
       }
 
-      if (result.verdict() == LtsminSupport.Verdict.INCOMPLETE) {
+      if (result.verdict() == LtsminSupport.Verdict.INCOMPLETE
+          || result.verdict() == LtsminSupport.Verdict.INTERRUPTED) {
         String message = label + " did not complete: " + result.detail();
         System.err.println(message);
         checks.add(new RunReport.Check(property.checkName(), RunReport.Outcome.ERROR, message));
         appendUnrunLtsminChecks(
             checks, properties, i + 1, "an earlier LTSmin pass did not complete");
-        return RunReport.of(RunReport.Status.INCOMPLETE, message, checks);
+        return RunReport.of(RunReport.Status.INCOMPLETE, message, checks)
+            .withCompletion(ltsminCompletion(result.verdict()));
       }
 
       String message = property.violationName() + " found using " + backend.displayName() + ".";
       System.err.println("Error: " + message);
       checks.add(new RunReport.Check(property.checkName(), RunReport.Outcome.FAILED, message));
       appendUnrunLtsminChecks(checks, properties, i + 1, "search stopped at the first violation");
-      RunReport report = RunReport.of(RunReport.Status.VIOLATION, message, checks);
+      RunReport report =
+          RunReport.of(RunReport.Status.VIOLATION, message, checks)
+              .withFinding(property.findingCategory())
+              .withCompletion(ltsminCompletion(result.verdict()));
       Trace counterexample = result.trace();
       if (counterexample == null) {
         if (!backend.replayableTrace()) {
@@ -1500,14 +1529,20 @@ public class Animate implements Callable<Integer> {
         return report;
       }
 
-      TraceWriter.Counterexample described = TraceWriter.describe(stateSpace, counterexample, true);
-      TraceWriter.printViolatedInvariants(described);
-      TraceWriter.printTrace(described);
-      return withSavedTrace(
-          evaluateInCounterexample(report.withCounterexample(described), counterexample),
-          counterexample,
-          stateSpace,
-          jsonTrace);
+      return withCounterexampleEvidence(
+          report,
+          "Could not render the LTSmin counterexample evidence",
+          () -> {
+            TraceWriter.Counterexample described =
+                TraceWriter.describe(stateSpace, counterexample, true);
+            TraceWriter.printViolatedInvariants(described);
+            TraceWriter.printTrace(described);
+            return withSavedTrace(
+                evaluateInCounterexample(report.withCounterexample(described), counterexample),
+                counterexample,
+                stateSpace,
+                jsonTrace);
+          });
     }
 
     String checked =
@@ -1526,7 +1561,18 @@ public class Animate implements Callable<Integer> {
     // Java StateSpace used by ComputeCoverageCommand. Printing that partial ProB view would
     // incorrectly label every event uncovered.
     System.out.println("Coverage unavailable for external LTSmin exploration.");
-    return RunReport.of(RunReport.Status.OK, message, checks);
+    return RunReport.of(RunReport.Status.OK, message, checks)
+        .withCompletion(ltsminCompletion(LtsminSupport.Verdict.OK));
+  }
+
+  /** Maps external LTSmin pass outcomes onto the shared completion vocabulary. */
+  static RunReport.Completion ltsminCompletion(LtsminSupport.Verdict verdict) {
+    return switch (verdict) {
+      case OK -> RunReport.Completion.search(RunReport.CompletionReason.EXHAUSTIVE);
+      case VIOLATION -> RunReport.Completion.search(RunReport.CompletionReason.PROPERTY_VIOLATION);
+      case INTERRUPTED -> RunReport.Completion.search(RunReport.CompletionReason.INTERRUPTED);
+      case INCOMPLETE -> RunReport.Completion.search(RunReport.CompletionReason.ENGINE_FAILURE);
+    };
   }
 
   private String ltsminSuccessMessage(String properties, String scope) {
@@ -1579,8 +1625,7 @@ public class Animate implements Callable<Integer> {
       System.err.println(message);
       return withConsistencyOutcome(
           incompleteConsistencyReport(message),
-          new RunReport.Completion(
-              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE),
+          RunReport.Completion.search(RunReport.CompletionReason.ENGINE_FAILURE),
           statistics);
     }
 
@@ -1807,7 +1852,7 @@ public class Animate implements Callable<Integer> {
             "Hint: symbolic model checking reports no trace; rerun the default check"
                 + " to obtain a saveable counterexample.");
         yield RunReport.singleCheck(RunReport.Status.VIOLATION, "invariant", message)
-            .withFinding(RunReport.FindingCategory.INVARIANT_VIOLATION, "invariant")
+            .withFinding(RunReport.FindingCategory.INVARIANT_VIOLATION)
             .withCompletion(symbolicCompletion(result));
       }
       // The kernel maps "solver_and_provers_too_weak" -- the routine Event-B outcome -- to TIMEOUT.
@@ -1830,32 +1875,23 @@ public class Animate implements Callable<Integer> {
   /** Maps symbolic proof-engine outcomes onto the shared completion vocabulary. */
   static RunReport.Completion symbolicCompletion(SymbolicModelcheckCommand.ResultType result) {
     if (result == null) {
-      return new RunReport.Completion(
-          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
+      return RunReport.Completion.search(RunReport.CompletionReason.ENGINE_FAILURE);
     }
     return switch (result) {
-      case SUCCESSFUL ->
-          new RunReport.Completion(
-              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PROOF);
+      case SUCCESSFUL -> RunReport.Completion.search(RunReport.CompletionReason.PROOF);
       case COUNTER_EXAMPLE ->
-          new RunReport.Completion(
-              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PROPERTY_VIOLATION);
+          RunReport.Completion.search(RunReport.CompletionReason.PROPERTY_VIOLATION);
       case TIMEOUT, LIMIT_REACHED ->
-          new RunReport.Completion(
-              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PARTIAL);
-      case INTERRUPTED ->
-          new RunReport.Completion(
-              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.INTERRUPTED);
+          RunReport.Completion.search(RunReport.CompletionReason.PARTIAL);
+      case INTERRUPTED -> RunReport.Completion.search(RunReport.CompletionReason.INTERRUPTED);
     };
   }
 
   /** Distinguishes an exception-based ProB interrupt from an ordinary symbolic checker failure. */
   static RunReport.Completion symbolicFailureCompletion(RuntimeException error) {
     return error instanceof CommandInterruptedException
-        ? new RunReport.Completion(
-            RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.INTERRUPTED)
-        : new RunReport.Completion(
-            RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
+        ? RunReport.Completion.search(RunReport.CompletionReason.INTERRUPTED)
+        : RunReport.Completion.search(RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   /**
@@ -1925,15 +1961,6 @@ public class Animate implements Callable<Integer> {
   /** One consistency check: its report name plus the property phrase the verdict wording uses. */
   private record CheckSpec(boolean enabled, CheckProperty property) {}
 
-  private static RunReport.FindingCategory findingCategory(CheckProperty property) {
-    return switch (property) {
-      case INVARIANT -> RunReport.FindingCategory.INVARIANT_VIOLATION;
-      case DEADLOCK -> RunReport.FindingCategory.DEADLOCK;
-      case ASSERTIONS -> RunReport.FindingCategory.ASSERTION_VIOLATION;
-      case GOAL -> RunReport.FindingCategory.GOAL_REACHED;
-    };
-  }
-
   /**
    * The consistency checks this run can perform, in fixed report order, each flagged with whether
    * this run enabled it. {@link #enabledCheckNames} and {@link #checkedProperties} both derive from
@@ -1973,23 +2000,20 @@ public class Animate implements Callable<Integer> {
    */
   static RunReport.Finding findingFor(IModelCheckingResult result) {
     if (result instanceof ModelCheckGoalFound) {
-      return new RunReport.Finding(RunReport.FindingCategory.GOAL_REACHED, "goal");
+      return new RunReport.Finding(RunReport.FindingCategory.GOAL_REACHED);
     }
     String message = Objects.toString(result.getMessage(), "");
     return switch (message) {
       case "Invariant violation found." ->
-          new RunReport.Finding(RunReport.FindingCategory.INVARIANT_VIOLATION, "invariant");
-      case "Deadlock found." ->
-          new RunReport.Finding(RunReport.FindingCategory.DEADLOCK, "deadlock");
+          new RunReport.Finding(RunReport.FindingCategory.INVARIANT_VIOLATION);
+      case "Deadlock found." -> new RunReport.Finding(RunReport.FindingCategory.DEADLOCK);
       case "Assertion violation found." ->
-          new RunReport.Finding(RunReport.FindingCategory.ASSERTION_VIOLATION, "assertions");
+          new RunReport.Finding(RunReport.FindingCategory.ASSERTION_VIOLATION);
       case "A state error occured.", "XTL error (unsafe state) found." ->
-          new RunReport.Finding(
-              RunReport.FindingCategory.STATE_EVALUATION_ERROR, "state-evaluation");
+          new RunReport.Finding(RunReport.FindingCategory.STATE_EVALUATION_ERROR);
       case "A well definedness error occured." ->
-          new RunReport.Finding(
-              RunReport.FindingCategory.WELL_DEFINEDNESS_ERROR, "well-definedness");
-      default -> new RunReport.Finding(RunReport.FindingCategory.UNKNOWN, "consistency");
+          new RunReport.Finding(RunReport.FindingCategory.WELL_DEFINEDNESS_ERROR);
+      default -> new RunReport.Finding(RunReport.FindingCategory.UNKNOWN);
     };
   }
 
@@ -2013,7 +2037,7 @@ public class Animate implements Callable<Integer> {
       checks.add(new RunReport.Check(fired, RunReport.Outcome.FAILED, message));
     }
     return RunReport.of(RunReport.Status.VIOLATION, message, checks)
-        .withFinding(finding.category(), finding.check());
+        .withFinding(finding.category());
   }
 
   private RunReport initializationFailureReport(
@@ -2066,8 +2090,7 @@ public class Animate implements Callable<Integer> {
       }
     }
     if (result instanceof ModelCheckGoalFound) {
-      return new RunReport.Completion(
-          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.GOAL_REACHED);
+      return RunReport.Completion.search(RunReport.CompletionReason.GOAL_REACHED);
     }
     if (result instanceof ITraceDescription) {
       RunReport.Finding finding = findingFor(result);
@@ -2077,7 +2100,7 @@ public class Animate implements Callable<Integer> {
                   || finding.category() == RunReport.FindingCategory.UNKNOWN
               ? RunReport.CompletionReason.EVALUATION_ERROR
               : RunReport.CompletionReason.PROPERTY_VIOLATION;
-      return new RunReport.Completion(RunReport.CompletionPhase.SEARCH, reason);
+      return RunReport.Completion.search(reason);
     }
     if (result instanceof ModelCheckLimitReached) {
       String message = Objects.toString(result.getMessage(), "").toLowerCase(Locale.ROOT);
@@ -2087,32 +2110,26 @@ public class Animate implements Callable<Integer> {
               : message.contains("time limit")
                   ? RunReport.CompletionReason.TIME_LIMIT
                   : RunReport.CompletionReason.PARTIAL;
-      return new RunReport.Completion(RunReport.CompletionPhase.SEARCH, reason);
+      return RunReport.Completion.search(reason);
     }
     if (result instanceof ModelCheckOk) {
       String message = Objects.toString(result.getMessage(), "").toLowerCase(Locale.ROOT);
       if (message.contains("all operations were covered")) {
-        return new RunReport.Completion(
-            RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.COVERAGE_LIMIT);
+        return RunReport.Completion.search(RunReport.CompletionReason.COVERAGE_LIMIT);
       }
       if (message.contains("not all nodes were considered")) {
-        return new RunReport.Completion(
-            RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PARTIAL);
+        return RunReport.Completion.search(RunReport.CompletionReason.PARTIAL);
       }
       if (message.contains("no more error nodes found")) {
-        return new RunReport.Completion(
-            RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.EXHAUSTIVE);
+        return RunReport.Completion.search(RunReport.CompletionReason.EXHAUSTIVE);
       }
       // A newly introduced successful-looking result must not silently overclaim exhaustiveness.
-      return new RunReport.Completion(
-          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PARTIAL);
+      return RunReport.Completion.search(RunReport.CompletionReason.PARTIAL);
     }
     if (result instanceof CheckInterrupted) {
-      return new RunReport.Completion(
-          RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.INTERRUPTED);
+      return RunReport.Completion.search(RunReport.CompletionReason.INTERRUPTED);
     }
-    return new RunReport.Completion(
-        RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
+    return RunReport.Completion.search(RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   /**

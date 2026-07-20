@@ -59,6 +59,7 @@ public class RunReportTest {
 
     RunReport report =
         RunReport.of(RunReport.Status.VIOLATION, "boom", check)
+            .withFinding(RunReport.FindingCategory.INVARIANT_VIOLATION)
             .withCounterexample(counterexample)
             .withCompletion(RunReport.CompletionReason.PROPERTY_VIOLATION)
             .withSearchStatistics(new RunReport.SearchStatistics(3, 2, 4))
@@ -189,6 +190,17 @@ public class RunReportTest {
   }
 
   @Test
+  public void testLtsminCompletionNormalizesEveryVerdict() {
+    assertLtsminCompletion(LtsminSupport.Verdict.OK, RunReport.CompletionReason.EXHAUSTIVE);
+    assertLtsminCompletion(
+        LtsminSupport.Verdict.VIOLATION, RunReport.CompletionReason.PROPERTY_VIOLATION);
+    assertLtsminCompletion(
+        LtsminSupport.Verdict.INTERRUPTED, RunReport.CompletionReason.INTERRUPTED);
+    assertLtsminCompletion(
+        LtsminSupport.Verdict.INCOMPLETE, RunReport.CompletionReason.MODEL_CHECK_FAILURE);
+  }
+
+  @Test
   public void testSingleCheckDerivesTheOutcomeFromTheStatus() {
     assertEquals(RunReport.Outcome.PASSED, singleCheckOutcome(RunReport.Status.OK));
     assertEquals(RunReport.Outcome.FAILED, singleCheckOutcome(RunReport.Status.VIOLATION));
@@ -229,5 +241,10 @@ public class RunReportTest {
   private static void assertSymbolicCompletion(
       SymbolicModelcheckCommand.ResultType result, RunReport.CompletionReason reason) {
     assertCompletion(Animate.symbolicCompletion(result), reason);
+  }
+
+  private static void assertLtsminCompletion(
+      LtsminSupport.Verdict verdict, RunReport.CompletionReason reason) {
+    assertCompletion(Animate.ltsminCompletion(verdict), reason);
   }
 }

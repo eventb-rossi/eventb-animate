@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -25,13 +26,22 @@ record RunReport(
     SearchStatistics searchStatistics,
     Integer exitCodeOverride) {
 
+  /** The lowercase spelling used for enum values in every external report format. */
+  private interface Labelled {
+    String name();
+
+    default String label() {
+      return name().toLowerCase(Locale.ROOT);
+    }
+  }
+
   RunReport {
     checks = List.copyOf(checks);
     evaluations = List.copyOf(evaluations);
   }
 
   /** Run verdicts, ordered from best to worst; the exit codes follow the README contract. */
-  enum Status {
+  enum Status implements Labelled {
     /** The requested check found nothing wrong (possibly within a stated bound). */
     OK,
     /** A definite negative verdict: violation, disproof, imperfect replay. */
@@ -51,91 +61,80 @@ record RunReport(
         case INCOMPLETE -> 2;
       };
     }
-
-    /** The lowercase report label (e.g. "ok"/"violation"); the one spelling every writer emits. */
-    String label() {
-      return name().toLowerCase(Locale.ROOT);
-    }
   }
 
   /** Outcome of one named check within the run (one JUnit testcase later). */
-  enum Outcome {
+  enum Outcome implements Labelled {
     PASSED,
     FAILED,
     SKIPPED,
     ERROR;
-
-    /** The lowercase report label (e.g. "passed"/"failed"); the one spelling every writer emits. */
-    String label() {
-      return name().toLowerCase(Locale.ROOT);
-    }
   }
 
   /** Machine-readable classification of how a model-checking run finished. */
-  enum CompletionClassification {
+  enum CompletionClassification implements Labelled {
     COMPLETE,
     COUNTEREXAMPLE,
     INCOMPLETE,
     ERROR;
-
-    String label() {
-      return name().toLowerCase(Locale.ROOT);
-    }
   }
 
   /** The terminal phase in which a top-level model check stopped. */
-  enum CompletionPhase {
+  enum CompletionPhase implements Labelled {
     LOAD,
     CONSTANT_SETUP,
     INITIALIZATION,
     SEARCH;
-
-    String label() {
-      return name().toLowerCase(Locale.ROOT);
-    }
   }
 
   /** Stable machine-readable reason for a model-checking completion classification. */
-  enum CompletionReason {
-    EXHAUSTIVE,
-    PROOF,
-    PROPERTY_VIOLATION,
-    GOAL_REACHED,
-    STATE_LIMIT,
-    TIME_LIMIT,
-    COVERAGE_LIMIT,
-    PARTIAL,
-    INTERRUPTED,
-    INPUT_FAILURE,
-    INFEASIBLE,
-    EVALUATION_ERROR,
-    ENGINE_FAILURE;
+  enum CompletionReason implements Labelled {
+    EXHAUSTIVE(CompletionClassification.COMPLETE, CompletionPhase.SEARCH),
+    PROOF(CompletionClassification.COMPLETE, CompletionPhase.SEARCH),
+    PROPERTY_VIOLATION(CompletionClassification.COUNTEREXAMPLE, CompletionPhase.SEARCH),
+    GOAL_REACHED(CompletionClassification.COUNTEREXAMPLE, CompletionPhase.SEARCH),
+    STATE_LIMIT(CompletionClassification.INCOMPLETE, CompletionPhase.SEARCH),
+    TIME_LIMIT(CompletionClassification.INCOMPLETE, CompletionPhase.SEARCH),
+    COVERAGE_LIMIT(CompletionClassification.INCOMPLETE, CompletionPhase.SEARCH),
+    PARTIAL(CompletionClassification.INCOMPLETE, CompletionPhase.SEARCH),
+    INTERRUPTED(
+        CompletionClassification.INCOMPLETE,
+        CompletionPhase.CONSTANT_SETUP,
+        CompletionPhase.INITIALIZATION,
+        CompletionPhase.SEARCH),
+    INPUT_FAILURE(CompletionClassification.ERROR, CompletionPhase.LOAD),
+    INFEASIBLE(
+        CompletionClassification.ERROR,
+        CompletionPhase.CONSTANT_SETUP,
+        CompletionPhase.INITIALIZATION),
+    EVALUATION_ERROR(
+        CompletionClassification.ERROR,
+        CompletionPhase.CONSTANT_SETUP,
+        CompletionPhase.INITIALIZATION,
+        CompletionPhase.SEARCH),
+    ENGINE_FAILURE(
+        CompletionClassification.ERROR,
+        CompletionPhase.CONSTANT_SETUP,
+        CompletionPhase.INITIALIZATION,
+        CompletionPhase.SEARCH);
 
-    String label() {
-      return name().toLowerCase(Locale.ROOT);
+    private final CompletionClassification classification;
+    private final EnumSet<CompletionPhase> validPhases;
+
+    CompletionReason(
+        CompletionClassification classification,
+        CompletionPhase firstPhase,
+        CompletionPhase... otherPhases) {
+      this.classification = classification;
+      this.validPhases = EnumSet.of(firstPhase, otherPhases);
     }
 
     CompletionClassification classification() {
-      return switch (this) {
-        case EXHAUSTIVE, PROOF -> CompletionClassification.COMPLETE;
-        case PROPERTY_VIOLATION, GOAL_REACHED -> CompletionClassification.COUNTEREXAMPLE;
-        case STATE_LIMIT, TIME_LIMIT, COVERAGE_LIMIT, PARTIAL, INTERRUPTED ->
-            CompletionClassification.INCOMPLETE;
-        case INPUT_FAILURE, INFEASIBLE, EVALUATION_ERROR, ENGINE_FAILURE ->
-            CompletionClassification.ERROR;
-      };
+      return classification;
     }
 
     boolean validIn(CompletionPhase phase) {
-      return switch (phase) {
-        case LOAD -> this == INPUT_FAILURE;
-        case CONSTANT_SETUP, INITIALIZATION ->
-            this == INFEASIBLE
-                || this == EVALUATION_ERROR
-                || this == ENGINE_FAILURE
-                || this == INTERRUPTED;
-        case SEARCH -> this != INPUT_FAILURE && this != INFEASIBLE;
-      };
+      return validPhases.contains(phase);
     }
   }
 
@@ -153,30 +152,41 @@ record RunReport(
     CompletionClassification classification() {
       return reason.classification();
     }
-  }
 
-  /** Stable identity for the one definite finding that stopped a check. */
-  enum FindingCategory {
-    INVARIANT_VIOLATION,
-    ASSERTION_VIOLATION,
-    DEADLOCK,
-    GOAL_REACHED,
-    STATE_EVALUATION_ERROR,
-    WELL_DEFINEDNESS_ERROR,
-    LTL_VIOLATION,
-    UNKNOWN;
-
-    String label() {
-      return name().toLowerCase(Locale.ROOT);
+    static Completion search(CompletionReason reason) {
+      return new Completion(CompletionPhase.SEARCH, reason);
     }
   }
 
-  record Finding(FindingCategory category, String check) {
+  /** Stable identity for the one definite finding that stopped a check. */
+  enum FindingCategory implements Labelled {
+    INVARIANT_VIOLATION("invariant"),
+    ASSERTION_VIOLATION("assertions"),
+    DEADLOCK("deadlock"),
+    GOAL_REACHED("goal"),
+    STATE_EVALUATION_ERROR("state-evaluation"),
+    WELL_DEFINEDNESS_ERROR("well-definedness"),
+    LTL_VIOLATION("ltl"),
+    UNKNOWN("consistency");
+
+    private final String check;
+
+    FindingCategory(String check) {
+      this.check = check;
+    }
+
+    String check() {
+      return check;
+    }
+  }
+
+  record Finding(FindingCategory category) {
     Finding {
       Objects.requireNonNull(category, "category");
-      if (check == null || check.isBlank()) {
-        throw new IllegalArgumentException("finding check must not be blank");
-      }
+    }
+
+    String check() {
+      return category.check();
     }
   }
 
@@ -389,12 +399,12 @@ record RunReport(
         exitCode);
   }
 
-  RunReport withFinding(FindingCategory category, String check) {
+  RunReport withFinding(FindingCategory category) {
     return new RunReport(
         status,
         message,
         checks,
-        new Finding(category, check),
+        new Finding(category),
         counterexample,
         evaluations,
         traceFile,

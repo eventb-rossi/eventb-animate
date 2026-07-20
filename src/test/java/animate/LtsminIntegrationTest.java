@@ -64,6 +64,9 @@ public class LtsminIntegrationTest {
     assertTrue(result.output().contains("Coverage unavailable for external LTSmin exploration"));
     assertFalse(result.output().contains("Coverage properties:"));
     assertEquals(RunReport.Status.OK, result.command().lastReport.status());
+    assertEquals(
+        RunReport.CompletionReason.EXHAUSTIVE, result.command().lastReport.completion().reason());
+    assertNull(result.command().lastReport.searchStatistics());
     assertEquals(2, result.command().lastReport.checks().size());
     assertEquals(RunReport.Outcome.PASSED, result.command().lastReport.checks().get(0).outcome());
     assertEquals(RunReport.Outcome.PASSED, result.command().lastReport.checks().get(1).outcome());
@@ -102,6 +105,10 @@ public class LtsminIntegrationTest {
       JsonNode root = TestCli.parseJson(Files.readString(report));
       assertEquals(3, root.get("formatVersion").asInt());
       assertEquals("violation", root.get("status").asText());
+      assertEquals("counterexample", root.get("completion").get("classification").asText());
+      assertEquals("search", root.get("completion").get("phase").asText());
+      assertEquals("property_violation", root.get("completion").get("reason").asText());
+      assertNull(root.get("searchStatistics"));
       assertEquals("failed", root.get("checks").get(0).get("outcome").asText());
       assertEquals("skipped", root.get("checks").get(1).get("outcome").asText());
       assertTrue(root.get("counterexample").get("transitions").size() > 0);
@@ -140,6 +147,9 @@ public class LtsminIntegrationTest {
         result.output().indexOf(success),
         result.output().lastIndexOf(success));
     assertEquals(RunReport.Status.OK, result.command().lastReport.status());
+    assertEquals(
+        RunReport.CompletionReason.EXHAUSTIVE, result.command().lastReport.completion().reason());
+    assertNull(result.command().lastReport.searchStatistics());
   }
 
   @Test(timeout = 120000)
@@ -153,6 +163,10 @@ public class LtsminIntegrationTest {
     assertTrue(result.output().contains("--backend ltsmin-sequential"));
     assertFalse(result.output().contains("Counterexample trace:"));
     assertEquals(RunReport.Status.VIOLATION, result.command().lastReport.status());
+    assertEquals(
+        RunReport.CompletionReason.PROPERTY_VIOLATION,
+        result.command().lastReport.completion().reason());
+    assertNull(result.command().lastReport.searchStatistics());
     assertNull(result.command().lastReport.counterexample());
   }
 }

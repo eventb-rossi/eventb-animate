@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import com.google.common.io.MoreFiles;
 import com.google.common.io.RecursiveDeleteOption;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -97,8 +98,51 @@ public class LtsminSupportTest {
     }
   }
 
+  @Test
+  public void symbolicCompatibilityWrapperRemovesTraceArguments() throws Exception {
+    Path source = Files.createTempDirectory("ltsmin-source-");
+    LtsminSupport.ToolDirectory tools = null;
+    try {
+      executable(source, "prob2lts-sym", "#!/bin/sh\nprintf '%s\\n' \"$@\"\n");
+      executable(source, "ltsmin-printtrace");
+      tools = LtsminSupport.prepareTools(Animate.CheckBackend.LTSMIN_SYMBOLIC, source);
+
+      Path preparedDirectory = tools.directory();
+      Process process =
+          new ProcessBuilder(
+                  preparedDirectory.resolve("prob2lts-sym").toString(),
+                  "endpoint",
+                  "--stats",
+                  "--when",
+                  "--trace",
+                  "trace.gcf",
+                  "--invariant=inv1",
+                  "argument with spaces")
+              .start();
+      String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+
+      assertEquals(0, process.waitFor());
+      assertEquals(
+          List.of("endpoint", "--stats", "--when", "--invariant=inv1", "argument with spaces"),
+          output.lines().toList());
+
+      tools.close();
+      tools = null;
+      assertFalse(Files.exists(preparedDirectory));
+    } finally {
+      if (tools != null) {
+        tools.close();
+      }
+      deleteToolDirectory(source);
+    }
+  }
+
   private static void executable(Path directory, String name) throws IOException {
-    Path executable = Files.createFile(directory.resolve(name));
+    executable(directory, name, "");
+  }
+
+  private static void executable(Path directory, String name, String contents) throws IOException {
+    Path executable = Files.writeString(directory.resolve(name), contents);
     assertTrue(
         "Could not make test file executable: " + executable,
         executable.toFile().setExecutable(true));
