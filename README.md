@@ -263,10 +263,54 @@ describing the run at the end: what ran (`command`, `model`, `machine`,
 the evidence (a `counterexample` summary with the transition list, violating
 state, and violated invariants; the `--save` trace path as `traceFile`; and,
 when `--eval` or the `eval` subcommand was used, an `evaluations` array of
-per-state `{formula, value}` blocks). The document carries `formatVersion: 2`;
-the key set only changes with a version bump. Report files are overwritten on
-every run (they are per-run telemetry, so no `--force` is needed), and usage
-errors write no report at all -- the run never started.
+per-state `{formula, value}` blocks).
+
+Format version 3 adds `completion` to every top-level `check` report. Its
+`classification` is `complete`, `counterexample`, `incomplete`, or `error`;
+its `phase` is the terminal phase in which execution stopped (`load`,
+`constant_setup`, `initialization`, or `search`), and its stable `reason`
+explains the stop precisely. Reaching a later phase means every earlier phase
+completed successfully. The allowed combinations are:
+
+- `load`: `input_failure`
+- `constant_setup` or `initialization`: `infeasible`, `evaluation_error`,
+  `engine_failure`, or `interrupted`
+- `search`: `exhaustive`, `proof`, `property_violation`, `goal_reached`,
+  `state_limit`, `time_limit`, `coverage_limit`, `partial`, `evaluation_error`,
+  `engine_failure`, or `interrupted`
+
+The classification remains a coarse normalization: `exhaustive` and `proof`
+are complete; property violations and reached goals are counterexamples;
+limits, partial runs, and interruptions are incomplete; infeasibility and
+input, evaluation, or engine failures are errors.
+
+Definite findings also carry a top-level `finding` with a stable `category`
+and the failed `check` identity. Invariant, assertion, deadlock, goal, state
+evaluation, well-definedness, and LTL findings have distinct categories;
+future unrecognized checker results use the conservative `unknown` category.
+The finding identity is deliberately separate from `completion.reason`.
+
+This is deliberately separate from the existing run `status` and exit code. A
+built-in check stopped by `--states`, `--time-limit`, or
+`--stop-at-full-coverage` still has `status: "ok"` and exits 0 when it found no
+violation, while `completion.classification: "incomplete"` records that the
+search was not exhaustive.
+
+Built-in consistency checks also emit final `searchStatistics` with
+`statesDiscovered`, `statesProcessed`, and `transitions`. These counters come
+from the checker's final callback and are present whether or not `--progress`
+is enabled. They are omitted when search never starts or no final counters are
+available. ProB's LTL and symbolic APIs and the external LTSmin backends do not
+expose compatible final counters, so those modes emit `completion` but omit
+`searchStatistics`. Non-check commands omit `completion`, `finding`, and
+`searchStatistics`. Usage errors write no report at all because the run never
+started.
+
+The document carries `formatVersion: 3`; the key set only changes with a
+version bump. The published [JSON Schema](docs/json-report-v3.schema.json) and
+[examples](docs/examples/) define the complete contract. Report files are
+overwritten on every run (they are per-run telemetry, so no `--force` is
+needed).
 
 ```bash
 eventb-animate --json report.json --save trace.json model.bum

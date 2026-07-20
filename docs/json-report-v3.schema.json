@@ -1,0 +1,725 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/eventb-rossi/eventb-animate/main/docs/json-report-v3.schema.json",
+  "title": "eventb-animate JSON report v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "formatVersion",
+    "tool",
+    "toolVersion",
+    "command",
+    "timestamp",
+    "durationMs",
+    "status",
+    "exitCode",
+    "checks"
+  ],
+  "properties": {
+    "formatVersion": {
+      "const": 3
+    },
+    "tool": {
+      "const": "eventb-animate"
+    },
+    "toolVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model": {
+      "type": "string"
+    },
+    "machine": {
+      "type": "string",
+      "minLength": 1
+    },
+    "probVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,9})?Z$"
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "status": {
+      "enum": ["ok", "violation", "incomplete", "error"]
+    },
+    "completion": {
+      "$ref": "#/$defs/completion"
+    },
+    "searchStatistics": {
+      "$ref": "#/$defs/searchStatistics"
+    },
+    "exitCode": {
+      "type": "integer"
+    },
+    "message": {
+      "type": "string"
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "finding": {
+      "$ref": "#/$defs/finding"
+    },
+    "counterexample": {
+      "$ref": "#/$defs/counterexample"
+    },
+    "evaluations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/stateEvaluation"
+      }
+    },
+    "traceFile": {
+      "type": "string"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "command": {
+            "const": "check"
+          }
+        },
+        "required": ["command"]
+      },
+      "then": {
+        "required": ["completion"],
+        "oneOf": [
+          {
+            "properties": {
+              "status": {
+                "const": "ok"
+              },
+              "completion": {
+                "properties": {
+                  "classification": {
+                    "enum": ["complete", "incomplete"]
+                  },
+                  "reason": {
+                    "enum": [
+                      "exhaustive",
+                      "proof",
+                      "state_limit",
+                      "time_limit",
+                      "coverage_limit",
+                      "partial"
+                    ]
+                  }
+                }
+              },
+              "exitCode": {
+                "enum": [0, 1]
+              }
+            },
+            "not": {
+              "required": ["finding"]
+            }
+          },
+          {
+            "properties": {
+              "status": {
+                "const": "violation"
+              },
+              "completion": {
+                "properties": {
+                  "classification": {
+                    "enum": ["counterexample", "error"]
+                  },
+                  "reason": {
+                    "enum": ["property_violation", "goal_reached", "evaluation_error"]
+                  }
+                }
+              },
+              "exitCode": {
+                "const": 1
+              }
+            },
+            "required": ["finding"]
+          },
+          {
+            "properties": {
+              "status": {
+                "const": "incomplete"
+              },
+              "completion": {
+                "properties": {
+                  "classification": {
+                    "enum": ["incomplete", "error"]
+                  },
+                  "reason": {
+                    "enum": [
+                      "state_limit",
+                      "time_limit",
+                      "partial",
+                      "interrupted",
+                      "engine_failure"
+                    ]
+                  }
+                }
+              },
+              "exitCode": {
+                "const": 2
+              }
+            },
+            "not": {
+              "required": ["finding"]
+            }
+          },
+          {
+            "properties": {
+              "status": {
+                "const": "error"
+              },
+              "completion": {
+                "properties": {
+                  "classification": {
+                    "const": "error"
+                  },
+                  "reason": {
+                    "enum": [
+                      "input_failure",
+                      "infeasible",
+                      "evaluation_error",
+                      "engine_failure"
+                    ]
+                  }
+                }
+              },
+              "exitCode": {
+                "const": 1
+              }
+            },
+            "not": {
+              "required": ["finding"]
+            }
+          }
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": ["completion"]
+            },
+            {
+              "required": ["searchStatistics"]
+            },
+            {
+              "required": ["finding"]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["searchStatistics"]
+      },
+      "then": {
+        "properties": {
+          "completion": {
+            "properties": {
+              "phase": {
+                "const": "search"
+              }
+            }
+          }
+        },
+        "required": ["completion"]
+      }
+    },
+    {
+      "if": {
+        "required": ["finding"]
+      },
+      "then": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/invariantFinding"
+          },
+          {
+            "$ref": "#/$defs/assertionFinding"
+          },
+          {
+            "$ref": "#/$defs/deadlockFinding"
+          },
+          {
+            "$ref": "#/$defs/goalFinding"
+          },
+          {
+            "$ref": "#/$defs/stateEvaluationFinding"
+          },
+          {
+            "$ref": "#/$defs/wellDefinednessFinding"
+          },
+          {
+            "$ref": "#/$defs/ltlFinding"
+          },
+          {
+            "$ref": "#/$defs/unknownFinding"
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["classification", "phase", "reason"],
+      "properties": {
+        "classification": {
+          "type": "string"
+        },
+        "phase": {
+          "enum": ["load", "constant_setup", "initialization", "search"]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "phase": {
+              "const": "load"
+            },
+            "classification": {
+              "const": "error"
+            },
+            "reason": {
+              "const": "input_failure"
+            }
+          }
+        },
+        {
+          "properties": {
+            "phase": {
+              "enum": ["constant_setup", "initialization"]
+            },
+            "classification": {
+              "const": "error"
+            },
+            "reason": {
+              "enum": ["infeasible", "evaluation_error", "engine_failure"]
+            }
+          }
+        },
+        {
+          "properties": {
+            "phase": {
+              "enum": ["constant_setup", "initialization"]
+            },
+            "classification": {
+              "const": "incomplete"
+            },
+            "reason": {
+              "const": "interrupted"
+            }
+          }
+        },
+        {
+          "properties": {
+            "phase": {
+              "const": "search"
+            },
+            "classification": {
+              "const": "complete"
+            },
+            "reason": {
+              "enum": ["exhaustive", "proof"]
+            }
+          }
+        },
+        {
+          "properties": {
+            "phase": {
+              "const": "search"
+            },
+            "classification": {
+              "const": "counterexample"
+            },
+            "reason": {
+              "enum": ["property_violation", "goal_reached"]
+            }
+          }
+        },
+        {
+          "properties": {
+            "phase": {
+              "const": "search"
+            },
+            "classification": {
+              "const": "incomplete"
+            },
+            "reason": {
+              "enum": [
+                "state_limit",
+                "time_limit",
+                "coverage_limit",
+                "partial",
+                "interrupted"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "phase": {
+              "const": "search"
+            },
+            "classification": {
+              "const": "error"
+            },
+            "reason": {
+              "enum": ["evaluation_error", "engine_failure"]
+            }
+          }
+        }
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "check"],
+      "properties": {
+        "category": {
+          "enum": [
+            "invariant_violation",
+            "assertion_violation",
+            "deadlock",
+            "goal_reached",
+            "state_evaluation_error",
+            "well_definedness_error",
+            "ltl_violation",
+            "unknown"
+          ]
+        },
+        "check": {
+          "enum": [
+            "invariant",
+            "assertions",
+            "deadlock",
+            "goal",
+            "state-evaluation",
+            "well-definedness",
+            "ltl",
+            "consistency"
+          ]
+        }
+      }
+    },
+    "invariantFinding": {
+      "$ref": "#/$defs/findingPair",
+      "properties": {
+        "completion": {
+          "properties": {
+            "reason": {"const": "property_violation"}
+          }
+        },
+        "finding": {
+          "properties": {
+            "category": {"const": "invariant_violation"},
+            "check": {"const": "invariant"}
+          }
+        },
+        "checks": {
+          "contains": {
+            "$ref": "#/$defs/failedInvariantCheck"
+          }
+        }
+      }
+    },
+    "assertionFinding": {
+      "$ref": "#/$defs/findingPair",
+      "properties": {
+        "completion": {
+          "properties": {
+            "reason": {"const": "property_violation"}
+          }
+        },
+        "finding": {
+          "properties": {
+            "category": {"const": "assertion_violation"},
+            "check": {"const": "assertions"}
+          }
+        },
+        "checks": {
+          "contains": {
+            "properties": {
+              "name": {"const": "assertions"},
+              "outcome": {"const": "failed"}
+            },
+            "required": ["name", "outcome"]
+          }
+        }
+      }
+    },
+    "deadlockFinding": {
+      "$ref": "#/$defs/findingPair",
+      "properties": {
+        "completion": {
+          "properties": {
+            "reason": {"const": "property_violation"}
+          }
+        },
+        "finding": {
+          "properties": {
+            "category": {"const": "deadlock"},
+            "check": {"const": "deadlock"}
+          }
+        },
+        "checks": {
+          "contains": {
+            "properties": {
+              "name": {"const": "deadlock"},
+              "outcome": {"const": "failed"}
+            },
+            "required": ["name", "outcome"]
+          }
+        }
+      }
+    },
+    "goalFinding": {
+      "$ref": "#/$defs/findingPair",
+      "properties": {
+        "completion": {
+          "properties": {
+            "reason": {"const": "goal_reached"}
+          }
+        },
+        "finding": {
+          "properties": {
+            "category": {"const": "goal_reached"},
+            "check": {"const": "goal"}
+          }
+        },
+        "checks": {
+          "contains": {
+            "properties": {
+              "name": {"const": "goal"},
+              "outcome": {"const": "failed"}
+            },
+            "required": ["name", "outcome"]
+          }
+        }
+      }
+    },
+    "stateEvaluationFinding": {
+      "$ref": "#/$defs/findingPair",
+      "properties": {
+        "completion": {
+          "properties": {
+            "reason": {"const": "evaluation_error"}
+          }
+        },
+        "finding": {
+          "properties": {
+            "category": {"const": "state_evaluation_error"},
+            "check": {"const": "state-evaluation"}
+          }
+        },
+        "checks": {
+          "contains": {
+            "properties": {
+              "name": {"const": "state-evaluation"},
+              "outcome": {"const": "failed"}
+            },
+            "required": ["name", "outcome"]
+          }
+        }
+      }
+    },
+    "wellDefinednessFinding": {
+      "$ref": "#/$defs/findingPair",
+      "properties": {
+        "completion": {
+          "properties": {
+            "reason": {"const": "evaluation_error"}
+          }
+        },
+        "finding": {
+          "properties": {
+            "category": {"const": "well_definedness_error"},
+            "check": {"const": "well-definedness"}
+          }
+        },
+        "checks": {
+          "contains": {
+            "properties": {
+              "name": {"const": "well-definedness"},
+              "outcome": {"const": "failed"}
+            },
+            "required": ["name", "outcome"]
+          }
+        }
+      }
+    },
+    "ltlFinding": {
+      "$ref": "#/$defs/findingPair",
+      "properties": {
+        "completion": {
+          "properties": {
+            "reason": {"const": "property_violation"}
+          }
+        },
+        "finding": {
+          "properties": {
+            "category": {"const": "ltl_violation"},
+            "check": {"const": "ltl"}
+          }
+        },
+        "checks": {
+          "contains": {
+            "properties": {
+              "name": {"const": "ltl"},
+              "outcome": {"const": "failed"}
+            },
+            "required": ["name", "outcome"]
+          }
+        }
+      }
+    },
+    "unknownFinding": {
+      "$ref": "#/$defs/findingPair",
+      "properties": {
+        "completion": {
+          "properties": {
+            "reason": {"const": "evaluation_error"}
+          }
+        },
+        "finding": {
+          "properties": {
+            "category": {"const": "unknown"},
+            "check": {"const": "consistency"}
+          }
+        },
+        "checks": {
+          "contains": {
+            "properties": {
+              "name": {"const": "consistency"},
+              "outcome": {"const": "failed"}
+            },
+            "required": ["name", "outcome"]
+          }
+        }
+      }
+    },
+    "findingPair": {
+      "type": "object",
+      "required": ["finding", "checks"]
+    },
+    "failedInvariantCheck": {
+      "properties": {
+        "name": {"const": "invariant"},
+        "outcome": {"const": "failed"}
+      },
+      "required": ["name", "outcome"]
+    },
+    "searchStatistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statesDiscovered", "statesProcessed", "transitions"],
+      "properties": {
+        "statesDiscovered": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "statesProcessed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transitions": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "outcome"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "outcome": {
+          "enum": ["passed", "failed", "skipped", "error"]
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    },
+    "counterexample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transitions", "violatingState"],
+      "properties": {
+        "transitions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "violatingState": {
+          "type": "string"
+        },
+        "violatedInvariants": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "stateEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "values"],
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/formulaValue"
+          }
+        }
+      }
+    },
+    "formulaValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["formula", "value"],
+      "properties": {
+        "formula": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "error": {
+          "const": true
+        }
+      }
+    }
+  }
+}

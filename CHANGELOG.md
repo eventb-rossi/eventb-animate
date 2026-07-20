@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- Add structured completion classifications, stop reasons, and final built-in
+  search statistics to JSON report format v3
+
+### Documentation
+
+- Publish a JSON Schema and examples for report format v3, including field
+  availability rules for non-check commands and checker backends
+
+### Testing
+
+- Validate example and generated reports against the published v3 schema
+
 ## [6.1] - 2026-07-19
 
 ### Features

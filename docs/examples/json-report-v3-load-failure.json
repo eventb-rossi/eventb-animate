@@ -1,0 +1,18 @@
+{
+  "formatVersion": 3,
+  "tool": "eventb-animate",
+  "toolVersion": "6.1",
+  "command": "check",
+  "model": "missing.bum",
+  "timestamp": "2026-07-20T10:03:00Z",
+  "durationMs": 2,
+  "status": "error",
+  "completion": {
+    "classification": "error",
+    "phase": "load",
+    "reason": "input_failure"
+  },
+  "exitCode": 1,
+  "message": "Error loading model: Model file does not exist: missing.bum",
+  "checks": []
+}

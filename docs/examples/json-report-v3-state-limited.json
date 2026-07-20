@@ -1,0 +1,34 @@
+{
+  "formatVersion": 3,
+  "tool": "eventb-animate",
+  "toolVersion": "6.1",
+  "command": "check",
+  "model": "models/traffic-light/M2.bum",
+  "machine": "M2",
+  "probVersion": "1.15.1-final",
+  "timestamp": "2026-07-20T10:01:00Z",
+  "durationMs": 303,
+  "status": "ok",
+  "completion": {
+    "classification": "incomplete",
+    "phase": "search",
+    "reason": "state_limit"
+  },
+  "searchStatistics": {
+    "statesDiscovered": 2,
+    "statesProcessed": 1,
+    "transitions": 1
+  },
+  "exitCode": 0,
+  "message": "No invariant violation or deadlock found (state limit reached; not an exhaustive check).",
+  "checks": [
+    {
+      "name": "invariant",
+      "outcome": "passed"
+    },
+    {
+      "name": "deadlock",
+      "outcome": "passed"
+    }
+  ]
+}

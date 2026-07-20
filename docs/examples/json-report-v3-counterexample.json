@@ -1,0 +1,57 @@
+{
+  "formatVersion": 3,
+  "tool": "eventb-animate",
+  "toolVersion": "6.1",
+  "command": "check",
+  "model": "models/base-model/M1.bum",
+  "machine": "M1",
+  "probVersion": "1.15.1-final",
+  "timestamp": "2026-07-20T10:02:00Z",
+  "durationMs": 517,
+  "status": "violation",
+  "completion": {
+    "classification": "counterexample",
+    "phase": "search",
+    "reason": "property_violation"
+  },
+  "searchStatistics": {
+    "statesDiscovered": 4,
+    "statesProcessed": 3,
+    "transitions": 5
+  },
+  "exitCode": 1,
+  "message": "Invariant violation found.",
+  "checks": [
+    {
+      "name": "invariant",
+      "outcome": "failed",
+      "message": "Invariant violation found."
+    },
+    {
+      "name": "deadlock",
+      "outcome": "skipped",
+      "message": "search stopped at the first violation"
+    }
+  ],
+  "finding": {
+    "category": "invariant_violation",
+    "check": "invariant"
+  },
+  "counterexample": {
+    "transitions": ["INITIALISATION()", "event()"],
+    "violatingState": "(x = 1)",
+    "violatedInvariants": ["inv1"]
+  },
+  "evaluations": [
+    {
+      "state": "violating state",
+      "values": [
+        {
+          "formula": "1 + 1",
+          "value": "2"
+        }
+      ]
+    }
+  ],
+  "traceFile": "trace.json"
+}

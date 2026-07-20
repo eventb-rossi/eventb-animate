@@ -40,6 +40,7 @@ dependencies {
 
 	testImplementation 'junit:junit:4.13.2'
 	testImplementation 'org.hamcrest:hamcrest:3.0'
+	testImplementation 'com.networknt:json-schema-validator:2.0.4'
 }
 
 spotless {

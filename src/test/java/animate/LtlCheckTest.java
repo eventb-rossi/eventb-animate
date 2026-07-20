@@ -37,10 +37,10 @@ public class LtlCheckTest {
   }
 
   @Test
-  public void testLtlParseErrorIsAnInputFailureWithoutLoading() {
+  public void testLtlParseErrorIsAUsageErrorWithoutLoading() {
     TestCli.Result result = TestCli.execute("--ltl", "G (", TRAFFIC_LIGHT_M0);
 
-    assertEquals("A parse error is an input failure:\n" + result.output(), 1, result.exitCode());
+    assertEquals("A parse error is a usage error:\n" + result.output(), 2, result.exitCode());
     assertFalse(
         "The model must not be loaded for an unparseable formula:\n" + result.output(),
         result.output().contains("Machine:"));

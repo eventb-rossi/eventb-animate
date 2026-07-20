@@ -2,6 +2,7 @@ package animate;
 
 import static org.junit.Assert.*;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import de.prob.check.tracereplay.ReplayedTrace;
 import de.prob.check.tracereplay.TraceReplayStatus;
 import java.nio.file.Files;
@@ -41,6 +42,25 @@ public class ReplayCommandTest {
           replayResult.output().contains("Trace replay status: PERFECT"));
     } finally {
       Files.deleteIfExists(traceFile);
+    }
+  }
+
+  @Test(timeout = 90000)
+  public void testSavedParameterizedTraceUsesFormatSixAndReplays() throws Exception {
+    Path trace = saveAbstractTrace("M0", "cars_go=TRUE");
+    try {
+      JsonNode document = TestCli.parseJson(Files.readString(trace));
+      assertEquals(6, document.get("metadata").get("formatVersion").asInt());
+      JsonNode parameterized =
+          document.get("transitionList").findValues("params").stream().findFirst().orElseThrow();
+      assertEquals("TRUE", parameterized.get("new_value").asText());
+
+      TestCli.Result replay =
+          TestCli.execute("replay", "-m", "M0", "-t", trace.toString(), TRAFFIC_LIGHT.toString());
+      assertEquals("Parameterized trace should replay:\n" + replay.output(), 0, replay.exitCode());
+      assertTrue(replay.output().contains("Trace replay status: PERFECT"));
+    } finally {
+      Files.deleteIfExists(trace);
     }
   }
 

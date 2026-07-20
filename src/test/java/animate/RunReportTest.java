@@ -1,11 +1,9 @@
 package animate;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
-import static org.junit.Assert.assertTrue;
 
 import de.prob.animator.CommandInterruptedException;
 import de.prob.animator.command.SymbolicModelcheckCommand;
@@ -15,6 +13,7 @@ import de.prob.check.CheckError;
 import de.prob.check.CheckInterrupted;
 import de.prob.check.LTLNotYetFinished;
 import de.prob.check.LTLOk;
+import de.prob.check.ModelCheckErrorUncovered;
 import de.prob.check.ModelCheckLimitReached;
 import de.prob.check.ModelCheckOk;
 import de.prob.exception.ProBError;
@@ -61,13 +60,15 @@ public class RunReportTest {
         RunReport.of(RunReport.Status.VIOLATION, "boom", check)
             .withFinding(RunReport.FindingCategory.INVARIANT_VIOLATION)
             .withCounterexample(counterexample)
-            .withCompletion(RunReport.CompletionReason.PROPERTY_VIOLATION)
+            .withCompletion(
+                RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PROPERTY_VIOLATION)
             .withSearchStatistics(new RunReport.SearchStatistics(3, 2, 4))
             .withTraceFile(Path.of("trace.json"));
 
     assertEquals(RunReport.Status.VIOLATION, report.status());
     assertEquals("boom", report.message());
     assertEquals(List.of(check), report.checks());
+    assertEquals(RunReport.FindingCategory.INVARIANT_VIOLATION, report.finding().category());
     assertEquals(counterexample, report.counterexample());
     assertEquals(Path.of("trace.json"), report.traceFile());
     assertEquals(RunReport.CompletionReason.PROPERTY_VIOLATION, report.completion().reason());
@@ -112,17 +113,35 @@ public class RunReportTest {
         RunReport.CompletionReason.INTERRUPTED);
     assertCompletion(
         Animate.consistencyCompletion(new CheckError("kernel failed")),
-        RunReport.CompletionReason.MODEL_CHECK_FAILURE);
+        RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   @Test
-  public void testConstantSetupExceptionDistinguishesInfeasibilityFromFailure() {
-    assertTrue(
-        Animate.hasUnsatisfiableAxioms(
-            new IllegalStateException(
-                setupError("AXIOMS are unsatisfiable (but some valued)"))));
-    assertFalse(
-        Animate.hasUnsatisfiableAxioms(setupError("AXIOMS are unknown (but some valued)")));
+  public void testInitializationPhaseExceptionDistinguishesInfeasibilityFromFailure() {
+    RuntimeException unsatisfiable =
+        new IllegalStateException(setupError("AXIOMS are unsatisfiable (but some valued)"));
+    assertEquals(
+        RunReport.CompletionReason.INFEASIBLE,
+        Animate.initializationPhaseFailureReason(
+            RunReport.CompletionPhase.CONSTANT_SETUP, unsatisfiable));
+
+    assertEquals(
+        RunReport.CompletionReason.ENGINE_FAILURE,
+        Animate.initializationPhaseFailureReason(
+            RunReport.CompletionPhase.CONSTANT_SETUP,
+            setupError("AXIOMS are unknown (but some valued)")));
+
+    assertEquals(
+        RunReport.CompletionReason.INFEASIBLE,
+        Animate.initializationPhaseFailureReason(
+            RunReport.CompletionPhase.INITIALIZATION,
+            new IllegalStateException("INITIALISATION FAILS")));
+
+    assertEquals(
+        RunReport.CompletionReason.INTERRUPTED,
+        Animate.initializationPhaseFailureReason(
+            RunReport.CompletionPhase.CONSTANT_SETUP,
+            new CommandInterruptedException("interrupted", List.of())));
   }
 
   @Test
@@ -134,7 +153,7 @@ public class RunReportTest {
     assertLtlCompletion(new LTLNotYetFinished(formula), false, RunReport.CompletionReason.PARTIAL);
     assertLtlCompletion(new CheckInterrupted(), false, RunReport.CompletionReason.INTERRUPTED);
     assertLtlCompletion(
-        new CheckError("formula failed"), false, RunReport.CompletionReason.MODEL_CHECK_FAILURE);
+        new CheckError("formula failed"), false, RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   @Test
@@ -150,7 +169,7 @@ public class RunReportTest {
         SymbolicModelcheckCommand.ResultType.LIMIT_REACHED, RunReport.CompletionReason.PARTIAL);
     assertSymbolicCompletion(
         SymbolicModelcheckCommand.ResultType.INTERRUPTED, RunReport.CompletionReason.INTERRUPTED);
-    assertSymbolicCompletion(null, RunReport.CompletionReason.MODEL_CHECK_FAILURE);
+    assertSymbolicCompletion(null, RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   @Test
@@ -162,21 +181,65 @@ public class RunReportTest {
 
     RunReport.Completion failed =
         Animate.symbolicFailureCompletion(new IllegalStateException("failed"));
-    assertCompletion(failed, RunReport.CompletionReason.MODEL_CHECK_FAILURE);
+    assertCompletion(failed, RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   @Test
   public void testCompletionDerivesClassificationFromReason() {
     for (RunReport.CompletionReason reason : RunReport.CompletionReason.values()) {
-      assertCompletion(new RunReport.Completion(reason), reason);
+      RunReport.CompletionPhase phase =
+          switch (reason) {
+            case INPUT_FAILURE -> RunReport.CompletionPhase.LOAD;
+            case INFEASIBLE -> RunReport.CompletionPhase.INITIALIZATION;
+            default -> RunReport.CompletionPhase.SEARCH;
+          };
+      assertCompletion(new RunReport.Completion(phase, reason), reason);
     }
+  }
+
+  @Test
+  public void testCompletionRejectsContradictoryPhaseAndReason() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new RunReport.Completion(
+                RunReport.CompletionPhase.INITIALIZATION, RunReport.CompletionReason.EXHAUSTIVE));
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new RunReport.Completion(
+                RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.INFEASIBLE));
+  }
+
+  @Test
+  public void testBuiltInFindingCategoriesUseExactKernelResults() {
+    assertFinding(
+        "Invariant violation found.", RunReport.FindingCategory.INVARIANT_VIOLATION, "invariant");
+    assertFinding(
+        "Assertion violation found.", RunReport.FindingCategory.ASSERTION_VIOLATION, "assertions");
+    assertFinding("Deadlock found.", RunReport.FindingCategory.DEADLOCK, "deadlock");
+    assertFinding(
+        "A state error occured.",
+        RunReport.FindingCategory.STATE_EVALUATION_ERROR,
+        "state-evaluation");
+    assertFinding(
+        "XTL error (unsafe state) found.",
+        RunReport.FindingCategory.STATE_EVALUATION_ERROR,
+        "state-evaluation");
+    assertFinding(
+        "A well definedness error occured.",
+        RunReport.FindingCategory.WELL_DEFINEDNESS_ERROR,
+        "well-definedness");
+    assertFinding(
+        "prefix: Invariant violation found.", RunReport.FindingCategory.UNKNOWN, "consistency");
   }
 
   @Test
   public void testCounterexampleEvidenceFailurePreservesDefiniteReport() {
     RunReport report =
         RunReport.singleCheck(RunReport.Status.VIOLATION, "invariant", "violated")
-            .withCompletion(RunReport.CompletionReason.PROPERTY_VIOLATION);
+            .withCompletion(
+                RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PROPERTY_VIOLATION);
 
     RunReport preserved =
         Animate.withCounterexampleEvidence(
@@ -197,7 +260,7 @@ public class RunReportTest {
     assertLtsminCompletion(
         LtsminSupport.Verdict.INTERRUPTED, RunReport.CompletionReason.INTERRUPTED);
     assertLtsminCompletion(
-        LtsminSupport.Verdict.INCOMPLETE, RunReport.CompletionReason.MODEL_CHECK_FAILURE);
+        LtsminSupport.Verdict.INCOMPLETE, RunReport.CompletionReason.ENGINE_FAILURE);
   }
 
   @Test
@@ -225,9 +288,24 @@ public class RunReportTest {
                 "AXIOMS are not true and no value was found", ErrorItem.Type.MESSAGE, List.of())));
   }
 
+  private static void assertFinding(
+      String message, RunReport.FindingCategory category, String check) {
+    RunReport.Finding finding =
+        Animate.findingFor(new ModelCheckErrorUncovered(message, "state-id"));
+    assertEquals(category, finding.category());
+    assertEquals(check, finding.check());
+  }
+
   private static void assertCompletion(
       RunReport.Completion completion, RunReport.CompletionReason reason) {
     assertEquals(reason, completion.reason());
+    assertEquals(
+        switch (reason) {
+          case INPUT_FAILURE -> RunReport.CompletionPhase.LOAD;
+          case INFEASIBLE -> RunReport.CompletionPhase.INITIALIZATION;
+          default -> RunReport.CompletionPhase.SEARCH;
+        },
+        completion.phase());
     assertEquals(reason.classification(), completion.classification());
   }
 

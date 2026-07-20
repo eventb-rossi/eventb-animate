@@ -1,0 +1,20 @@
+{
+  "formatVersion": 3,
+  "tool": "eventb-animate",
+  "toolVersion": "6.1",
+  "command": "info",
+  "model": "models/traffic-light/M2.bum",
+  "machine": "M2",
+  "probVersion": "1.15.1-final",
+  "timestamp": "2026-07-20T10:04:00Z",
+  "durationMs": 185,
+  "status": "ok",
+  "exitCode": 0,
+  "message": "Machine information written.",
+  "checks": [
+    {
+      "name": "info",
+      "outcome": "passed"
+    }
+  ]
+}

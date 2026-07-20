@@ -6,7 +6,6 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -22,8 +21,6 @@ import org.w3c.dom.Element;
 /** The --json report: one versioned document describing the whole run. */
 public class JsonReportTest {
 
-  private static final ObjectMapper MAPPER = new ObjectMapper();
-
   private static final String BASE_MODEL_M1 =
       Paths.get("src/test/resources/models/base-model/M1.bum").toString();
   private static final String TRAFFIC_LIGHT_M0 =
@@ -32,6 +29,8 @@ public class JsonReportTest {
       Paths.get("src/test/resources/models/traffic-light/M2.bum").toString();
   private static final String FILE_SYSTEM_M0 =
       Paths.get("src/test/resources/models/file-system/M0.bum").toString();
+  private static final String REPORT_OUTCOMES =
+      Paths.get("src/test/resources/models/report-outcomes").toString();
 
   @Test
   public void testLoadFailureReportIsWrittenWithErrorStatus() throws Exception {
@@ -42,13 +41,13 @@ public class JsonReportTest {
         "The human error stays on stderr:\n" + result.stderr(),
         result.stderr().contains("Error loading model:"));
 
-    JsonNode root = MAPPER.readTree(result.stdout());
+    JsonNode root = TestCli.parseJson(result.stdout());
     assertEquals(3, root.get("formatVersion").asInt());
     assertEquals("eventb-animate", root.get("tool").asText());
     assertEquals("check", root.get("command").asText());
     assertEquals("missing.bum", root.get("model").asText());
     assertEquals("error", root.get("status").asText());
-    assertCompletion(root, "error", "model_load_failure");
+    assertCompletion(root, "error", "load", "input_failure");
     assertEquals(1, root.get("exitCode").asInt());
     assertTrue(root.get("message").asText().contains("Error loading model"));
     assertEquals(0, root.get("checks").size());
@@ -68,7 +67,7 @@ public class JsonReportTest {
   public void testDocumentKeysAreStable() throws Exception {
     TestCli.SplitResult result = TestCli.executeSplit("--json", "-", "missing.bum");
 
-    JsonNode root = MAPPER.readTree(result.stdout());
+    JsonNode root = TestCli.parseJson(result.stdout());
     List<String> keys = new ArrayList<>();
     root.fieldNames().forEachRemaining(keys::add);
     assertEquals(
@@ -97,7 +96,7 @@ public class JsonReportTest {
       TestCli.Result result = TestCli.execute("--json", report.toString(), "missing.bum");
 
       assertEquals(1, result.exitCode());
-      JsonNode root = MAPPER.readTree(Files.readString(report));
+      JsonNode root = TestCli.parseJson(Files.readString(report));
       assertEquals("error", root.get("status").asText());
       assertEquals(result.command().lastReport.message(), root.get("message").asText());
     } finally {
@@ -130,9 +129,10 @@ public class JsonReportTest {
           "The console counterexample is unchanged:\n" + result.output(),
           result.output().contains("Counterexample trace:"));
 
-      JsonNode root = MAPPER.readTree(Files.readString(report));
+      JsonNode root = TestCli.parseJson(Files.readString(report));
       assertEquals("violation", root.get("status").asText());
-      assertCompletion(root, "counterexample", "property_violation");
+      assertCompletion(root, "counterexample", "search", "property_violation");
+      assertFinding(root, "invariant_violation", "invariant");
       assertSearchStatistics(root);
       assertEquals("M1", root.get("machine").asText());
       assertTrue(root.get("probVersion").asText().length() > 0);
@@ -187,9 +187,9 @@ public class JsonReportTest {
         "The coverage block moves to stderr too:\n" + result.stderr(),
         result.stderr().contains("Coverage properties:"));
 
-    JsonNode root = MAPPER.readTree(result.stdout());
+    JsonNode root = TestCli.parseJson(result.stdout());
     assertEquals("ok", root.get("status").asText());
-    assertCompletion(root, "complete", "exhaustive");
+    assertCompletion(root, "complete", "search", "exhaustive");
     assertSearchStatistics(root);
     assertFalse(
         "statistics must not require --progress:\n" + result.stderr(),
@@ -207,9 +207,9 @@ public class JsonReportTest {
         TestCli.executeSplit("--json", "-", "--states", "1", TRAFFIC_LIGHT_M2);
 
     assertEquals(0, result.exitCode());
-    JsonNode root = MAPPER.readTree(result.stdout());
+    JsonNode root = TestCli.parseJson(result.stdout());
     assertEquals("ok", root.get("status").asText());
-    assertCompletion(root, "incomplete", "state_limit");
+    assertCompletion(root, "incomplete", "search", "state_limit");
     assertSearchStatistics(root);
   }
 
@@ -219,8 +219,8 @@ public class JsonReportTest {
         TestCli.executeSplit("--json", "-", "--time-limit", "1", "-z", "8", FILE_SYSTEM_M0);
 
     assertEquals(0, result.exitCode());
-    JsonNode root = MAPPER.readTree(result.stdout());
-    assertCompletion(root, "incomplete", "time_limit");
+    JsonNode root = TestCli.parseJson(result.stdout());
+    assertCompletion(root, "incomplete", "search", "time_limit");
     assertSearchStatistics(root);
   }
 
@@ -230,8 +230,8 @@ public class JsonReportTest {
         TestCli.executeSplit("--json", "-", "--stop-at-full-coverage", TRAFFIC_LIGHT_M2);
 
     assertEquals(0, result.exitCode());
-    JsonNode root = MAPPER.readTree(result.stdout());
-    assertCompletion(root, "incomplete", "coverage_limit");
+    JsonNode root = TestCli.parseJson(result.stdout());
+    assertCompletion(root, "incomplete", "search", "coverage_limit");
     assertSearchStatistics(root);
   }
 
@@ -250,7 +250,7 @@ public class JsonReportTest {
     }
     assertTrue("a final progress line should contain engine counters", finalLine != null);
 
-    JsonNode statistics = MAPPER.readTree(result.stdout()).get("searchStatistics");
+    JsonNode statistics = TestCli.parseJson(result.stdout()).get("searchStatistics");
     assertEquals(Integer.parseInt(finalLine.group(1)), statistics.get("statesProcessed").asInt());
     assertEquals(Integer.parseInt(finalLine.group(2)), statistics.get("statesDiscovered").asInt());
     assertEquals(Integer.parseInt(finalLine.group(3)), statistics.get("transitions").asInt());
@@ -266,9 +266,10 @@ public class JsonReportTest {
 
       assertEquals("The formula is violated:\n" + result.output(), 1, result.exitCode());
 
-      JsonNode root = MAPPER.readTree(Files.readString(report));
+      JsonNode root = TestCli.parseJson(Files.readString(report));
       assertEquals("violation", root.get("status").asText());
-      assertCompletion(root, "counterexample", "property_violation");
+      assertCompletion(root, "counterexample", "search", "property_violation");
+      assertFinding(root, "ltl_violation", "ltl");
       assertNull("LTL does not expose compatible counters", root.get("searchStatistics"));
       assertEquals(1, root.get("checks").size());
       assertEquals("ltl", root.get("checks").get(0).get("name").asText());
@@ -293,9 +294,9 @@ public class JsonReportTest {
 
       assertEquals("A formula error is a non-verdict:\n" + result.output(), 2, result.exitCode());
 
-      JsonNode root = MAPPER.readTree(Files.readString(report));
+      JsonNode root = TestCli.parseJson(Files.readString(report));
       assertEquals("incomplete", root.get("status").asText());
-      assertCompletion(root, "error", "model_check_failure");
+      assertCompletion(root, "error", "search", "engine_failure");
       assertNull("the LTL check failed before returning counters", root.get("searchStatistics"));
       assertEquals(2, root.get("exitCode").asInt());
       assertEquals("error", root.get("checks").get(0).get("outcome").asText());
@@ -310,14 +311,54 @@ public class JsonReportTest {
         TestCli.executeSplit("--json", "-", "--ltl", "G {cars_go = cars_go}", TRAFFIC_LIGHT_M0);
 
     assertEquals(0, clean.exitCode());
-    JsonNode cleanRoot = MAPPER.readTree(clean.stdout());
-    assertCompletion(cleanRoot, "complete", "exhaustive");
+    JsonNode cleanRoot = TestCli.parseJson(clean.stdout());
+    assertCompletion(cleanRoot, "complete", "search", "exhaustive");
     assertNull("LTL does not expose compatible counters", cleanRoot.get("searchStatistics"));
   }
 
-  private static void assertCompletion(JsonNode root, String classification, String reason) {
+  @Test(timeout = 120000)
+  public void testSetupInitializationAndEvaluationFailuresAreStructured() throws Exception {
+    JsonNode constantFailure = runJson(REPORT_OUTCOMES + "/constant-infeasible/M0.bum");
+    assertCompletion(constantFailure, "error", "constant_setup", "infeasible");
+    assertNull("constant setup never enters search", constantFailure.get("searchStatistics"));
+
+    JsonNode initializationFailure = runJson(REPORT_OUTCOMES + "/initialization-infeasible/M0.bum");
+    assertCompletion(initializationFailure, "error", "initialization", "infeasible");
+    assertNull("initialization never enters search", initializationFailure.get("searchStatistics"));
+
+    JsonNode stateError = runJson(REPORT_OUTCOMES + "/state-evaluation/M0.bum");
+    assertCompletion(stateError, "error", "search", "evaluation_error");
+    assertFinding(stateError, "state_evaluation_error", "state-evaluation");
+  }
+
+  @Test(timeout = 120000)
+  public void testAssertionFindingHasStableIdentity() throws Exception {
+    TestCli.SplitResult result =
+        TestCli.executeSplit("--json", "-", "--assertions", REPORT_OUTCOMES + "/assertion/M0.bum");
+
+    assertEquals(1, result.exitCode());
+    JsonNode root = TestCli.parseJson(result.stdout());
+    assertCompletion(root, "counterexample", "search", "property_violation");
+    assertFinding(root, "assertion_violation", "assertions");
+  }
+
+  private static JsonNode runJson(String model) throws Exception {
+    TestCli.SplitResult result = TestCli.executeSplit("--json", "-", model);
+    assertEquals(
+        "The fixture should produce a definite failure:\n" + result.stderr(), 1, result.exitCode());
+    return TestCli.parseJson(result.stdout());
+  }
+
+  private static void assertCompletion(
+      JsonNode root, String classification, String phase, String reason) {
     assertEquals(classification, root.get("completion").get("classification").asText());
+    assertEquals(phase, root.get("completion").get("phase").asText());
     assertEquals(reason, root.get("completion").get("reason").asText());
+  }
+
+  private static void assertFinding(JsonNode root, String category, String check) {
+    assertEquals(category, root.get("finding").get("category").asText());
+    assertEquals(check, root.get("finding").get("check").asText());
   }
 
   private static void assertSearchStatistics(JsonNode root) {

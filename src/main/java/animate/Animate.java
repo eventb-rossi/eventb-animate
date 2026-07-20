@@ -1297,24 +1297,10 @@ public class Animate implements Callable<Integer> {
             report.withCompletion(
                 RunReport.CompletionPhase.LOAD, RunReport.CompletionReason.INPUT_FAILURE);
       } else {
-        report = report.withCompletion(defaultCheckCompletion(report.status()));
+        throw new IllegalStateException("check report is missing structured completion");
       }
     }
     return finishRun(report);
-  }
-
-  private static RunReport.Completion defaultCheckCompletion(RunReport.Status status) {
-    return switch (status) {
-      case OK ->
-          new RunReport.Completion(
-              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.EXHAUSTIVE);
-      case VIOLATION ->
-          new RunReport.Completion(
-              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.PROPERTY_VIOLATION);
-      case INCOMPLETE, ERROR ->
-          new RunReport.Completion(
-              RunReport.CompletionPhase.SEARCH, RunReport.CompletionReason.ENGINE_FAILURE);
-    };
   }
 
   private boolean isLtlRun() {
@@ -1391,9 +1377,7 @@ public class Animate implements Callable<Integer> {
     } catch (LtlParseException e) {
       // The check never ran, so nothing was proven.
       String message = "invalid LTL formula: " + e.getMessage();
-      System.err.println("Error: " + message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "ltl", message)
-          .withCompletion(RunReport.CompletionPhase.LOAD, RunReport.CompletionReason.INPUT_FAILURE);
+      throw usageError(spec, message);
     }
     return withStateSpace(stateSpace -> runLtlCheck(stateSpace, formula));
   }
@@ -1721,12 +1705,7 @@ public class Animate implements Callable<Integer> {
           hasConstantSetup(stateSpace)
               ? RunReport.CompletionPhase.CONSTANT_SETUP
               : RunReport.CompletionPhase.INITIALIZATION;
-      RunReport.CompletionReason reason =
-          phase == RunReport.CompletionPhase.CONSTANT_SETUP && hasUnsatisfiableAxioms(e)
-                  || phase == RunReport.CompletionPhase.INITIALIZATION
-                      && Objects.toString(e.getMessage(), "").contains("INITIALISATION FAILS")
-              ? RunReport.CompletionReason.INFEASIBLE
-              : RunReport.CompletionReason.EVALUATION_ERROR;
+      RunReport.CompletionReason reason = initializationPhaseFailureReason(phase, e);
       return phaseFailure(
           phase,
           reason,
@@ -1756,8 +1735,12 @@ public class Animate implements Callable<Integer> {
           errorDetail = state.getStateErrors().iterator().next().getLongDescription();
         }
       } catch (RuntimeException e) {
-        evaluationError = true;
-        errorDetail = exceptionDetail(e);
+        RunReport.CompletionPhase phase = RunReport.CompletionPhase.INITIALIZATION;
+        RunReport.CompletionReason reason = initializationPhaseFailureReason(phase, e);
+        return phaseFailure(
+            phase,
+            reason,
+            reason == RunReport.CompletionReason.INFEASIBLE ? null : exceptionDetail(e));
       }
     }
     return phaseFailure(
@@ -1768,7 +1751,23 @@ public class Animate implements Callable<Integer> {
         errorDetail);
   }
 
-  static boolean hasUnsatisfiableAxioms(Throwable error) {
+  /** Maps exceptions raised while establishing a feasible initial state onto stable reasons. */
+  static RunReport.CompletionReason initializationPhaseFailureReason(
+      RunReport.CompletionPhase phase, RuntimeException error) {
+    if (causedBy(error, CommandInterruptedException.class)) {
+      return RunReport.CompletionReason.INTERRUPTED;
+    }
+    if (phase == RunReport.CompletionPhase.CONSTANT_SETUP && hasUnsatisfiableAxioms(error)) {
+      return RunReport.CompletionReason.INFEASIBLE;
+    }
+    if (phase == RunReport.CompletionPhase.INITIALIZATION
+        && Objects.toString(error.getMessage(), "").contains("INITIALISATION FAILS")) {
+      return RunReport.CompletionReason.INFEASIBLE;
+    }
+    return RunReport.CompletionReason.ENGINE_FAILURE;
+  }
+
+  private static boolean hasUnsatisfiableAxioms(Throwable error) {
     for (Throwable cause = error; cause != null; cause = cause.getCause()) {
       if (cause instanceof ProBError probError
           && probError.getErrors().stream()
@@ -1940,6 +1939,15 @@ public class Animate implements Callable<Integer> {
         : error.getMessage();
   }
 
+  private static boolean causedBy(Throwable error, Class<? extends Throwable> type) {
+    for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+      if (type.isInstance(cause)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** Saves the counterexample when a --save target was given and records the written path. */
   RunReport withSavedTrace(
       RunReport report, Trace counterexample, StateSpace stateSpace, Path target) {
@@ -2060,13 +2068,16 @@ public class Animate implements Callable<Integer> {
     if (fallbackMessage != null && !fallbackMessage.isBlank()) {
       message += " " + fallbackMessage;
     }
-    System.err.println("Error: " + message);
+    boolean interrupted = completion.reason() == RunReport.CompletionReason.INTERRUPTED;
+    System.err.println((interrupted ? "" : "Error: ") + message);
     RunReport.Outcome outcome =
         completion.reason() == RunReport.CompletionReason.INFEASIBLE
             ? RunReport.Outcome.FAILED
             : RunReport.Outcome.ERROR;
     return RunReport.of(
-        RunReport.Status.ERROR, message, new RunReport.Check(check, outcome, message));
+        interrupted ? RunReport.Status.INCOMPLETE : RunReport.Status.ERROR,
+        message,
+        new RunReport.Check(check, outcome, message));
   }
 
   /** Maps ProB's result classes and stop messages onto the stable JSON completion vocabulary. */
