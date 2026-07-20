@@ -77,9 +77,114 @@ jar {
 	}
 }
 
-shadowJar {
+def servicePrefix = 'META-INF/services/'
+def groovyExtensionPaths = [
+	'META-INF/groovy/org.codehaus.groovy.runtime.ExtensionModule',
+	'META-INF/services/org.codehaus.groovy.runtime.ExtensionModule'
+]
+def groovyExtensionKeys = ['extensionClasses', 'staticExtensionClasses']
+def serviceProviders = { zip, entry ->
+	zip.getInputStream(entry).withCloseable { stream ->
+		stream.getText('UTF-8').readLines()
+			.collect { it.replaceFirst(/#.*/, '').trim() }
+			.findAll { !it.isEmpty() }
+	}
+}
+def groovyExtensionClasses = { zip, entry ->
+	zip.getInputStream(entry).withCloseable { stream ->
+		def properties = new Properties()
+		properties.load(stream)
+		groovyExtensionKeys.collectMany { key ->
+			properties.getProperty(key, '').split(',')
+				.collect { it.trim() }
+				.findAll { !it.isEmpty() }
+		}
+	}
+}
+
+def shadowJarTask = tasks.named('shadowJar')
+def verifyShadowServices = tasks.register('verifyShadowServices') {
+	group = 'verification'
+	description = 'Verify runtime service providers in the shaded jar'
+	dependsOn shadowJarTask
+	inputs.files(configurations.runtimeClasspath)
+	inputs.file(shadowJarTask.flatMap { it.archiveFile })
+
+	doLast {
+		def expected = [:].withDefault { new LinkedHashSet<String>() }
+		def expectedGroovyExtensions = new LinkedHashSet<String>()
+		configurations.runtimeClasspath.files
+			.findAll { it.isFile() && it.name.endsWith('.jar') }
+			.sort()
+			.each { dependency ->
+				new java.util.zip.ZipFile(dependency).withCloseable { zip ->
+					zip.entries().each { entry ->
+						if (!entry.directory && entry.name.startsWith(servicePrefix)
+							&& !groovyExtensionPaths.contains(entry.name)) {
+							expected[entry.name].addAll(serviceProviders(zip, entry))
+						}
+						if (!entry.directory && groovyExtensionPaths.contains(entry.name)) {
+							expectedGroovyExtensions.addAll(groovyExtensionClasses(zip, entry))
+						}
+					}
+				}
+			}
+
+		def actual = [:].withDefault { new LinkedHashSet<String>() }
+		def entryCounts = [:].withDefault { 0 }
+		def actualGroovyExtensions = new LinkedHashSet<String>()
+		def groovyExtensionCount = 0
+		new java.util.zip.ZipFile(shadowJarTask.get().archiveFile.get().asFile)
+			.withCloseable { zip ->
+				zip.entries().each { entry ->
+					if (!entry.directory && entry.name.startsWith(servicePrefix)
+						&& !groovyExtensionPaths.contains(entry.name)) {
+						entryCounts[entry.name]++
+						actual[entry.name].addAll(serviceProviders(zip, entry))
+					}
+					if (!entry.directory && groovyExtensionPaths.contains(entry.name)) {
+						groovyExtensionCount++
+						actualGroovyExtensions.addAll(groovyExtensionClasses(zip, entry))
+					}
+				}
+			}
+
+		def failures = []
+		expected.sort().each { service, providers ->
+			if (entryCounts[service] != 1) {
+				failures.add("${service}: expected one merged entry, found ${entryCounts[service]}")
+			}
+			def missing = providers - actual[service]
+			if (!missing.isEmpty()) {
+				failures.add("${service}: missing providers ${missing.sort().join(', ')}")
+			}
+		}
+		if (groovyExtensionCount != 1) {
+			failures.add(
+				"Groovy extension module: expected one merged entry, found ${groovyExtensionCount}")
+		}
+		def missingGroovyExtensions = expectedGroovyExtensions - actualGroovyExtensions
+		if (!missingGroovyExtensions.isEmpty()) {
+			failures.add(
+				"Groovy extension module: missing classes ${missingGroovyExtensions.sort().join(', ')}")
+		}
+		if (!failures.isEmpty()) {
+			throw new GradleException(
+				'Shaded service verification failed:\n- ' + failures.join('\n- '))
+		}
+		logger.lifecycle(
+			"Verified ${expected.size()} merged service descriptors and " +
+				"${expectedGroovyExtensions.size()} Groovy extension classes in " +
+				shadowJarTask.get().archiveFileName.get())
+	}
+}
+
+shadowJarTask.configure {
 	archiveClassifier = ''
+	duplicatesStrategy = DuplicatesStrategy.INCLUDE
 	mergeServiceFiles()
+	mergeGroovyExtensionModules()
+	finalizedBy verifyShadowServices
 }
 
 // Only the shadow jar is consumed (CI verifies and uploads build/libs/*.jar);
