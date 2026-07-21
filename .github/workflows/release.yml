@@ -72,8 +72,6 @@ jobs:
           mkdir -p release-bundle/assets
           mv "${source_jars[0]}" \
             "release-bundle/assets/eventb-animate-${version}.jar"
-          cp "release-bundle/assets/eventb-animate-${version}.jar" \
-            release-bundle/assets/eventb-animate.jar
           cp RELEASE_NOTES.md release-bundle/RELEASE_NOTES.md
           cp docs/json-report-v3.schema.json \
             "release-bundle/assets/eventb-animate-${version}-json-report-v3.schema.json"
@@ -129,7 +127,7 @@ jobs:
           version="${RELEASE_TAG#v}"
           assets="release-bundle/assets"
           test -f "$assets/eventb-animate-${version}.jar"
-          test -f "$assets/eventb-animate.jar"
+          test ! -e "$assets/eventb-animate.jar"
           test -f "$assets/eventb-animate-${version}-json-report-v3.schema.json"
           test -f "$assets/eventb-animate-${version}-report-v3.zip"
 
