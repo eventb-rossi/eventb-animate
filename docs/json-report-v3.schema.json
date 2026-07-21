@@ -633,19 +633,23 @@
     },
     "searchStatistics": {
       "type": "object",
+      "description": "ProB search counters excluding completed phase-preflight work; the initial search frontier remains included as discovered.",
       "additionalProperties": false,
       "required": ["statesDiscovered", "statesProcessed", "transitions"],
       "properties": {
         "statesDiscovered": {
           "type": "integer",
+          "description": "States available to or discovered by search, excluding states processed during phase preflight.",
           "minimum": 0
         },
         "statesProcessed": {
           "type": "integer",
+          "description": "States processed during search; at most the configured state limit.",
           "minimum": 0
         },
         "transitions": {
           "type": "integer",
+          "description": "Transitions discovered during search, excluding phase preflight.",
           "minimum": 0
         }
       }

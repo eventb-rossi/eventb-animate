@@ -122,6 +122,8 @@ public class JsonReportTest {
               junit.toString(),
               "--save",
               trace.toString(),
+              "--states",
+              "1",
               BASE_MODEL_M1);
 
       assertEquals("M1 violates its invariant:\n" + result.output(), 1, result.exitCode());
@@ -133,7 +135,8 @@ public class JsonReportTest {
       assertEquals("violation", root.get("status").asText());
       assertCompletion(root, "counterexample", "search", "property_violation");
       assertFinding(root, "invariant_violation", "invariant");
-      assertSearchStatistics(root);
+      JsonNode statistics = assertSearchStatistics(root);
+      assertEquals(1, statistics.get("statesProcessed").asInt());
       assertEquals("M1", root.get("machine").asText());
       assertTrue(root.get("probVersion").asText().length() > 0);
       assertTrue(root.get("durationMs").asLong() > 0);
@@ -210,7 +213,8 @@ public class JsonReportTest {
     JsonNode root = TestCli.parseJson(result.stdout());
     assertEquals("ok", root.get("status").asText());
     assertCompletion(root, "incomplete", "search", "state_limit");
-    assertSearchStatistics(root);
+    JsonNode statistics = assertSearchStatistics(root);
+    assertEquals(1, statistics.get("statesProcessed").asInt());
   }
 
   @Test(timeout = 120000)
@@ -238,7 +242,7 @@ public class JsonReportTest {
   @Test(timeout = 120000)
   public void testJsonStatisticsMatchFinalProgressCounters() throws Exception {
     TestCli.SplitResult result =
-        TestCli.executeSplit("--json", "-", "--progress", TRAFFIC_LIGHT_M2);
+        TestCli.executeSplit("--json", "-", "--states", "3", "--progress", TRAFFIC_LIGHT_M2);
 
     assertEquals(0, result.exitCode());
     Matcher matcher =
@@ -250,7 +254,10 @@ public class JsonReportTest {
     }
     assertTrue("a final progress line should contain engine counters", finalLine != null);
 
-    JsonNode statistics = TestCli.parseJson(result.stdout()).get("searchStatistics");
+    JsonNode root = TestCli.parseJson(result.stdout());
+    assertCompletion(root, "incomplete", "search", "state_limit");
+    JsonNode statistics = assertSearchStatistics(root);
+    assertEquals(3, statistics.get("statesProcessed").asInt());
     assertEquals(Integer.parseInt(finalLine.group(1)), statistics.get("statesProcessed").asInt());
     assertEquals(Integer.parseInt(finalLine.group(2)), statistics.get("statesDiscovered").asInt());
     assertEquals(Integer.parseInt(finalLine.group(3)), statistics.get("transitions").asInt());
@@ -361,11 +368,14 @@ public class JsonReportTest {
     assertEquals(check, root.get("finding").get("check").asText());
   }
 
-  private static void assertSearchStatistics(JsonNode root) {
+  private static JsonNode assertSearchStatistics(JsonNode root) {
     JsonNode statistics = root.get("searchStatistics");
     assertTrue("search statistics should be present", statistics != null);
-    assertTrue(statistics.get("statesDiscovered").asInt() > 0);
+    assertTrue(statistics.get("statesDiscovered").asInt() >= 0);
     assertTrue(statistics.get("statesProcessed").asInt() >= 0);
+    assertTrue(
+        statistics.get("statesDiscovered").asInt() >= statistics.get("statesProcessed").asInt());
     assertTrue(statistics.get("transitions").asInt() >= 0);
+    return statistics;
   }
 }

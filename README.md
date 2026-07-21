@@ -298,14 +298,17 @@ violation, while `completion.classification: "incomplete"` records that the
 search was not exhaustive.
 
 Built-in consistency checks also emit final `searchStatistics` with
-`statesDiscovered`, `statesProcessed`, and `transitions`. These counters come
-from the checker's final callback and are present whether or not `--progress`
-is enabled. They are omitted when search never starts or no final counters are
-available. ProB's LTL and symbolic APIs and the external LTSmin backends do not
-expose compatible final counters, so those modes emit `completion` but omit
-`searchStatistics`. Non-check commands omit `completion`, `finding`, and
-`searchStatistics`. Usage errors write no report at all because the run never
-started.
+`statesDiscovered`, `statesProcessed`, and `transitions`. They exclude states
+processed and transitions discovered during constant-setup and initialization
+preflight; unprocessed states placed on the initial search frontier remain
+included as discovered. Consequently, a run stopped by `--states N` reports
+exactly `N` processed states; a run that finds a result sooner reports fewer.
+The counters are present whether or not `--progress` is enabled and are omitted
+when search never starts or no final counters are available. ProB's LTL and
+symbolic APIs and the external LTSmin backends do not expose compatible final
+counters, so those modes emit `completion` but omit `searchStatistics`.
+Non-check commands omit `completion`, `finding`, and `searchStatistics`. Usage
+errors write no report at all because the run never started.
 
 The document carries `formatVersion: 3`; the key set only changes with a
 version bump. The published [JSON Schema](docs/json-report-v3.schema.json) and

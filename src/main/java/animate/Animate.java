@@ -11,6 +11,7 @@ import de.be4.ltl.core.parser.LtlParseException;
 import de.prob.animator.CommandInterruptedException;
 import de.prob.animator.command.ComputeCoverageCommand;
 import de.prob.animator.command.ComputeCoverageCommand.ComputeCoverageResult;
+import de.prob.animator.command.ComputeStateSpaceStatsCommand;
 import de.prob.animator.command.GetVersionCommand;
 import de.prob.animator.command.SymbolicModelcheckCommand;
 import de.prob.animator.domainobjects.*;
@@ -1606,8 +1607,21 @@ public class Animate implements Callable<Integer> {
       options = options.customGoal(parsedGoal);
     }
 
+    StateSpaceStats searchBaseline;
+    try {
+      ComputeStateSpaceStatsCommand command = new ComputeStateSpaceStatsCommand();
+      stateSpace.execute(command);
+      searchBaseline = Objects.requireNonNull(command.getResult(), "search baseline");
+    } catch (RuntimeException e) {
+      logger.debug("Could not capture the model-check search baseline", e);
+      String message = "Model checking did not complete: " + e.getMessage();
+      System.err.println(message);
+      return incompleteConsistencyReport(message)
+          .withCompletion(RunReport.Completion.search(RunReport.CompletionReason.ENGINE_FAILURE));
+    }
+
     FinalStatisticsListener statistics =
-        new FinalStatisticsListener(progress ? new ProgressPrinter() : null);
+        new FinalStatisticsListener(searchBaseline, progress ? new ProgressPrinter() : null);
     IModelCheckingResult result;
     try {
       result = new ConsistencyChecker(stateSpace, options, statistics).call();
@@ -2179,12 +2193,14 @@ public class Animate implements Callable<Integer> {
     }
   }
 
-  /** Captures final engine counters and optionally forwards callbacks to the progress printer. */
+  /** Captures search-only counter deltas and optionally forwards them to the progress printer. */
   private static final class FinalStatisticsListener implements IModelCheckListener {
+    private final StateSpaceStats baseline;
     private final IModelCheckListener delegate;
     private StateSpaceStats finalStats;
 
-    private FinalStatisticsListener(IModelCheckListener delegate) {
+    private FinalStatisticsListener(StateSpaceStats baseline, IModelCheckListener delegate) {
+      this.baseline = Objects.requireNonNull(baseline, "baseline");
       this.delegate = delegate;
     }
 
@@ -2192,19 +2208,29 @@ public class Animate implements Callable<Integer> {
     public void updateStats(
         String jobId, long timeElapsed, IModelCheckingResult result, StateSpaceStats stats) {
       if (delegate != null) {
-        delegate.updateStats(jobId, timeElapsed, result, stats);
+        delegate.updateStats(jobId, timeElapsed, result, normalize(stats));
       }
     }
 
     @Override
     public void isFinished(
         String jobId, long timeElapsed, IModelCheckingResult result, StateSpaceStats stats) {
-      if (stats != null) {
-        finalStats = stats;
-      }
+      finalStats = normalize(stats);
       if (delegate != null) {
-        delegate.isFinished(jobId, timeElapsed, result, stats);
+        delegate.isFinished(jobId, timeElapsed, result, finalStats);
       }
+    }
+
+    private StateSpaceStats normalize(StateSpaceStats stats) {
+      if (stats == null) {
+        return null;
+      }
+      // Unprocessed nodes discovered by preflight are the search's initial frontier, so retain
+      // them. Only nodes already processed and transitions already explored belong to preflight.
+      return new StateSpaceStats(
+          stats.getNrTotalNodes() - baseline.getNrProcessedNodes(),
+          stats.getNrTotalTransitions() - baseline.getNrTotalTransitions(),
+          stats.getNrProcessedNodes() - baseline.getNrProcessedNodes());
     }
 
     private RunReport.SearchStatistics finalStatistics() {

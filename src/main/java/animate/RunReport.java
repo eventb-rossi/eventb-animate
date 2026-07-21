@@ -190,7 +190,7 @@ record RunReport(
     }
   }
 
-  /** Final counters supplied by the model-checking engine. */
+  /** Search counters excluding preflight work while retaining its unprocessed initial frontier. */
   record SearchStatistics(int statesDiscovered, int statesProcessed, int transitions) {
     SearchStatistics {
       if (statesDiscovered < 0 || statesProcessed < 0 || transitions < 0) {
