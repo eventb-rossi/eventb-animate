@@ -4,13 +4,51 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to repair
+        required: true
+        type: string
 
 env:
   GH_REPO: ${{ github.repository }}
-  RELEASE_TAG: ${{ github.ref_name }}
+  RELEASE_TAG: >-
+    ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
 
 jobs:
+  validate-target:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+
+      - name: Verify recovery target
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! release=$(gh release view "$RELEASE_TAG" \
+            --json isDraft,isImmutable); then
+            echo "::error::Release $RELEASE_TAG does not exist."
+            exit 1
+          fi
+
+          if [ "$(jq -r .isDraft <<< "$release")" = true ]; then
+            echo "::error::Release $RELEASE_TAG is still a draft."
+            exit 1
+          fi
+          if [ "$(jq -r .isImmutable <<< "$release")" = true ]; then
+            echo "::error::Release $RELEASE_TAG is immutable."
+            exit 1
+          fi
+
   prepare-release:
+    needs: [validate-target]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -19,6 +57,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           fetch-depth: 0
 
       - name: Generate release notes
@@ -32,14 +71,26 @@ jobs:
       - name: Verify version consistency
         run: scripts/check-version.sh "$RELEASE_TAG"
 
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle for recovery
+        if: github.event_name == 'workflow_dispatch'
+        uses: gradle/actions/setup-gradle@v6
+
       - name: Download JAR from build workflow
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          target_sha=$(git rev-parse HEAD)
           for attempt in $(seq 1 15); do
             run_id=$(gh run list \
               --workflow build-gradle-project.yml \
-              --commit "${{ github.sha }}" \
+              --commit "$target_sha" \
               --status success \
               --json databaseId \
               --jq '.[0].databaseId')
@@ -54,15 +105,15 @@ jobs:
             sleep 30
           done
 
-          echo "::error::No successful Build and Test run found for commit ${{ github.sha }}."
+          echo "::error::No successful Build and Test run found for commit $target_sha."
           echo "::error::Push the branch and wait for Build and Test to pass before tagging."
           exit 1
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
+      - name: Rebuild JAR for recovery
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          ./gradlew shadowJar --no-daemon
+          cp build/libs/eventb-animate-*.jar .
 
       - name: Stage versioned common assets
         run: |
@@ -110,7 +161,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    needs: [prepare-release]
+    needs: [prepare-release, windows-artifacts]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -122,24 +173,48 @@ jobs:
           name: release-common
           path: release-bundle
 
-      - name: Verify assets and record SHA-256 digests
+      - name: Download Windows release assets
+        uses: actions/download-artifact@v8
+        with:
+          name: release-windows
+          path: release-bundle/assets
+
+      - name: Verify complete release bundle
         run: |
           version="${RELEASE_TAG#v}"
           assets="release-bundle/assets"
-          test -f "$assets/eventb-animate-${version}.jar"
-          test ! -e "$assets/eventb-animate.jar"
-          test -f "$assets/eventb-animate-${version}-json-report-v3.schema.json"
-          test -f "$assets/eventb-animate-${version}-report-v3.zip"
+          expected="$RUNNER_TEMP/expected-release-assets"
+          actual="$RUNNER_TEMP/actual-release-assets"
+
+          printf '%s\n' \
+            "eventb-animate-${version}.jar" \
+            "eventb-animate-${version}-json-report-v3.schema.json" \
+            "eventb-animate-${version}-report-v3.zip" \
+            eventb-animate-win-x64.zip \
+            eventb-animate.msi \
+            | LC_ALL=C sort > "$expected"
+          find "$assets" -maxdepth 1 -type f -printf '%f\n' \
+            | LC_ALL=C sort > "$actual"
+
+          if ! diff -u "$expected" "$actual"; then
+            echo "::error::Staged release assets do not match the expected set."
+            exit 1
+          fi
 
           (
             cd "$assets"
-            find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\n' \
-              | LC_ALL=C sort \
-              | xargs sha256sum
-          ) > "$RUNNER_TEMP/SHA256SUMS"
-          mv "$RUNNER_TEMP/SHA256SUMS" "$assets/SHA256SUMS"
+            xargs sha256sum < "$expected"
+          ) > "$assets/SHA256SUMS"
+          (
+            cd "$assets"
+            sha256sum --check SHA256SUMS
+          )
+
+          printf '%s\n' SHA256SUMS >> "$expected"
+          LC_ALL=C sort -o "$expected" "$expected"
 
       - name: Create release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
@@ -148,18 +223,59 @@ jobs:
           --notes-file release-bundle/RELEASE_NOTES.md
           --title "Event-B Animate $RELEASE_TAG"
 
+      - name: Replace existing release assets
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets="release-bundle/assets"
+          expected="$RUNNER_TEMP/expected-release-assets"
+
+          gh release upload "$RELEASE_TAG" "$assets"/* --clobber
+
+          gh release view "$RELEASE_TAG" --json assets \
+            --jq '.assets[].name' \
+            | while IFS= read -r asset; do
+                if ! grep -Fqx "$asset" "$expected"; then
+                  gh release delete-asset "$RELEASE_TAG" "$asset" --yes
+                fi
+              done
+
+      - name: Verify published release bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          expected="$RUNNER_TEMP/expected-release-assets"
+          published="$RUNNER_TEMP/published-release-assets"
+
+          for attempt in $(seq 1 6); do
+            gh release view "$RELEASE_TAG" --json assets \
+              --jq '.assets[].name' \
+              | LC_ALL=C sort > "$published"
+            if cmp -s "$expected" "$published"; then
+              exit 0
+            fi
+            echo "Attempt $attempt/6: waiting for release assets to settle..."
+            sleep 5
+          done
+
+          diff -u "$expected" "$published" || true
+          echo "::error::Published release assets do not match the expected set."
+          exit 1
+
   # Build self-contained Windows artifacts (bundled JRE, no Java required) with
-  # jpackage and attach them to the release created above. Needs [release] so the
-  # GitHub Release exists before `gh release upload`. A failure here leaves the
-  # release intact with the jar; just re-run this job to add the Windows assets.
-  windows-installer:
-    needs: [release]
+  # jpackage. The release job publishes them together with the common assets so
+  # every release has one complete, checksummed bundle.
+  windows-artifacts:
+    needs: [validate-target]
     runs-on: windows-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -229,23 +345,20 @@ jobs:
         shell: pwsh
         run: Copy-Item msi/eventb-animate-*.msi eventb-animate.msi
 
-      - name: Record Windows SHA-256 digests
+      - name: Stage Windows release assets
         shell: pwsh
         run: |
-          $assets = @('eventb-animate-win-x64.zip', 'eventb-animate.msi')
-          $lines = foreach ($asset in $assets) {
-            $hash = (Get-FileHash -Path $asset -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $asset"
-          }
-          $lines | Out-File -FilePath SHA256SUMS.windows -Encoding ascii
+          New-Item -ItemType Directory release-windows | Out-Null
+          Copy-Item `
+            -Path eventb-animate-win-x64.zip, eventb-animate.msi `
+            -Destination release-windows/
 
-      - name: Upload Windows assets to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >
-          gh release upload "$RELEASE_TAG"
-          eventb-animate-win-x64.zip eventb-animate.msi SHA256SUMS.windows
-          --clobber
+      - name: Upload Windows release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: release-windows/
+          if-no-files-found: error
 
   # Tell the eventb-rossi packaging repos a new release exists, so their
   # version-check workflows run immediately instead of waiting for the daily cron.
@@ -254,6 +367,7 @@ jobs:
   # workflow runs. See eventb-rossi/release-automation for the reusable workflow.
   notify-downstream:
     needs: [release]
+    if: github.event_name == 'push'
     uses: eventb-rossi/release-automation/.github/workflows/notify-downstream.yml@main
     with:
       tool: eventb-animate

@@ -68,12 +68,17 @@ runs:
       env:
         VERSION: ${{ inputs.version }}
       run: |
+        release_tag="$VERSION"
         if [ "$VERSION" = "latest" ]; then
-          url="https://github.com/eventb-rossi/eventb-animate/releases/latest/download/eventb-animate.jar"
-        else
-          url="https://github.com/eventb-rossi/eventb-animate/releases/download/${VERSION}/eventb-animate.jar"
+          release_url=$(curl --silent --show-error --location --fail \
+            --output /dev/null --write-out '%{url_effective}' \
+            https://github.com/eventb-rossi/eventb-animate/releases/latest)
+          release_tag="${release_url##*/}"
         fi
-        curl -sL --fail -o "${{ runner.temp }}/eventb-animate.jar" "$url"
+        release_version="${release_tag#v}"
+        url="https://github.com/eventb-rossi/eventb-animate/releases/download/${release_tag}/eventb-animate-${release_version}.jar"
+        curl --silent --show-error --location --fail \
+          --output "${{ runner.temp }}/eventb-animate.jar" "$url"
 
     - name: Run eventb-animate
       shell: bash

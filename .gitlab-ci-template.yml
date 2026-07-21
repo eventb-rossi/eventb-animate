@@ -14,12 +14,17 @@
     EVENTB_ANIMATE_VERSION: 'latest'
   before_script:
     - |
+      release_tag="$EVENTB_ANIMATE_VERSION"
       if [ "$EVENTB_ANIMATE_VERSION" = "latest" ]; then
-        url="https://github.com/eventb-rossi/eventb-animate/releases/latest/download/eventb-animate.jar"
-      else
-        url="https://github.com/eventb-rossi/eventb-animate/releases/download/${EVENTB_ANIMATE_VERSION}/eventb-animate.jar"
+        release_url=$(curl --silent --show-error --location --fail \
+          --output /dev/null --write-out '%{url_effective}' \
+          https://github.com/eventb-rossi/eventb-animate/releases/latest)
+        release_tag="${release_url##*/}"
       fi
-      curl -sL --fail -o /tmp/eventb-animate.jar "$url"
+      release_version="${release_tag#v}"
+      url="https://github.com/eventb-rossi/eventb-animate/releases/download/${release_tag}/eventb-animate-${release_version}.jar"
+      curl --silent --show-error --location --fail \
+        --output /tmp/eventb-animate.jar "$url"
   script:
     - |
       require_positive_int() {
