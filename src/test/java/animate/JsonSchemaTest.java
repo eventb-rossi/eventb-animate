@@ -314,7 +314,7 @@ public class JsonSchemaTest {
   }
 
   private static void assertInvalid(Schema schema, String label, JsonNode document) {
-    List<Error> errors = schema.validate(document);
+    List<Error> errors = schema.validate(document.toString(), InputFormat.JSON);
     assertFalse(label + " should not validate", errors.isEmpty());
   }
 }
