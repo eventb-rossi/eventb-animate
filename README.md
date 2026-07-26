@@ -627,6 +627,7 @@ a legitimate terminal state) as a failure.
 | `save` | Save the counterexample trace to JSON when a violation is found (check, cbc) | No | — |
 | `json-report` | Write a machine-readable JSON report of the run to this path | No | — |
 | `junit-report` | Write a JUnit XML report to this path (one testcase per checked property) | No | — |
+| `markdown-report` | Write a human-readable Markdown report of the run to this path | No | — |
 | `trace` | Path to JSON trace file (replay, required) | No | — |
 | `args` | Extra args appended to the assembled command | No | — |
 | `version` | Release version tag (e.g., `v6.2`) | No | `latest` |
@@ -699,6 +700,7 @@ animate-model:
 | `EVENTB_ANIMATE_SAVE` | Save the counterexample trace to JSON when a violation is found (check, cbc) | `''` |
 | `EVENTB_ANIMATE_JSON` | Write a machine-readable JSON report of the run to this path | `''` |
 | `EVENTB_ANIMATE_JUNIT` | Write a JUnit XML report to this path (one testcase per checked property) | `''` |
+| `EVENTB_ANIMATE_MARKDOWN` | Write a human-readable Markdown report of the run to this path | `''` |
 | `EVENTB_ANIMATE_TRACE` | Path to JSON trace file (replay, required) | `''` |
 | `EVENTB_ANIMATE_ARGS` | Extra args appended to the assembled command | `''` |
 | `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v6.2`) | `latest` |

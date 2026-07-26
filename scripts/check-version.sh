@@ -33,6 +33,35 @@ for expected in "${EXPECTED_README_REFERENCES[@]}"; do
   fi
 done
 
+# Every knob the two CI integrations accept must have a row in the matching
+# README table, so a new input or variable cannot ship undocumented.
+check_documented() {
+  KIND="$1"
+  NAMES="$2"
+  if [ -z "$NAMES" ]; then
+    echo "ERROR: found no $KIND; the extraction in check-version.sh is stale"
+    exit 1
+  fi
+  while IFS= read -r name; do
+    if ! grep -Fq -- "| \`${name}\` |" README.md; then
+      echo "ERROR: README.md does not document the $KIND: $name"
+      exit 1
+    fi
+  done <<< "$NAMES"
+}
+
+ACTION_INPUTS=$(
+  sed -n '/^inputs:$/,/^runs:$/p' action.yml \
+    | sed -n 's/^  \([a-z0-9-]\{1,\}\):$/\1/p'
+)
+check_documented "GitHub Action input" "$ACTION_INPUTS"
+
+TEMPLATE_VARIABLES=$(
+  sed -n '/^  variables:$/,/^  script:$/p' .gitlab-ci-template.yml \
+    | sed -n 's/^    \(EVENTB_ANIMATE_[A-Z_]\{1,\}\):.*/\1/p'
+)
+check_documented "GitLab CI variable" "$TEMPLATE_VARIABLES"
+
 README_TAGS=$(
   grep -oE "$VERSION_PATTERN" \
     README.md | sort -u || true
