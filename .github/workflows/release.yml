@@ -16,6 +16,12 @@ env:
   RELEASE_TAG: >-
     ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
 
+# Publishing mutates release assets, so runs for the same tag queue instead of
+# racing. The `env` context is unavailable here, so RELEASE_TAG is recomputed.
+concurrency:
+  group: release-${{ inputs.release_tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   validate-target:
     runs-on: ubuntu-latest
@@ -309,7 +315,7 @@ jobs:
         run: >
           jpackage --type app-image --name eventb-animate
           --input staging --main-jar eventb-animate.jar --main-class animate.Animate
-          --app-version ${{ env.APP_VERSION }} --add-modules ALL-MODULE-PATH
+          --app-version $env:APP_VERSION --add-modules ALL-MODULE-PATH
           --win-console --vendor "Event-B Rossi"
           --description "Animate Event-B models using the ProB model checker"
           --dest dist
@@ -342,7 +348,7 @@ jobs:
       - name: Build MSI installer (jpackage)
         run: >
           jpackage --type msi --app-image dist/eventb-animate
-          --name eventb-animate --app-version ${{ env.APP_VERSION }}
+          --name eventb-animate --app-version $env:APP_VERSION
           --win-menu --win-menu-group "Event-B Animate" --dest msi
 
       - name: Normalize MSI name
