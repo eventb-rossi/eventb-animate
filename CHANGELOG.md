@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [6.3] - 2026-07-26
+
+### Bug Fixes
+
+- Reject an empty model-path in the GitHub Action instead of forwarding it to
+  the CLI as an empty positional argument
+- Download the jar from the GitLab CI template's script section so a consumer
+  job that declares its own before_script keeps working
+
+### Documentation
+
+- Document the Markdown report option in both CI integration tables
+- Fail the release version check when a CI input or variable has no row in the
+  matching README table
+
+### Testing
+
+- Bridge Jackson versions in schema validation
+
+### Dependencies
+
+- Bump com.gradleup.shadow from 9.5.1 to 9.6.1
+- Bump com.networknt:json-schema-validator from 2.0.4 to 3.0.6
+
+### CI/CD
+
+- Publish only the versioned jar and recover release artifacts left behind by
+  a partially failed run
+- Build only main, tags, and pull requests, cancelling superseded pull-request
+  runs while letting main and tag builds finish
+- Apply least-privilege token permissions, per-job timeouts, and fail the build
+  when the jar upload matches no file
+- Serialize release runs per tag and pass the app version to jpackage through
+  the environment
+
 ## [6.2] - 2026-07-20
 
 ### Features
