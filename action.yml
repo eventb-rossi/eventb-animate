@@ -101,6 +101,11 @@ runs:
           fi
         }
 
+        if [ -z "$INPUT_MODEL_PATH" ]; then
+          echo "::error::Input 'model-path' is required but not set"
+          exit 1
+        fi
+
         cli_args=()
 
         if [ "$INPUT_COMMAND" = "replay" ]; then
