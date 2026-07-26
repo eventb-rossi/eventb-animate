@@ -9,6 +9,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 # Only pull-request runs are cancelled when superseded. A cancelled push run on
 # main or on a tag would leave that commit without a successful build, and the
 # release workflow refuses to publish a tag it cannot find one for.
@@ -19,6 +22,7 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
     - name: Checkout project sources
@@ -83,3 +87,4 @@ jobs:
       with:
         name: eventb-animate.jar
         path: build/libs/eventb-animate-*.jar
+        if-no-files-found: error
