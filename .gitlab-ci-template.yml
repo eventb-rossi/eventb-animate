@@ -12,7 +12,10 @@
     EVENTB_ANIMATE_TRACE: ''
     EVENTB_ANIMATE_ARGS: ''
     EVENTB_ANIMATE_VERSION: 'latest'
-  before_script:
+  # The jar download belongs to `script`, not `before_script`: `extends` replaces
+  # `before_script` wholesale, so a consumer job that declares one of its own
+  # would silently lose the download and fail on the `java -jar` below.
+  script:
     - |
       release_tag="$EVENTB_ANIMATE_VERSION"
       if [ "$EVENTB_ANIMATE_VERSION" = "latest" ]; then
@@ -25,7 +28,6 @@
       url="https://github.com/eventb-rossi/eventb-animate/releases/download/${release_tag}/eventb-animate-${release_version}.jar"
       curl --silent --show-error --location --fail \
         --output /tmp/eventb-animate.jar "$url"
-  script:
     - |
       require_positive_int() {
         if ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
