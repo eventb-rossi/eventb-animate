@@ -3,11 +3,18 @@ name: Build and Test
 on:
   push:
     branches:
-      - '**'
+      - main
     tags:
       - 'v*'
   pull_request:
   workflow_dispatch:
+
+# Only pull-request runs are cancelled when superseded. A cancelled push run on
+# main or on a tag would leave that commit without a successful build, and the
+# release workflow refuses to publish a tag it cannot find one for.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-and-test:
