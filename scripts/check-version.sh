@@ -33,6 +33,14 @@ for expected in "${EXPECTED_README_REFERENCES[@]}"; do
   fi
 done
 
+# The action's own input documentation is not covered by the README scan below,
+# and drifts silently when it is not gated: its example tag read "v5.1" through
+# four releases.
+if ! grep -Fq -- "(e.g., \"${TAG}\")" action.yml; then
+  echo "ERROR: action.yml does not use $TAG as the example release tag"
+  exit 1
+fi
+
 # Every knob the two CI integrations accept must have a row in the matching
 # README table, so a new input or variable cannot ship undocumented.
 check_documented() {

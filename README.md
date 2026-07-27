@@ -608,6 +608,12 @@ job fails when the run exits non-zero (see [Exit Codes](#exit-codes)) — note
 that model-checking reports a deadlock (a state with no enabled events, including
 a legitimate terminal state) as a failure.
 
+Both wrappers verify the downloaded jar against the `SHA256SUMS` manifest
+published with the release before running it, and refuse a release that ships no
+manifest rather than run it unverified. The default `latest` is resolved when the
+job runs, so pin `version` (GitHub) or `EVENTB_ANIMATE_VERSION` (GitLab) when a
+run needs to be reproducible.
+
 ### GitHub Actions
 
 ```yaml
@@ -630,7 +636,7 @@ a legitimate terminal state) as a failure.
 | `markdown-report` | Write a human-readable Markdown report of the run to this path | No | — |
 | `trace` | Path to JSON trace file (replay, required) | No | — |
 | `args` | Extra args appended to the assembled command | No | — |
-| `version` | Release version tag (e.g., `v6.3`) | No | `latest` |
+| `version` | Release version tag (e.g., `v6.3`); pin it for a reproducible run | No | `latest` |
 | `java-version` | Java version to use (must be 21 or later) | No | `21` |
 
 #### Examples

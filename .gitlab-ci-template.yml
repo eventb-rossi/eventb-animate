@@ -15,19 +15,76 @@
   # The jar download belongs to `script`, not `before_script`: `extends` replaces
   # `before_script` wholesale, so a consumer job that declares one of its own
   # would silently lose the download and fail on the `java -jar` below.
+  #
+  # This repeats the GitHub Action's scripts/install-eventb-animate.sh rather
+  # than calling it: a remote `include:` brings in this file alone, so nothing
+  # else from the repository is on disk here.
   script:
     - |
-      release_tag="$EVENTB_ANIMATE_VERSION"
-      if [ "$EVENTB_ANIMATE_VERSION" = "latest" ]; then
-        release_url=$(curl --silent --show-error --location --fail \
+      set -eu
+
+      release_tag="${EVENTB_ANIMATE_VERSION:-latest}"
+      if [ "$release_tag" = "latest" ]; then
+        release_url=$(curl --silent --show-error --location --fail --retry 3 --retry-all-errors \
           --output /dev/null --write-out '%{url_effective}' \
           https://github.com/eventb-rossi/eventb-animate/releases/latest)
         release_tag="${release_url##*/}"
       fi
       release_version="${release_tag#v}"
-      url="https://github.com/eventb-rossi/eventb-animate/releases/download/${release_tag}/eventb-animate-${release_version}.jar"
-      curl --silent --show-error --location --fail \
-        --output /tmp/eventb-animate.jar "$url"
+      base="https://github.com/eventb-rossi/eventb-animate/releases/download/${release_tag}"
+      jar="eventb-animate-${release_version}.jar"
+
+      # Private to this job, because a shell or ssh executor shares /tmp with
+      # every other job and with every other user on the host: a fixed path
+      # would let the verified jar be swapped between here and `java -jar`.
+      dest="/tmp/eventb-animate-${CI_JOB_ID:-local}"
+      mkdir -p "$dest" && chmod 700 "$dest"
+
+      # The manifest first: a release without one is not a release we can
+      # verify, and a missing manifest is also the clearest signal that the
+      # release does not exist. The status is read rather than left to
+      # `--fail`, because a reset connection and a 404 are different diagnoses.
+      status=$(curl --silent --show-error --location --retry 3 --retry-all-errors \
+        --write-out '%{http_code}' --output "$dest/SHA256SUMS" "$base/SHA256SUMS") || status=""
+      if [ "$status" = 404 ]; then
+        echo "ERROR: no eventb-animate release ${release_tag} with a SHA256SUMS manifest: the release does not exist, or predates the manifest added in v6.2" >&2
+        exit 1
+      fi
+      if [ "$status" != 200 ]; then
+        echo "ERROR: could not download the SHA256SUMS manifest for ${release_tag}: ${status:-the transfer failed}" >&2
+        exit 1
+      fi
+
+      # Lines are `<sha256>  <asset>`; the binary-mode marker `*` may precede
+      # the name.
+      expected=$(awk -v want="$jar" '$NF == want || $NF == "*" want { print $1; exit }' "$dest/SHA256SUMS")
+      if [ -z "$expected" ]; then
+        echo "ERROR: ${jar} is not listed in SHA256SUMS for ${release_tag}" >&2
+        exit 1
+      fi
+
+      curl --silent --show-error --location --fail --retry 3 --retry-all-errors \
+        --output "$dest/$jar" "$base/$jar"
+
+      # Read from stdin so the tool prints no filename, and do not reach for
+      # `sha256sum --check --strict`: those are GNU long options, absent from
+      # the BSD tool a non-Debian image may carry.
+      if command -v sha256sum >/dev/null 2>&1; then
+        actual=$(sha256sum < "$dest/$jar" | cut -d' ' -f1)
+      else
+        actual=$(shasum -a 256 < "$dest/$jar" | cut -d' ' -f1)
+      fi
+
+      if [ "$actual" != "$expected" ]; then
+        rm -f "$dest/$jar"
+        echo "ERROR: checksum mismatch for ${jar}: expected ${expected}, got ${actual}" >&2
+        exit 1
+      fi
+
+      # Only past every check does the jar take the name the run below uses,
+      # so that path never holds unverified bytes. `$dest` carries to that
+      # block: GitLab runs a job's `script` entries in one shell.
+      mv "$dest/$jar" "$dest/eventb-animate.jar"
     - |
       require_positive_int() {
         if ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
@@ -97,10 +154,11 @@
       fi
 
       if [ -n "$EVENTB_ANIMATE_ARGS" ]; then
-        # shellcheck disable=SC2086
+        # Word splitting is the point: the variable holds a command line.
+        # shellcheck disable=SC2206
         cli_args+=($EVENTB_ANIMATE_ARGS)
       fi
 
       cli_args+=("$EVENTB_ANIMATE_MODEL_PATH")
 
-      java -jar /tmp/eventb-animate.jar "${cli_args[@]}"
+      java -jar "$dest/eventb-animate.jar" "${cli_args[@]}"

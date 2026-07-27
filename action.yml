@@ -46,7 +46,10 @@ inputs:
     required: false
     default: ''
   version:
-    description: 'Release version tag to use (e.g., "v5.1"). Defaults to latest release.'
+    description: >-
+      Release version tag to use (e.g., "v6.3"). Defaults to the latest release,
+      resolved at run time — pin a tag for a reproducible run. Releases before
+      v6.2 are refused: they publish no SHA256SUMS to verify the jar against.
     required: false
     default: 'latest'
   java-version:
@@ -64,21 +67,16 @@ runs:
         java-version: ${{ inputs.java-version }}
 
     - name: Download eventb-animate
+      id: install
       shell: bash
       env:
-        VERSION: ${{ inputs.version }}
-      run: |
-        release_tag="$VERSION"
-        if [ "$VERSION" = "latest" ]; then
-          release_url=$(curl --silent --show-error --location --fail \
-            --output /dev/null --write-out '%{url_effective}' \
-            https://github.com/eventb-rossi/eventb-animate/releases/latest)
-          release_tag="${release_url##*/}"
-        fi
-        release_version="${release_tag#v}"
-        url="https://github.com/eventb-rossi/eventb-animate/releases/download/${release_tag}/eventb-animate-${release_version}.jar"
-        curl --silent --show-error --location --fail \
-          --output "${{ runner.temp }}/eventb-animate.jar" "$url"
+        EVENTB_ANIMATE_VERSION: ${{ inputs.version }}
+        # Pinned here, not left to the environment: the script honours an
+        # override so it can be pointed at a fork when testing, and the action
+        # must not let a calling workflow redirect the jar *and* the manifest
+        # that vouches for it.
+        EVENTB_ANIMATE_REPO: eventb-rossi/eventb-animate
+      run: bash "$GITHUB_ACTION_PATH/scripts/install-eventb-animate.sh"
 
     - name: Run eventb-animate
       shell: bash
@@ -93,6 +91,7 @@ runs:
         INPUT_MARKDOWN_REPORT: ${{ inputs.markdown-report }}
         INPUT_TRACE: ${{ inputs.trace }}
         INPUT_ARGS: ${{ inputs.args }}
+        JAR_PATH: ${{ steps.install.outputs.jar-path }}
       run: |
         require_positive_int() {
           if ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
@@ -162,10 +161,11 @@ runs:
         fi
 
         if [ -n "$INPUT_ARGS" ]; then
-          # shellcheck disable=SC2086
+          # Word splitting is the point: the input holds a command line.
+          # shellcheck disable=SC2206
           cli_args+=($INPUT_ARGS)
         fi
 
         cli_args+=("$INPUT_MODEL_PATH")
 
-        java -jar "${{ runner.temp }}/eventb-animate.jar" "${cli_args[@]}"
+        java -jar "$JAR_PATH" "${cli_args[@]}"
