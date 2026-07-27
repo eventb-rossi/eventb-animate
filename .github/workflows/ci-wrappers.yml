@@ -1,0 +1,146 @@
+name: CI Wrappers
+
+# The wrappers download a released jar rather than building one, so nothing in
+# src/ can affect them — and a Java-only pull request should not pull ~94 MiB.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'action.yml'
+      - '.gitlab-ci-template.yml'
+      - 'scripts/install-eventb-animate.sh'
+      - 'scripts/extract-ci-shell.rb'
+      - '.github/workflows/ci-wrappers.yml'
+  pull_request:
+    # Repeated because workflows do not support YAML anchors.
+    paths:
+      - 'action.yml'
+      - '.gitlab-ci-template.yml'
+      - 'scripts/install-eventb-animate.sh'
+      - 'scripts/extract-ci-shell.rb'
+      - '.github/workflows/ci-wrappers.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      # Both wrappers keep their shell inside YAML, where the scripts glob
+      # cannot reach it.
+      - run: ruby scripts/extract-ci-shell.rb "$RUNNER_TEMP/ci-shell"
+      - run: shellcheck scripts/*.sh "$RUNNER_TEMP"/ci-shell/*.sh
+
+  # The download path: tag resolution, checksum verification, and the refusal to
+  # install what the manifest does not vouch for. macOS is here because it has
+  # no `sha256sum`; the fallback only runs there.
+  installer:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install the latest release
+        id: install
+        shell: bash
+        run: bash scripts/install-eventb-animate.sh
+
+      - name: The jar the outputs point at is the release they name
+        shell: bash
+        env:
+          JAR_PATH: ${{ steps.install.outputs.jar-path }}
+          RESOLVED: ${{ steps.install.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -s "$JAR_PATH"
+          java -jar "$JAR_PATH" --version | grep -Fxq "eventb-animate ${RESOLVED#v}"
+
+      # v6.1 is a real release published before SHA256SUMS existed; v99.0 does
+      # not exist. Both are refused for the same stated reason, and neither
+      # costs a jar download — the manifest is fetched first.
+      - name: A release the manifest cannot vouch for is refused
+        shell: bash
+        run: |
+          set -euo pipefail
+          for tag in v6.1 v99.0; do
+            if output=$(EVENTB_ANIMATE_VERSION="$tag" bash scripts/install-eventb-animate.sh 2>&1); then
+              echo "installing $tag must fail"
+              exit 1
+            fi
+            printf '%s\n' "$output"
+            # Not merely a non-zero exit: the refusal has to be the manifest.
+            grep -Fq 'with a SHA256SUMS manifest' <<< "$output"
+            test -z "$(find "$RUNNER_TEMP/eventb-animate-$tag" -name '*.jar' 2>/dev/null)"
+          done
+
+  # End to end, which is what catches a mis-wired jar path between the two
+  # steps. Bounded to one state: the point is the wrapper, not the check.
+  action:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./
+        with:
+          model-path: src/test/resources/models/traffic-light/M2.bum
+          states: 1
+          json-report: report.json
+      - name: The run produced a report
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s report.json
+          jq -e '.completion.reason == "state_limit"' report.json
+
+  # The same end-to-end run for the other wrapper, which repeats the installer
+  # inline and would otherwise drift unnoticed. Both of its script blocks run in
+  # one shell, as GitLab runs them, in the image the template itself declares.
+  gitlab-template:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Extract the template's shell
+        run: ruby scripts/extract-ci-shell.rb ci-shell
+
+      # --env-file carries the template's own `variables:` defaults, the way
+      # GitLab injects them; a later --env overrides one of them.
+      - name: A model is checked with a verified jar
+        run: |
+          set -euo pipefail
+          docker run --rm --volume "$PWD:/work" --workdir /work \
+            --env-file ci-shell/gitlab-variables.env --env CI_JOB_ID=test \
+            --env EVENTB_ANIMATE_MODEL_PATH=src/test/resources/models/traffic-light/M2.bum \
+            --env EVENTB_ANIMATE_STATES=1 \
+            "$(cat ci-shell/gitlab-image)" bash ci-shell/gitlab-script.sh
+
+      - name: A release the manifest cannot vouch for is refused
+        run: |
+          set -euo pipefail
+          if output=$(docker run --rm --volume "$PWD:/work" --workdir /work \
+            --env-file ci-shell/gitlab-variables.env --env CI_JOB_ID=test \
+            --env EVENTB_ANIMATE_VERSION=v6.1 \
+            --env EVENTB_ANIMATE_MODEL_PATH=src/test/resources/models/traffic-light/M2.bum \
+            "$(cat ci-shell/gitlab-image)" bash ci-shell/gitlab-script.sh 2>&1); then
+            echo "installing an unverifiable release must fail"
+            exit 1
+          fi
+          printf '%s\n' "$output"
+          grep -Fq 'with a SHA256SUMS manifest' <<< "$output"
