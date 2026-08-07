@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Download a released eventb-animate jar onto the runner.
+# Install a released eventb-animate jar and launcher onto the runner.
 #
 # The checksum manifest is fetched *before* the jar, and nothing the manifest
 # does not vouch for is left anywhere the caller will run it.
@@ -8,12 +8,32 @@
 # Inputs (environment):
 #   EVENTB_ANIMATE_VERSION  release tag, e.g. v6.3; empty or `latest` means latest
 #   EVENTB_ANIMATE_REPO     optional, defaults to eventb-rossi/eventb-animate
+#   EVENTB_ANIMATE_ADD_TO_PATH
+#                           optional, `true` creates a launcher on GITHUB_PATH
 #   RUNNER_TEMP             from the runner; where the jar lands
 #   GITHUB_OUTPUT           optional; receives `version` and `jar-path`
+#   GITHUB_PATH             required when EVENTB_ANIMATE_ADD_TO_PATH is `true`
 set -euo pipefail
 
 repo="${EVENTB_ANIMATE_REPO:-eventb-rossi/eventb-animate}"
 release_tag="${EVENTB_ANIMATE_VERSION:-latest}"
+add_to_path="${EVENTB_ANIMATE_ADD_TO_PATH:-false}"
+version_pattern='v[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?'
+
+require_release_tag() {
+  if ! [[ "$1" =~ ^${version_pattern}$ ]]; then
+    echo "::error::eventb-animate version must be 'latest' or a release tag such as v6.3" >&2
+    exit 1
+  fi
+}
+
+case "$add_to_path" in
+  true | false) ;;
+  *)
+    echo "::error::EVENTB_ANIMATE_ADD_TO_PATH must be 'true' or 'false'" >&2
+    exit 1
+    ;;
+esac
 
 if [ "$release_tag" = "latest" ]; then
   release_url=$(curl --silent --show-error --location --fail --retry 3 --retry-all-errors \
@@ -21,6 +41,7 @@ if [ "$release_tag" = "latest" ]; then
     "https://github.com/${repo}/releases/latest")
   release_tag="${release_url##*/}"
 fi
+require_release_tag "$release_tag"
 
 release_version="${release_tag#v}"
 base="https://github.com/${repo}/releases/download/${release_tag}"
@@ -79,10 +100,26 @@ if [ "$actual" != "$expected" ]; then
 fi
 mv "$dest/$jar.part" "$dest/$jar"
 
-if [ -n "${GITHUB_OUTPUT:-}" ]; then
-  {
-    echo "version=${release_tag}"
-    echo "jar-path=${dest}/${jar}"
-  } >> "$GITHUB_OUTPUT"
+path_message=""
+if [ "$add_to_path" = true ]; then
+  launcher="$dest/eventb-animate"
+  cat > "$launcher" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+launcher_dir="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+exec java -jar "\$launcher_dir/$jar" "\$@"
+EOF
+  chmod 0755 "$launcher"
+  printf '%s\n' "$dest" >> "${GITHUB_PATH:?GITHUB_PATH is required when adding eventb-animate to PATH}"
+  path_message=" and added its launcher to PATH"
 fi
-echo "installed eventb-animate ${release_tag} at ${dest}/${jar}"
+
+if [ -n "${GITHUB_OUTPUT:-}" ]; then
+  printf 'version=%s\njar-path=%s\n' \
+    "$release_tag" \
+    "$dest/$jar" >> "$GITHUB_OUTPUT"
+fi
+printf 'installed eventb-animate %s at %s%s\n' \
+  "$release_tag" \
+  "$dest/$jar" \
+  "$path_message"

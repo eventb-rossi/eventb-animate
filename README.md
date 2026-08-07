@@ -608,11 +608,11 @@ job fails when the run exits non-zero (see [Exit Codes](#exit-codes)) — note
 that model-checking reports a deadlock (a state with no enabled events, including
 a legitimate terminal state) as a failure.
 
-Both wrappers verify the downloaded jar against the `SHA256SUMS` manifest
-published with the release before running it, and refuse a release that ships no
-manifest rather than run it unverified. The default `latest` is resolved when the
-job runs, so pin `version` (GitHub) or `EVENTB_ANIMATE_VERSION` (GitLab) when a
-run needs to be reproducible.
+The GitHub actions and GitLab wrapper verify the downloaded jar against the
+`SHA256SUMS` manifest published with the release before using it, and refuse a
+release that ships no manifest rather than install it unverified. The default
+`latest` is resolved when the job runs, so pin `version` (GitHub) or
+`EVENTB_ANIMATE_VERSION` (GitLab) when a run needs to be reproducible.
 
 ### GitHub Actions
 
@@ -637,7 +637,43 @@ run needs to be reproducible.
 | `trace` | Path to JSON trace file (replay, required) | No | — |
 | `args` | Extra args appended to the assembled command | No | — |
 | `version` | Release version tag (e.g., `v6.3`); pin it for a reproducible run | No | `latest` |
-| `java-version` | Java version to use (must be 21 or later) | No | `21` |
+| `java-version` | Java version to install (21+) | No | `21` |
+
+#### Set up the CLI for later steps
+
+Use the setup action when a repository script owns the model-checking workflow:
+
+```yaml
+- uses: actions/setup-java@v5
+  with:
+    distribution: 'temurin'
+    java-version: '21'
+
+- id: setup-eventb-animate
+  uses: eventb-rossi/eventb-animate/setup@main
+  with:
+    version: 'v6.3'
+    java-version: ''
+
+- run: make check-models
+```
+
+The verified jar is installed with an `eventb-animate` launcher on `PATH` for
+subsequent steps. The setup action supports Linux and macOS runners.
+`java-version: ''` skips `actions/setup-java` and trusts the caller to have
+configured Java 21 or later. The setup action and the root action's empty
+`java-version` behavior are currently available on `main`; use a released tag
+once one contains `setup/action.yml`.
+
+| Input | Description | Required | Default |
+|-------|-------------|----------|---------|
+| `version` | Release version tag (e.g., `v6.3`); pin it for a reproducible install | No | `latest` |
+| `java-version` | Java version to install (21+); set to `''` to use an existing JDK | No | `21` |
+
+| Output | Description |
+|--------|-------------|
+| `version` | Resolved release tag, including its leading `v` |
+| `jar-path` | Absolute path to the verified release jar |
 
 #### Examples
 

@@ -53,7 +53,7 @@ inputs:
     required: false
     default: 'latest'
   java-version:
-    description: 'Java version to use (must be 21 or later)'
+    description: 'Java version to install (must be 21 or later); set to empty to use an existing JDK'
     required: false
     default: '21'
 
@@ -61,6 +61,7 @@ runs:
   using: 'composite'
   steps:
     - name: Set up JDK
+      if: ${{ inputs.java-version != '' }}
       uses: actions/setup-java@v5
       with:
         distribution: 'temurin'
@@ -71,11 +72,10 @@ runs:
       shell: bash
       env:
         EVENTB_ANIMATE_VERSION: ${{ inputs.version }}
-        # Pinned here, not left to the environment: the script honours an
-        # override so it can be pointed at a fork when testing, and the action
-        # must not let a calling workflow redirect the jar *and* the manifest
-        # that vouches for it.
-        EVENTB_ANIMATE_REPO: eventb-rossi/eventb-animate
+        # Blanked here, not inherited: the script's fallback selects the
+        # canonical repository, while direct script tests can still use the
+        # override to point at a fork.
+        EVENTB_ANIMATE_REPO: ''
       run: bash "$GITHUB_ACTION_PATH/scripts/install-eventb-animate.sh"
 
     - name: Run eventb-animate

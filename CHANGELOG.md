@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- Add a setup action that installs a verified `eventb-animate` launcher on
+  `PATH` for workflows whose own scripts drive the CLI
+- Let both GitHub actions use an already configured Java 21+ runtime
+
+### Bug Fixes
+
+- Keep the runner action from changing `PATH`, and reject malformed release
+  versions before they can reach runner workflow-command output
+
 ## [6.3] - 2026-07-26
 
 ### Bug Fixes

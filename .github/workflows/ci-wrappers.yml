@@ -8,6 +8,7 @@ on:
       - main
     paths:
       - 'action.yml'
+      - 'setup/action.yml'
       - '.gitlab-ci-template.yml'
       - 'scripts/install-eventb-animate.sh'
       - 'scripts/extract-ci-shell.rb'
@@ -16,6 +17,7 @@ on:
     # Repeated because workflows do not support YAML anchors.
     paths:
       - 'action.yml'
+      - 'setup/action.yml'
       - '.gitlab-ci-template.yml'
       - 'scripts/install-eventb-animate.sh'
       - 'scripts/extract-ci-shell.rb'
@@ -35,34 +37,42 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      # Both wrappers keep their shell inside YAML, where the scripts glob
-      # cannot reach it.
+      # The actions and GitLab wrapper keep shell inside YAML, where the
+      # scripts glob cannot reach it.
       - run: ruby scripts/extract-ci-shell.rb "$RUNNER_TEMP/ci-shell"
       - run: shellcheck scripts/*.sh "$RUNNER_TEMP"/ci-shell/*.sh
 
   # The download path: tag resolution, checksum verification, and the refusal to
   # install what the manifest does not vouch for. macOS is here because it has
   # no `sha256sum`; the fallback only runs there.
-  installer:
+  setup-action:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            java-version: ''
+            preinstall-java: true
+          - os: macos-latest
+            java-version: '21'
+            preinstall-java: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
+        if: ${{ matrix.preinstall-java }}
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: Install the latest release
         id: install
-        shell: bash
-        run: bash scripts/install-eventb-animate.sh
+        uses: ./setup
+        with:
+          java-version: ${{ matrix.java-version }}
 
-      - name: The jar the outputs point at is the release they name
+      - name: The PATH launcher and outputs name the installed release
         shell: bash
         env:
           JAR_PATH: ${{ steps.install.outputs.jar-path }}
@@ -71,6 +81,7 @@ jobs:
           set -euo pipefail
           test -s "$JAR_PATH"
           java -jar "$JAR_PATH" --version | grep -Fxq "eventb-animate ${RESOLVED#v}"
+          eventb-animate --version | grep -Fxq "eventb-animate ${RESOLVED#v}"
 
       # v6.1 is a real release published before SHA256SUMS existed; v99.0 does
       # not exist. Both are refused for the same stated reason, and neither
@@ -90,6 +101,18 @@ jobs:
             test -z "$(find "$RUNNER_TEMP/eventb-animate-$tag" -name '*.jar' 2>/dev/null)"
           done
 
+      - name: A malformed version cannot inject runner commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$'v6.3\n::warning::forged'
+          if output=$(EVENTB_ANIMATE_VERSION="$version" bash scripts/install-eventb-animate.sh 2>&1); then
+            echo "installing a malformed version must fail"
+            exit 1
+          fi
+          grep -Fq "version must be 'latest' or a release tag" <<< "$output"
+          ! grep -Fq '::warning::forged' <<< "$output"
+
   # End to end, which is what catches a mis-wired jar path between the two
   # steps. Bounded to one state: the point is the wrapper, not the check.
   action:
@@ -97,6 +120,28 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+
+      # A missing condition would fail inside setup-java before the installer
+      # creates its release directory. v6.1 then supplies the expected cheap
+      # failure: it predates the checksum manifest, so no jar is downloaded.
+      - name: Empty Java version skips setup-java
+        id: skip-java
+        continue-on-error: true
+        uses: ./
+        with:
+          java-version: ''
+          version: v6.1
+          model-path: src/test/resources/models/traffic-light/M2.bum
+
+      - name: The skipped Java setup reached the installer
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.skip-java.outcome }}
+        run: |
+          set -euo pipefail
+          test "$OUTCOME" = failure
+          test -d "$RUNNER_TEMP/eventb-animate-v6.1"
+
       - uses: ./
         with:
           model-path: src/test/resources/models/traffic-light/M2.bum
@@ -108,6 +153,7 @@ jobs:
           set -euo pipefail
           test -s report.json
           jq -e '.completion.reason == "state_limit"' report.json
+          test -z "$(find "$RUNNER_TEMP" -type f -name eventb-animate 2>/dev/null)"
 
   # The same end-to-end run for the other wrapper, which repeats the installer
   # inline and would otherwise drift unnoticed. Both of its script blocks run in

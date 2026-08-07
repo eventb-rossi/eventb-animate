@@ -1,0 +1,42 @@
+name: 'Set up Event-B Animate'
+description: 'Install a verified Event-B Animate release and add it to PATH'
+
+inputs:
+  version:
+    description: >-
+      Release version tag to use (e.g., "v6.3"). Defaults to the latest release,
+      resolved at run time — pin a tag for a reproducible install. Releases before
+      v6.2 are refused: they publish no SHA256SUMS to verify the jar against.
+    required: false
+    default: 'latest'
+  java-version:
+    description: 'Java version to install (must be 21 or later); set to empty to use an existing JDK'
+    required: false
+    default: '21'
+
+outputs:
+  version:
+    description: 'Resolved eventb-animate release tag'
+    value: ${{ steps.install.outputs.version }}
+  jar-path:
+    description: 'Absolute path to the verified eventb-animate jar'
+    value: ${{ steps.install.outputs.jar-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up JDK
+      if: ${{ inputs.java-version != '' }}
+      uses: actions/setup-java@v5
+      with:
+        distribution: 'temurin'
+        java-version: ${{ inputs.java-version }}
+
+    - name: Install eventb-animate
+      id: install
+      shell: bash
+      env:
+        EVENTB_ANIMATE_VERSION: ${{ inputs.version }}
+        EVENTB_ANIMATE_REPO: ''
+        EVENTB_ANIMATE_ADD_TO_PATH: 'true'
+      run: bash "$GITHUB_ACTION_PATH/../scripts/install-eventb-animate.sh"
