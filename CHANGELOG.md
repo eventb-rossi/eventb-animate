@@ -9,6 +9,9 @@ All notable changes to this project will be documented in this file.
 - Add a setup action that installs a verified `eventb-animate` launcher on
   `PATH` for workflows whose own scripts drive the CLI
 - Let both GitHub actions use an already configured Java 21+ runtime
+- Cache the release jar across workflow runs with `actions/cache`, keyed on
+  the resolved release tag; a restored jar is verified against `SHA256SUMS`
+  before reuse, and `cache: 'false'` opts out
 
 ### Bug Fixes
 

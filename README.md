@@ -612,7 +612,10 @@ The GitHub actions and GitLab wrapper verify the downloaded jar against the
 `SHA256SUMS` manifest published with the release before using it, and refuse a
 release that ships no manifest rather than install it unverified. The default
 `latest` is resolved when the job runs, so pin `version` (GitHub) or
-`EVENTB_ANIMATE_VERSION` (GitLab) when a run needs to be reproducible.
+`EVENTB_ANIMATE_VERSION` (GitLab) when a run needs to be reproducible. Both
+GitHub actions cache the jar with `actions/cache`, keyed on the resolved
+release tag; a restored jar is re-verified against `SHA256SUMS` before reuse,
+and `cache: 'false'` opts out.
 
 ### GitHub Actions
 
@@ -638,6 +641,7 @@ release that ships no manifest rather than install it unverified. The default
 | `args` | Extra args appended to the assembled command | No | — |
 | `version` | Release version tag (e.g., `v6.3`); pin it for a reproducible run | No | `latest` |
 | `java-version` | Java version to install (21+) | No | `21` |
+| `cache` | Cache the release jar between runs, keyed on the resolved release tag | No | `true` |
 
 #### Set up the CLI for later steps
 
@@ -669,6 +673,7 @@ once one contains `setup/action.yml`.
 |-------|-------------|----------|---------|
 | `version` | Release version tag (e.g., `v6.3`); pin it for a reproducible install | No | `latest` |
 | `java-version` | Java version to install (21+); set to `''` to use an existing JDK | No | `21` |
+| `cache` | Cache the release jar between runs, keyed on the resolved release tag | No | `true` |
 
 | Output | Description |
 |--------|-------------|

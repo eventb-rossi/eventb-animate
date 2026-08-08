@@ -58,6 +58,9 @@ jobs:
             preinstall-java: false
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    # Every matrix leg resolves the same tag, so the racing writes agree.
+    outputs:
+      version: ${{ steps.install.outputs.version }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v5
@@ -113,6 +116,55 @@ jobs:
           grep -Fq "version must be 'latest' or a release tag" <<< "$output"
           ! grep -Fq '::warning::forged' <<< "$output"
 
+      # The first install left a verified jar in place; a rerun must reuse it,
+      # and a corrupted one — the shape of a poisoned cache restore — must be
+      # replaced rather than trusted. The reuse run keeps `latest` on purpose:
+      # the actions now pass a resolved tag down, so only a direct run covers
+      # the installer's own resolution branch. Exiting zero after the
+      # corruption means the replacement passed the checksum check.
+      - name: A cached jar is verified before reuse; a corrupted one is replaced
+        shell: bash
+        env:
+          RESOLVED: ${{ steps.install.outputs.version }}
+          JAR_PATH: ${{ steps.install.outputs.jar-path }}
+        run: |
+          set -euo pipefail
+          output=$(bash scripts/install-eventb-animate.sh 2>&1)
+          printf '%s\n' "$output"
+          grep -Fq 'skipping download' <<< "$output"
+          echo corrupted > "$JAR_PATH"
+          output=$(EVENTB_ANIMATE_VERSION="$RESOLVED" bash scripts/install-eventb-animate.sh 2>&1)
+          printf '%s\n' "$output"
+          ! grep -Fq 'skipping download' <<< "$output"
+
+  # The only in-repo proof that the key the actions save under is the key they
+  # look up: the setup-action job's post-job cache save has completed by the
+  # time a dependent job starts.
+  cache-roundtrip:
+    needs: setup-action
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      # Pinned to what setup-action installed: resolving is then offline, and
+      # a release published mid-run cannot skew the key under lookup.
+      - name: Resolve the release tag
+        id: resolve
+        shell: bash
+        env:
+          EVENTB_ANIMATE_VERSION: ${{ needs.setup-action.outputs.version }}
+          EVENTB_ANIMATE_RESOLVE_ONLY: 'true'
+        run: bash scripts/install-eventb-animate.sh
+      - name: The saved cache is found under the resolved tag
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.resolve.outputs.jar-path }}
+          key: ${{ steps.resolve.outputs.cache-key }}
+          lookup-only: true
+          fail-on-cache-miss: true
+
   # End to end, which is what catches a mis-wired jar path between the two
   # steps. Bounded to one state: the point is the wrapper, not the check.
   action:
@@ -131,6 +183,9 @@ jobs:
         with:
           java-version: ''
           version: v6.1
+          # Nothing is ever saved under a release that always fails to
+          # install, so the restore and post-job save would only add noise.
+          cache: 'false'
           model-path: src/test/resources/models/traffic-light/M2.bum
 
       - name: The skipped Java setup reached the installer

@@ -3,21 +3,28 @@
 # Install a released eventb-animate jar and launcher onto the runner.
 #
 # The checksum manifest is fetched *before* the jar, and nothing the manifest
-# does not vouch for is left anywhere the caller will run it.
+# does not vouch for is left anywhere the caller will run it. A jar already at
+# the destination — e.g. a cache restore — is reused only once the manifest
+# vouches for it.
 #
 # Inputs (environment):
 #   EVENTB_ANIMATE_VERSION  release tag, e.g. v6.3; empty or `latest` means latest
 #   EVENTB_ANIMATE_REPO     optional, defaults to eventb-rossi/eventb-animate
 #   EVENTB_ANIMATE_ADD_TO_PATH
 #                           optional, `true` creates a launcher on GITHUB_PATH
+#   EVENTB_ANIMATE_RESOLVE_ONLY
+#                           optional, `true` prints the outputs for the
+#                           resolved release and exits without installing
 #   RUNNER_TEMP             from the runner; where the jar lands
-#   GITHUB_OUTPUT           optional; receives `version` and `jar-path`
+#   GITHUB_OUTPUT           optional; receives `version`, `jar-path`, and
+#                           `cache-key`
 #   GITHUB_PATH             required when EVENTB_ANIMATE_ADD_TO_PATH is `true`
 set -euo pipefail
 
 repo="${EVENTB_ANIMATE_REPO:-eventb-rossi/eventb-animate}"
 release_tag="${EVENTB_ANIMATE_VERSION:-latest}"
 add_to_path="${EVENTB_ANIMATE_ADD_TO_PATH:-false}"
+resolve_only="${EVENTB_ANIMATE_RESOLVE_ONLY:-false}"
 version_pattern='v[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?'
 
 require_release_tag() {
@@ -35,6 +42,14 @@ case "$add_to_path" in
     ;;
 esac
 
+case "$resolve_only" in
+  true | false) ;;
+  *)
+    echo "::error::EVENTB_ANIMATE_RESOLVE_ONLY must be 'true' or 'false'" >&2
+    exit 1
+    ;;
+esac
+
 if [ "$release_tag" = "latest" ]; then
   release_url=$(curl --silent --show-error --location --fail --retry 3 --retry-all-errors \
     --output /dev/null --write-out '%{url_effective}' \
@@ -47,6 +62,25 @@ release_version="${release_tag#v}"
 base="https://github.com/${repo}/releases/download/${release_tag}"
 jar="eventb-animate-${release_version}.jar"
 dest="${RUNNER_TEMP:-/tmp}/eventb-animate-${release_tag}"
+
+emit_outputs() {
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    printf 'version=%s\njar-path=%s\ncache-key=%s\n' \
+      "$release_tag" \
+      "$dest/$jar" \
+      "eventb-animate-jar-${release_tag}" >> "$GITHUB_OUTPUT"
+  fi
+}
+
+# The actions' cache step needs the resolved tag, the jar path, and the cache
+# key before anything is downloaded; resolve-only stops here so `latest` is
+# chased once and the cache is keyed on a release, never on the literal word.
+if [ "$resolve_only" = true ]; then
+  emit_outputs
+  printf 'resolved eventb-animate release %s\n' "$release_tag"
+  exit 0
+fi
+
 mkdir -p "$dest"
 
 # Read from stdin so the tool prints no filename: given a path holding a
@@ -87,18 +121,27 @@ if [ -z "$expected" ]; then
   exit 1
 fi
 
-# Under a name nothing runs or globs for until it has been vouched for, so a
-# rejected download is never left sitting at the path callers are handed.
-curl --silent --show-error --location --fail --retry 3 --retry-all-errors \
-  -o "$dest/$jar.part" "$base/$jar"
+# A jar already at the destination — typically restored by the actions' cache
+# step — is reused only once the manifest vouches for it; anything else is
+# replaced by a fresh download, so a poisoned cache buys an attacker nothing.
+if [ -f "$dest/$jar" ] && [ "$(sha256_of "$dest/$jar")" = "$expected" ]; then
+  echo "verified cached ${jar} against SHA256SUMS; skipping download"
+else
+  rm -f "$dest/$jar"
 
-actual="$(sha256_of "$dest/$jar.part")"
-if [ "$actual" != "$expected" ]; then
-  rm -f "$dest/$jar.part"
-  echo "::error::checksum mismatch for ${jar}: expected ${expected}, got ${actual}" >&2
-  exit 1
+  # Under a name nothing runs or globs for until it has been vouched for, so a
+  # rejected download is never left sitting at the path callers are handed.
+  curl --silent --show-error --location --fail --retry 3 --retry-all-errors \
+    -o "$dest/$jar.part" "$base/$jar"
+
+  actual="$(sha256_of "$dest/$jar.part")"
+  if [ "$actual" != "$expected" ]; then
+    rm -f "$dest/$jar.part"
+    echo "::error::checksum mismatch for ${jar}: expected ${expected}, got ${actual}" >&2
+    exit 1
+  fi
+  mv "$dest/$jar.part" "$dest/$jar"
 fi
-mv "$dest/$jar.part" "$dest/$jar"
 
 path_message=""
 if [ "$add_to_path" = true ]; then
@@ -114,11 +157,7 @@ EOF
   path_message=" and added its launcher to PATH"
 fi
 
-if [ -n "${GITHUB_OUTPUT:-}" ]; then
-  printf 'version=%s\njar-path=%s\n' \
-    "$release_tag" \
-    "$dest/$jar" >> "$GITHUB_OUTPUT"
-fi
+emit_outputs
 printf 'installed eventb-animate %s at %s%s\n' \
   "$release_tag" \
   "$dest/$jar" \

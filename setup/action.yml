@@ -13,6 +13,10 @@ inputs:
     description: 'Java version to install (must be 21 or later); set to empty to use an existing JDK'
     required: false
     default: '21'
+  cache:
+    description: 'Cache the release jar with actions/cache, keyed on the resolved release tag'
+    required: false
+    default: 'true'
 
 outputs:
   version:
@@ -32,11 +36,32 @@ runs:
         distribution: 'temurin'
         java-version: ${{ inputs.java-version }}
 
+    - name: Resolve the release tag
+      id: resolve
+      shell: bash
+      env:
+        EVENTB_ANIMATE_VERSION: ${{ inputs.version }}
+        EVENTB_ANIMATE_REPO: ''
+        EVENTB_ANIMATE_RESOLVE_ONLY: 'true'
+      run: bash "$GITHUB_ACTION_PATH/../scripts/install-eventb-animate.sh"
+
+    - name: Restore the release jar
+      if: ${{ inputs.cache == 'true' }}
+      uses: actions/cache@v4
+      with:
+        # The jar only, never its directory: the setup action writes its PATH
+        # launcher next to the jar, and a cached directory would smuggle that
+        # launcher into root-action jobs that must never publish one.
+        path: ${{ steps.resolve.outputs.jar-path }}
+        key: ${{ steps.resolve.outputs.cache-key }}
+
     - name: Install eventb-animate
       id: install
       shell: bash
       env:
-        EVENTB_ANIMATE_VERSION: ${{ inputs.version }}
+        # The resolved tag rather than the input, so `latest` is chased once
+        # and the cache key and the installed jar always agree.
+        EVENTB_ANIMATE_VERSION: ${{ steps.resolve.outputs.version }}
         EVENTB_ANIMATE_REPO: ''
         EVENTB_ANIMATE_ADD_TO_PATH: 'true'
       run: bash "$GITHUB_ACTION_PATH/../scripts/install-eventb-animate.sh"
