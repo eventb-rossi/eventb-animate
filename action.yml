@@ -47,7 +47,7 @@ inputs:
     default: ''
   version:
     description: >-
-      Release version tag to use (e.g., "v6.3"). Defaults to the latest release,
+      Release version tag to use (e.g., "v6.4"). Defaults to the latest release,
       resolved at run time — pin a tag for a reproducible run. Releases before
       v6.2 are refused: they publish no SHA256SUMS to verify the jar against.
     required: false

@@ -620,7 +620,7 @@ and `cache: 'false'` opts out.
 ### GitHub Actions
 
 ```yaml
-- uses: eventb-rossi/eventb-animate@v6.3
+- uses: eventb-rossi/eventb-animate@v6.4
   with:
     model-path: 'path/to/model.bum'
 ```
@@ -639,7 +639,7 @@ and `cache: 'false'` opts out.
 | `markdown-report` | Write a human-readable Markdown report of the run to this path | No | — |
 | `trace` | Path to JSON trace file (replay, required) | No | — |
 | `args` | Extra args appended to the assembled command | No | — |
-| `version` | Release version tag (e.g., `v6.3`); pin it for a reproducible run | No | `latest` |
+| `version` | Release version tag (e.g., `v6.4`); pin it for a reproducible run | No | `latest` |
 | `java-version` | Java version to install (21+) | No | `21` |
 | `cache` | Cache the release jar between runs, keyed on the resolved release tag | No | `true` |
 
@@ -654,9 +654,9 @@ Use the setup action when a repository script owns the model-checking workflow:
     java-version: '21'
 
 - id: setup-eventb-animate
-  uses: eventb-rossi/eventb-animate/setup@main
+  uses: eventb-rossi/eventb-animate/setup@v6.4
   with:
-    version: 'v6.3'
+    version: 'v6.4'
     java-version: ''
 
 - run: make check-models
@@ -666,12 +666,12 @@ The verified jar is installed with an `eventb-animate` launcher on `PATH` for
 subsequent steps. The setup action supports Linux and macOS runners.
 `java-version: ''` skips `actions/setup-java` and trusts the caller to have
 configured Java 21 or later. The setup action and the root action's empty
-`java-version` behavior are currently available on `main`; use a released tag
-once one contains `setup/action.yml`.
+`java-version` behavior are available from v6.4 onward. Pin the action ref to a
+released tag for a reproducible setup.
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
-| `version` | Release version tag (e.g., `v6.3`); pin it for a reproducible install | No | `latest` |
+| `version` | Release version tag (e.g., `v6.4`); pin it for a reproducible install | No | `latest` |
 | `java-version` | Java version to install (21+); set to `''` to use an existing JDK | No | `21` |
 | `cache` | Cache the release jar between runs, keyed on the resolved release tag | No | `true` |
 
@@ -684,33 +684,33 @@ once one contains `setup/action.yml`.
 
 ```yaml
 # Model-check, bounded to 50000 states
-- uses: eventb-rossi/eventb-animate@v6.3
+- uses: eventb-rossi/eventb-animate@v6.4
   with:
     model-path: 'path/to/model.bum'
     states: 50000
 
 # Replay a trace
-- uses: eventb-rossi/eventb-animate@v6.3
+- uses: eventb-rossi/eventb-animate@v6.4
   with:
     model-path: 'models/system.bum'
     command: 'replay'
     trace: 'tests/trace.json'
 
 # Gate on the Rodin proof status (extra flags go through args)
-- uses: eventb-rossi/eventb-animate@v6.3
+- uses: eventb-rossi/eventb-animate@v6.4
   with:
     model-path: 'models/system.zip'
     command: 'po'
     args: '--allow-reviewed'
 
 # Pin to a specific release
-- uses: eventb-rossi/eventb-animate@v6.3
+- uses: eventb-rossi/eventb-animate@v6.4
   with:
     model-path: 'path/to/model.bum'
-    version: 'v6.3'
+    version: 'v6.4'
 
 # Publish the verdict as a test report rendered on the PR
-- uses: eventb-rossi/eventb-animate@v6.3
+- uses: eventb-rossi/eventb-animate@v6.4
   with:
     model-path: 'path/to/model.bum'
     junit-report: 'report.xml'
@@ -728,7 +728,7 @@ Include the reusable template and extend the `.eventb-animate` hidden job:
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v6.3/.gitlab-ci-template.yml'
+  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v6.4/.gitlab-ci-template.yml'
 
 animate-model:
   extends: .eventb-animate
@@ -750,13 +750,13 @@ animate-model:
 | `EVENTB_ANIMATE_MARKDOWN` | Write a human-readable Markdown report of the run to this path | `''` |
 | `EVENTB_ANIMATE_TRACE` | Path to JSON trace file (replay, required) | `''` |
 | `EVENTB_ANIMATE_ARGS` | Extra args appended to the assembled command | `''` |
-| `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v6.3`) | `latest` |
+| `EVENTB_ANIMATE_VERSION` | Release version tag (e.g., `v6.4`) | `latest` |
 
 #### Examples
 
 ```yaml
 include:
-  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v6.3/.gitlab-ci-template.yml'
+  - remote: 'https://raw.githubusercontent.com/eventb-rossi/eventb-animate/v6.4/.gitlab-ci-template.yml'
 
 # Model-check, bounded to 50000 states
 model-check:
@@ -778,7 +778,7 @@ animate-pinned:
   extends: .eventb-animate
   variables:
     EVENTB_ANIMATE_MODEL_PATH: 'path/to/model.bum'
-    EVENTB_ANIMATE_VERSION: 'v6.3'
+    EVENTB_ANIMATE_VERSION: 'v6.4'
 
 # Surface the verdict in the merge-request widget: which property failed,
 # with the counterexample attached, straight from the JUnit report

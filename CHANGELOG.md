@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [6.4] - 2026-08-08
+
 ### Features
 
 - Add a setup action that installs a verified `eventb-animate` launcher on
@@ -15,8 +17,21 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- Verify downloaded release jars against the published `SHA256SUMS` manifest
+  before running them
 - Keep the runner action from changing `PATH`, and reject malformed release
   versions before they can reach runner workflow-command output
+- Fetch tags in the build workflow so version checks distinguish existing
+  releases from release commits being prepared
+
+### Dependencies
+
+- Bump com.diffplug.spotless from 8.8.0 to 8.9.0
+- Bump ch.qos.logback:logback-classic from 1.5.38 to 1.6.1
+
+### CI/CD
+
+- Test the GitHub and GitLab CI wrappers end to end on Ubuntu and macOS
 
 ## [6.3] - 2026-07-26
 
