@@ -15,7 +15,7 @@ java {
 	}
 }
 
-def prob_version = "4.15.1"
+def prob_version = "4.16.0"
 application {
 	mainClass = "animate.Animate"
 }
