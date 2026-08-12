@@ -158,7 +158,7 @@ jobs:
           EVENTB_ANIMATE_RESOLVE_ONLY: 'true'
         run: bash scripts/install-eventb-animate.sh
       - name: The saved cache is found under the resolved tag
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: ${{ steps.resolve.outputs.jar-path }}
           key: ${{ steps.resolve.outputs.cache-key }}
