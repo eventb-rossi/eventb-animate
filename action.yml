@@ -82,7 +82,7 @@ runs:
 
     - name: Restore the release jar
       if: ${{ inputs.cache == 'true' }}
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         # The jar only, never its directory: the setup action writes its PATH
         # launcher next to the jar, and a cached directory would smuggle that
