@@ -54,7 +54,7 @@ public class RunReportTest {
   public void testWithersPreserveTheOtherFields() {
     RunReport.Check check = new RunReport.Check("invariant", RunReport.Outcome.FAILED, "boom");
     TraceWriter.Counterexample counterexample =
-        new TraceWriter.Counterexample(List.of("init"), "state", List.of("inv1"));
+        new TraceWriter.Counterexample(List.of("init"), "state", List.of("inv1"), List.of());
 
     RunReport report =
         RunReport.of(RunReport.Status.VIOLATION, "boom", check)

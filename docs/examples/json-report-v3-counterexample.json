@@ -40,7 +40,13 @@
   "counterexample": {
     "transitions": ["INITIALISATION()", "event()"],
     "violatingState": "(x = 1)",
-    "violatedInvariants": ["inv1"]
+    "violatedInvariants": ["inv1"],
+    "bindings": [
+      {
+        "name": "x",
+        "value": "1"
+      }
+    ]
   },
   "evaluations": [
     {

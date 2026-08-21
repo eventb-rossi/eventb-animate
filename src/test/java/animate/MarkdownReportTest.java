@@ -42,7 +42,8 @@ public class MarkdownReportTest {
         new TraceWriter.Counterexample(
             List.of("INITIALISATION", "inc(x_1 := 6)", "weird `backtick` op"),
             "x = 6\ny = *bad*\n```danger```",
-            List.of("x ≤ 5", "a_1 | a_2"));
+            List.of("x ≤ 5", "a_1 | a_2"),
+            List.of());
     RunReport report =
         RunReport.of(
                 RunReport.Status.VIOLATION,

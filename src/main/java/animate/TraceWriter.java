@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import org.slf4j.LoggerFactory;
@@ -38,12 +39,19 @@ final class TraceWriter {
   }
 
   record Counterexample(
-      List<String> transitions, String violatingState, List<String> violatedInvariants) {
+      List<String> transitions,
+      String violatingState,
+      List<String> violatedInvariants,
+      List<Binding> bindings) {
     Counterexample {
       transitions = List.copyOf(transitions);
       violatedInvariants = List.copyOf(violatedInvariants);
+      bindings = List.copyOf(bindings);
     }
   }
+
+  /** One identifier of the violating state and ProB's rendering of its value. */
+  record Binding(String name, String value) {}
 
   /**
    * {@code evalInvariants} is false on the LTL path: it never enumerated invariants, and doing so
@@ -74,7 +82,30 @@ final class TraceWriter {
       stateRep =
           "(state " + violatingState.getId() + " could not be rendered: " + e.getMessage() + ")";
     }
-    return new Counterexample(transitions, stateRep, violatedInvariants);
+    return new Counterexample(transitions, stateRep, violatedInvariants, bindings(violatingState));
+  }
+
+  /** Variables first, matching ProB's state representation layout. */
+  private static List<Binding> bindings(State state) {
+    List<Binding> bindings = new ArrayList<>();
+    try {
+      addBindings(bindings, state.getVariableValues(FormulaExpand.EXPAND));
+      addBindings(bindings, state.getConstantValues(FormulaExpand.EXPAND));
+    } catch (RuntimeException e) {
+      logger.debug("Error rendering state {} bindings", state.getId(), e);
+      return List.of();
+    }
+    return bindings;
+  }
+
+  private static void addBindings(
+      List<Binding> bindings, Map<IEvalElement, AbstractEvalResult> values) {
+    for (Map.Entry<IEvalElement, AbstractEvalResult> entry : values.entrySet()) {
+      AbstractEvalResult result = entry.getValue();
+      String value =
+          result instanceof EvalResult evalResult ? evalResult.getValue() : result.toString();
+      bindings.add(new Binding(entry.getKey().getCode(), value));
+    }
   }
 
   private static List<String> violatedInvariants(StateSpace stateSpace, State state) {

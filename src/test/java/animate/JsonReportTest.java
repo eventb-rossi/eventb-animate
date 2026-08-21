@@ -152,6 +152,10 @@ public class JsonReportTest {
       assertTrue(counterexample.get("transitions").size() > 0);
       assertTrue(counterexample.get("violatedInvariants").size() > 0);
       assertTrue(counterexample.get("violatingState").asText().length() > 0);
+      JsonNode bindings = counterexample.get("bindings");
+      assertTrue("the violating state is reported as bindings", bindings.size() > 0);
+      assertTrue(bindings.get(0).get("name").asText().length() > 0);
+      assertTrue(bindings.get(0).hasNonNull("value"));
 
       Document doc = TestCli.parseXml(junit);
       Element suite = (Element) doc.getElementsByTagName("testsuite").item(0);

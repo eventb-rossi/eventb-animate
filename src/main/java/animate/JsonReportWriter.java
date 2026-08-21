@@ -80,6 +80,14 @@ final class JsonReportWriter {
         ArrayNode violated = counterexampleNode.putArray("violatedInvariants");
         counterexample.violatedInvariants().forEach(violated::add);
       }
+      if (!counterexample.bindings().isEmpty()) {
+        ArrayNode bindings = counterexampleNode.putArray("bindings");
+        for (TraceWriter.Binding binding : counterexample.bindings()) {
+          ObjectNode bindingNode = bindings.addObject();
+          bindingNode.put("name", binding.name());
+          bindingNode.put("value", binding.value());
+        }
+      }
     }
     if (!report.evaluations().isEmpty()) {
       ArrayNode evaluations = root.putArray("evaluations");
