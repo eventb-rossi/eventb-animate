@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.util.List;
 
 /**
  * Renders the JSON run report. The document is built field by field instead of data-binding
@@ -64,6 +65,7 @@ final class JsonReportWriter {
       if (check.message() != null) {
         checkNode.put("message", check.message());
       }
+      putBindings(checkNode, check.bindings());
     }
     if (report.finding() != null) {
       ObjectNode finding = root.putObject("finding");
@@ -80,14 +82,7 @@ final class JsonReportWriter {
         ArrayNode violated = counterexampleNode.putArray("violatedInvariants");
         counterexample.violatedInvariants().forEach(violated::add);
       }
-      if (!counterexample.bindings().isEmpty()) {
-        ArrayNode bindings = counterexampleNode.putArray("bindings");
-        for (TraceWriter.Binding binding : counterexample.bindings()) {
-          ObjectNode bindingNode = bindings.addObject();
-          bindingNode.put("name", binding.name());
-          bindingNode.put("value", binding.value());
-        }
-      }
+      putBindings(counterexampleNode, counterexample.bindings());
     }
     if (!report.evaluations().isEmpty()) {
       ArrayNode evaluations = root.putArray("evaluations");
@@ -109,5 +104,18 @@ final class JsonReportWriter {
       root.put("traceFile", report.traceFile().toString());
     }
     return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(root) + "\n";
+  }
+
+  /** A `bindings` array of name/value pairs; omitted when there are none. */
+  private static void putBindings(ObjectNode parent, List<TraceWriter.Binding> bindings) {
+    if (bindings.isEmpty()) {
+      return;
+    }
+    ArrayNode array = parent.putArray("bindings");
+    for (TraceWriter.Binding binding : bindings) {
+      ObjectNode node = array.addObject();
+      node.put("name", binding.name());
+      node.put("value", binding.value());
+    }
   }
 }

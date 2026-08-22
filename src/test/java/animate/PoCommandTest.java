@@ -218,22 +218,43 @@ public class PoCommandTest {
   }
 
   @Test(timeout = 120000)
-  public void testDisproveFindsTheCounterexample() {
-    // counter's inc/inv2/INV is false (x=4 steps to x=5 against x<5) while
-    // inc/inv1/INV is provable; the solver must settle both.
-    TestCli.Result result = TestCli.execute("po", "--disprove", COUNTER_M0);
+  public void testDisproveFindsTheCounterexample() throws Exception {
+    Path report = Files.createTempFile("animate-po-report-", ".json");
+    try {
+      // counter's inc/inv2/INV is false (x=4 steps to x=5 against x<5) while
+      // inc/inv1/INV is provable; the solver must settle both.
+      TestCli.Result result =
+          TestCli.execute("po", "--disprove", "--json", report.toString(), COUNTER_M0);
 
-    assertEquals(
-        "A disproved obligation is a violation:\n" + result.output(), 1, result.exitCode());
-    assertTrue(
-        "The counterexample should be shown:\n" + result.output(),
-        result.output().contains("M0/inc/inv2/INV: disproved (counterexample: x = 4)"));
-    assertTrue(
-        "The provable obligation should pass via the solver:\n" + result.output(),
-        result.output().contains("M0/inc/inv1/INV: proven by the constraint solver"));
-    assertTrue(
-        "The verdict should count the disproof:\n" + result.output(),
-        result.output().contains("Error: 1 of 2 proof obligations are disproved"));
+      assertEquals(
+          "A disproved obligation is a violation:\n" + result.output(), 1, result.exitCode());
+      assertTrue(
+          "The counterexample should be shown:\n" + result.output(),
+          result.output().contains("M0/inc/inv2/INV: disproved (counterexample: x = 4)"));
+      assertTrue(
+          "The provable obligation should pass via the solver:\n" + result.output(),
+          result.output().contains("M0/inc/inv1/INV: proven by the constraint solver"));
+      assertTrue(
+          "The verdict should count the disproof:\n" + result.output(),
+          result.output().contains("Error: 1 of 2 proof obligations are disproved"));
+
+      JsonNode root = TestCli.parseJson(Files.readString(report));
+      JsonNode disproved = null;
+      for (JsonNode check : root.get("checks")) {
+        if (check.get("name").asText().equals("M0/inc/inv2/INV")) {
+          disproved = check;
+        } else {
+          assertNull("only the disproof carries bindings: " + check, check.get("bindings"));
+        }
+      }
+      assertEquals("failed", disproved.get("outcome").asText());
+      JsonNode bindings = disproved.get("bindings");
+      assertEquals("the counterexample valuation is structured", 1, bindings.size());
+      assertEquals("x", bindings.get(0).get("name").asText());
+      assertEquals("4", bindings.get(0).get("value").asText());
+    } finally {
+      Files.deleteIfExists(report);
+    }
   }
 
   @Test(timeout = 120000)

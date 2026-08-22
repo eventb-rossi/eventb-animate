@@ -249,7 +249,8 @@ class PoCommand implements Callable<Integer> {
         System.out.println("\t - " + qualified.name() + ": " + outcome.message());
         checks.set(
             open.checkIndex(),
-            new RunReport.Check(qualified.name(), outcome.outcome(), outcome.message()));
+            new RunReport.Check(
+                qualified.name(), outcome.outcome(), outcome.message(), outcome.bindings()));
         if (outcome.disproved()) {
           disproved++;
         } else if (outcome.outcome() == RunReport.Outcome.PASSED) {
@@ -308,7 +309,16 @@ class PoCommand implements Callable<Integer> {
   private record OpenPo(QualifiedPo po, int checkIndex) {}
 
   /** What one disprover run means for the obligation's check and the run verdict. */
-  private record DisproveOutcome(RunReport.Outcome outcome, String message, boolean disproved) {}
+  private record DisproveOutcome(
+      RunReport.Outcome outcome,
+      String message,
+      boolean disproved,
+      List<TraceWriter.Binding> bindings) {
+
+    DisproveOutcome(RunReport.Outcome outcome, String message, boolean disproved) {
+      this(outcome, message, disproved, List.of());
+    }
+  }
 
   private DisproveOutcome attemptDisproof(
       QualifiedPo qualified, Map<String, PoSequentParser> sequentCache, StateSpace session) {
@@ -358,13 +368,15 @@ class PoCommand implements Callable<Integer> {
           new DisproveOutcome(
               RunReport.Outcome.FAILED,
               "disproved" + (detail.isEmpty() ? "" : " (counterexample: " + detail + ")"),
-              true);
+              true,
+              command.getSolutionBindings());
       case DISPROVED_ON_SELECTED ->
           new DisproveOutcome(
               RunReport.Outcome.FAILED,
               "counterexample under the selected hypotheses only (may be spurious)"
                   + (detail.isEmpty() ? "" : ": " + detail),
-              false);
+              false,
+              command.getSolutionBindings());
       case PROVED ->
           new DisproveOutcome(
               RunReport.Outcome.PASSED,

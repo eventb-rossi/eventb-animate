@@ -199,7 +199,15 @@ record RunReport(
     }
   }
 
-  record Check(String name, Outcome outcome, String message) {}
+  record Check(String name, Outcome outcome, String message, List<TraceWriter.Binding> bindings) {
+    Check {
+      bindings = List.copyOf(bindings);
+    }
+
+    Check(String name, Outcome outcome, String message) {
+      this(name, outcome, message, List.of());
+    }
+  }
 
   /**
    * One formula's evaluated value in one state. {@code value} is the printed value (an expression's

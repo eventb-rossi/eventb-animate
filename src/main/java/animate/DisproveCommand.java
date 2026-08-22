@@ -8,6 +8,7 @@ import de.prob.prolog.term.ListPrologTerm;
 import de.prob.prolog.term.PrologTerm;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Asks ProB's constraint solver for a counterexample to one proof obligation: a valuation
@@ -39,6 +40,7 @@ class DisproveCommand extends AbstractCommand {
 
   private Verdict verdict;
   private String detail;
+  private List<TraceWriter.Binding> solutionBindings = List.of();
 
   DisproveCommand(PoSequentParser.Sequent sequent, int timeoutMs) {
     this.sequent = sequent;
@@ -52,6 +54,11 @@ class DisproveCommand extends AbstractCommand {
   /** Counterexample bindings or the solver's reason; empty when there is nothing to add. */
   String getDetail() {
     return detail == null ? "" : detail;
+  }
+
+  /** The counterexample valuation, one name/value pair per identifier; empty without a solution. */
+  List<TraceWriter.Binding> getSolutionBindings() {
+    return solutionBindings;
   }
 
   @Override
@@ -80,11 +87,11 @@ class DisproveCommand extends AbstractCommand {
     switch (result.getFunctor()) {
       case "solution" -> {
         verdict = Verdict.DISPROVED;
-        detail = renderBindings(result.getArgument(1));
+        recordSolution(result.getArgument(1));
       }
       case "solution_on_selected_hypotheses" -> {
         verdict = Verdict.DISPROVED_ON_SELECTED;
-        detail = renderBindings(result.getArgument(1));
+        recordSolution(result.getArgument(1));
       }
       case "contradiction_found" -> verdict = Verdict.PROVED;
       case "contradiction_in_hypotheses" -> verdict = Verdict.CONTRADICTORY_HYPOTHESES;
@@ -99,16 +106,22 @@ class DisproveCommand extends AbstractCommand {
   }
 
   /** The solution is a list of binding(Name, Value, PrettyPrintedValue) terms. */
-  private static String renderBindings(PrologTerm solution) {
+  private void recordSolution(PrologTerm solution) {
     if (!(solution instanceof ListPrologTerm list)) {
-      return solution.toString();
+      detail = solution.toString();
+      return;
     }
-    List<String> bindings = new ArrayList<>();
+    List<TraceWriter.Binding> bindings = new ArrayList<>();
     for (PrologTerm binding : list) {
       bindings.add(
-          binding.getArgument(1).getFunctor() + " = " + binding.getArgument(3).getFunctor());
+          new TraceWriter.Binding(
+              binding.getArgument(1).getFunctor(), binding.getArgument(3).getFunctor()));
     }
-    return String.join(", ", bindings);
+    solutionBindings = List.copyOf(bindings);
+    detail =
+        solutionBindings.stream()
+            .map(binding -> binding.name() + " = " + binding.value())
+            .collect(Collectors.joining(", "));
   }
 
   private static String renderReason(PrologTerm reason) {

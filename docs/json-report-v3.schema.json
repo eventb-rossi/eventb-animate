@@ -668,6 +668,12 @@
         },
         "message": {
           "type": "string"
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/stateBinding"
+          }
         }
       }
     },
