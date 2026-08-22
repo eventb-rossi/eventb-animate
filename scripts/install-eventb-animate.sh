@@ -8,7 +8,7 @@
 # vouches for it.
 #
 # Inputs (environment):
-#   EVENTB_ANIMATE_VERSION  release tag, e.g. v6.4; empty or `latest` means latest
+#   EVENTB_ANIMATE_VERSION  release tag, e.g. v6.5; empty or `latest` means latest
 #   EVENTB_ANIMATE_REPO     optional, defaults to eventb-rossi/eventb-animate
 #   EVENTB_ANIMATE_ADD_TO_PATH
 #                           optional, `true` creates a launcher on GITHUB_PATH
@@ -29,7 +29,7 @@ version_pattern='v[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?
 
 require_release_tag() {
   if ! [[ "$1" =~ ^${version_pattern}$ ]]; then
-    echo "::error::eventb-animate version must be 'latest' or a release tag such as v6.4" >&2
+    echo "::error::eventb-animate version must be 'latest' or a release tag such as v6.5" >&2
     exit 1
   fi
 }

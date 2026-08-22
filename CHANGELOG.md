@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [6.5] - 2026-08-22
+
+### Features
+
+- Report a model-check counterexample's violating state as a `bindings` array
+  of identifier/value pairs next to `violatingState`, so consumers no longer
+  have to parse ProB's state representation string
+- Report a disproved obligation's counterexample as `bindings` on the check,
+  one name/value pair per identifier; the `message` string is unchanged
+
+### Dependencies
+
+- Bump com.github.spotbugs from 6.5.9 to 6.5.10
+- Bump gradle-wrapper from 9.6.1 to 9.7.0
+- Bump actions/cache from 4 to 6
+- Bump ch.qos.logback:logback-classic from 1.6.1 to 1.6.3
+
 ## [6.4] - 2026-08-08
 
 ### Features
