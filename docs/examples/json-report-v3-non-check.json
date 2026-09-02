@@ -1,7 +1,7 @@
 {
   "formatVersion": 3,
   "tool": "eventb-animate",
-  "toolVersion": "6.5",
+  "toolVersion": "6.6",
   "command": "info",
   "model": "models/traffic-light/M2.bum",
   "machine": "M2",

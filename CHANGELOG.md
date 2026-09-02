@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [6.6] - 2026-09-02
+
+### Dependencies
+
+- Bump com.github.spotbugs from 6.5.10 to 6.5.11
+- Bump com.fasterxml.jackson.core:jackson-databind
+- Bump com.networknt:json-schema-validator
+- Bump gradle-wrapper from 9.7.0 to 9.7.1
+- Bump com.diffplug.spotless from 8.9.0 to 8.10.0
+- Bump com.diffplug.spotless from 8.10.0 to 8.10.1
+- Bump actions/setup-java from 5 to 6
+- Bump de.hhu.stups:de.prob2.kernel from 4.15.1 to 4.16.1
+
 ## [6.5] - 2026-08-22
 
 ### Features

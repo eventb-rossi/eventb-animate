@@ -108,7 +108,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version=$'v6.5\n::warning::forged'
+          version=$'v6.6\n::warning::forged'
           if output=$(EVENTB_ANIMATE_VERSION="$version" bash scripts/install-eventb-animate.sh 2>&1); then
             echo "installing a malformed version must fail"
             exit 1
