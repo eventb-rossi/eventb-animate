@@ -49,9 +49,16 @@ actions = {
   abort "shared action input #{input} has drifted" unless root_contract == setup_contract
 end
 
+# Matched on the action rather than a pinned version: keying on the literal the
+# actions currently use makes the lookup miss both copies the moment they are
+# bumped together, and a pair of nils compares equal — the guard would pass
+# while comparing nothing. A dependabot bump that reaches only one of the two
+# files is exactly what this catches.
 java_steps = actions.transform_values do |metadata|
-  metadata.fetch('runs').fetch('steps').find { |step| step['uses'] == 'actions/setup-java@v5' }
+  metadata.fetch('runs').fetch('steps')
+    .find { |step| step['uses'].to_s.start_with?('actions/setup-java@') }
 end
+abort 'the setup-java step is missing' if java_steps.values.any?(&:nil?)
 abort 'shared setup-java step has drifted' unless java_steps.values.uniq.size == 1
 
 resolve_steps = actions.transform_values do |metadata|

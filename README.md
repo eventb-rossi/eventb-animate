@@ -648,7 +648,7 @@ and `cache: 'false'` opts out.
 Use the setup action when a repository script owns the model-checking workflow:
 
 ```yaml
-- uses: actions/setup-java@v5
+- uses: actions/setup-java@v6
   with:
     distribution: 'temurin'
     java-version: '21'

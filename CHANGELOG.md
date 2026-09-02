@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- Realign the setup action's `actions/setup-java` pin with the root action,
+  which a dependency bump had moved on its own, and match the shared step on
+  the action instead of a pinned version so a one-sided bump keeps failing the
+  wrapper check rather than silently matching neither copy
+- Run the wrapper consistency check before a release publishes, and again in
+  the tag pre-push hook; it previously ran only for pushes to main, so a tag
+  could ship over drift that main had already gone red on
+
 ## [6.6] - 2026-09-02
 
 ### Dependencies

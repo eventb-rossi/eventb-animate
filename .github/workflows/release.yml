@@ -34,6 +34,12 @@ jobs:
         with:
           ref: refs/tags/${{ env.RELEASE_TAG }}
 
+      # The CI Wrappers workflow runs the same guard, but only for pushes to
+      # main — a tag carries no such run, so without this a release publishes
+      # over wrapper drift that main went red on hours earlier. v6.6 did.
+      - name: Verify the CI wrappers agree
+        run: ruby scripts/extract-ci-shell.rb "$RUNNER_TEMP/ci-shell"
+
       - name: Verify recovery target
         if: github.event_name == 'workflow_dispatch'
         env:
