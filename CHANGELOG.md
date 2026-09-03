@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [7.0] - 2026-09-03
 
 ### Features
 
@@ -28,6 +28,18 @@ All notable changes to this project will be documented in this file.
 - Run the wrapper consistency check before a release publishes, and again in
   the tag pre-push hook; it previously ran only for pushes to main, so a tag
   could ship over drift that main had already gone red on
+- Derive the output name when `convert` is given only a model, which died with
+  a NullPointerException: picocli anchors the inherited `<model>` after
+  `convert`'s own `<output.mch>`, so a lone argument bound to the output and
+  left the model null. A lone model now names its own output (the `-m` machine,
+  else the model's base name, plus `.mch`) in the current directory, still
+  guarded by `--force`, and a lone output reports the missing `<model>` as a
+  usage error
+- Derive the JSON report format in the release gate and the release workflow
+  instead of pinning v3. The bump to v4 left `check-version.sh` matching no
+  examples (so it silently verified none) and broke asset staging in
+  `release.yml` after the tag was already pushed; both now read the format from
+  the schema on disk and fail loudly when nothing matches
 
 ## [6.6] - 2026-09-02
 

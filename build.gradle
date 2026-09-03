@@ -7,7 +7,7 @@ plugins {
 	id 'com.gradleup.shadow' version '9.6.1'
 }
 
-version = '6.6'
+version = '7.0'
 
 java {
 	toolchain {

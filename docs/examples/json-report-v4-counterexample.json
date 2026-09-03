@@ -1,7 +1,7 @@
 {
   "formatVersion": 4,
   "tool": "eventb-animate",
-  "toolVersion": "6.6",
+  "toolVersion": "7.0",
   "command": "check",
   "model": "models/base-model/M1.bum",
   "machine": "M1",
