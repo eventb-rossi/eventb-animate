@@ -141,12 +141,20 @@ class ModelResolver {
     return byProject;
   }
 
+  /**
+   * The machine part of a {@code -m [<project>/]<name>} selector: empty for {@code -m <project>/},
+   * which auto-selects within the project. The one reading of the selector's grammar.
+   */
+  static String bareMachineName(String machineName) {
+    return machineName.substring(machineName.indexOf('/') + 1);
+  }
+
   private Path findByName(Map<String, List<Path>> byProject, String machineName, String source)
       throws IOException {
     int slash = machineName.indexOf('/');
     if (slash >= 0) {
       String projectKey = machineName.substring(0, slash);
-      String bareName = machineName.substring(slash + 1);
+      String bareName = bareMachineName(machineName);
       List<Path> project = resolveProject(byProject, projectKey, source);
       String label = "project " + projectLabel(projectKey);
       // "-m <project>/" with no machine means: auto-select the most refined machine in that

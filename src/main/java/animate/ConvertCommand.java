@@ -1,5 +1,6 @@
 package animate;
 
+import com.google.common.io.MoreFiles;
 import de.prob.cli.Installer;
 import de.prob.cli.OsSpecificInfo;
 import java.io.IOException;
@@ -11,9 +12,11 @@ import java.util.concurrent.Callable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.ParentCommand;
+import picocli.CommandLine.Spec;
 
 @Command(
     name = "convert",
@@ -27,7 +30,13 @@ class ConvertCommand implements Callable<Integer> {
 
   @ParentCommand Animate parent;
 
-  @Parameters(index = "0", paramLabel = "<output.mch>", description = "Classical B output file")
+  @Spec CommandSpec spec;
+
+  @Parameters(
+      index = "0",
+      arity = "0..1",
+      paramLabel = "<output.mch>",
+      description = "Classical B output file (default: <model>.mch in the current directory)")
   Path output;
 
   @Option(names = "--force", description = "overwrite existing output files")
@@ -35,12 +44,12 @@ class ConvertCommand implements Callable<Integer> {
 
   @Override
   public Integer call() {
+    resolvePositionalArguments();
     return parent.finishRun(convert());
   }
 
   private RunReport convert() {
     try {
-      normalizePositionalArguments();
       Animate.validateWritableOutput(output, "Output", force);
 
       boolean inputIsPackage = isProBEventBPackage(parent.model);
@@ -81,12 +90,54 @@ class ConvertCommand implements Callable<Integer> {
     }
   }
 
-  private void normalizePositionalArguments() {
+  /**
+   * Assigns the two positionals their roles. picocli anchors the inherited {@code <model>} after
+   * this command's own {@code <output.mch>}, so the pair is accepted in either order, and a lone
+   * positional always lands in {@code output} -- which of the two it is can only be decided here,
+   * after every option is bound.
+   */
+  private void resolvePositionalArguments() {
     if (looksLikeInputModel(output) && !looksLikeInputModel(parent.model)) {
       Path requestedOutput = parent.model;
       parent.model = output;
       output = requestedOutput;
     }
+    if (parent.model == null) {
+      // picocli does not raise this itself: the inherited <model> is anchored past the positional
+      // that was given, and the swap above found nothing that looks like a model.
+      throw Animate.usageError(spec, "missing required parameter: '<model>'");
+    }
+    if (output == null) {
+      String name = defaultOutputName(parent.model, parent.machineName);
+      if (name == null) {
+        throw Animate.usageError(
+            spec, "cannot derive an output file name from " + parent.model + ", pass <output.mch>");
+      }
+      output = Path.of(name);
+    }
+  }
+
+  /**
+   * The output file name for a run that named only a model: the machine selected with {@code -m},
+   * else the model's own name, plus {@code .mch}. Relative on purpose, so the machine lands in the
+   * current directory instead of inside the model's project. Null when neither carries a name.
+   */
+  static String defaultOutputName(Path model, String machineName) {
+    // "-m <project>/" auto-selects and so names no machine; a still qualified name is no file name.
+    String base = machineName == null ? "" : ModelResolver.bareMachineName(machineName);
+    if (base.isEmpty() || base.contains("/")) {
+      Path fileName = model.toAbsolutePath().normalize().getFileName();
+      if (fileName == null) {
+        return null;
+      }
+      // Asks the filesystem, unlike looksLikeInputModel below: a Rodin project is a directory, and
+      // a directory name has no extension to strip.
+      base =
+          Files.isDirectory(model)
+              ? fileName.toString()
+              : MoreFiles.getNameWithoutExtension(fileName);
+    }
+    return base.isBlank() ? null : base + ".mch";
   }
 
   private boolean looksLikeInputModel(Path path) {

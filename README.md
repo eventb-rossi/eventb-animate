@@ -589,10 +589,16 @@ Options:
 
 ```bash
 eventb-animate convert output.mch path/to/model.bum
+eventb-animate convert path/to/model.bum          # writes ./model.mch
 ```
 
 Translates the Event-B model into a Classical B machine (`.mch`). A ProB Event-B
 `.eventb` prolog package is also accepted as input.
+
+With the output omitted, the machine is written to the current directory under a
+name derived from the machine selected by `-m/--machine`, or from the model's own
+base name (`M0.bum` becomes `M0.mch`, a project directory or `.zip` archive its
+own name). `--force` applies to that file as it does to an explicit one.
 
 To model-check a model, run `eventb-animate <model>` directly (see [Model
 Checking](#model-checking)); that checks the native Event-B state space and works
