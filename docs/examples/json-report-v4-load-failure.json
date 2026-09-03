@@ -1,5 +1,5 @@
 {
-  "formatVersion": 3,
+  "formatVersion": 4,
   "tool": "eventb-animate",
   "toolVersion": "6.6",
   "command": "check",
@@ -12,7 +12,7 @@
     "phase": "load",
     "reason": "input_failure"
   },
-  "exitCode": 1,
+  "exitCode": 66,
   "message": "Error loading model: Model file does not exist: missing.bum",
   "checks": []
 }

@@ -25,7 +25,7 @@ public class JUnitReportTest {
     try {
       TestCli.Result result = TestCli.execute("--junit", report.toString(), "missing.bum");
 
-      assertEquals("The load failure keeps exit 1:\n" + result.output(), 1, result.exitCode());
+      assertEquals("A load failure is an input error:\n" + result.output(), 66, result.exitCode());
 
       Document doc = TestCli.parseXml(report);
       Element suite = (Element) doc.getElementsByTagName("testsuite").item(0);

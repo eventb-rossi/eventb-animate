@@ -76,7 +76,7 @@ class InfoCommand implements Callable<Integer> {
     } catch (IllegalArgumentException | IOException e) {
       String message = e.getMessage();
       System.err.println("Error: " + message);
-      return parent.finishRun(RunReport.of(RunReport.Status.ERROR, message));
+      return parent.finishRun(RunReport.of(RunReport.Status.INPUT_ERROR, message));
     }
     return parent.finishRun(parent.withStateSpace(this::dumpInfo));
   }
@@ -132,7 +132,12 @@ class InfoCommand implements Callable<Integer> {
             .map(RunReport.Check::message)
             .findFirst()
             .orElse(null);
-    RunReport.Status status = firstError == null ? RunReport.Status.OK : RunReport.Status.ERROR;
+    // These are dominated by writes to the destinations named on the command line, so
+    // they are classified as input failures. addVisualizationCheck's catch also covers
+    // ProB-side rendering failures, which would be better reported as 70; splitting them
+    // needs the per-check status this report shape does not carry yet.
+    RunReport.Status status =
+        firstError == null ? RunReport.Status.OK : RunReport.Status.INPUT_ERROR;
     return RunReport.of(status, firstError, checks);
   }
 

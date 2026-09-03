@@ -87,7 +87,8 @@ public class MarkdownReportTest {
   /** Absent facts are omitted (not rendered as null), and a checkless run still gets one row. */
   @Test
   public void testLoadFailureOmitsMissingFactsAndSynthesizesARow() {
-    RunReport report = RunReport.of(RunReport.Status.ERROR, "Error loading model: missing.bum");
+    RunReport report =
+        RunReport.of(RunReport.Status.INPUT_ERROR, "Error loading model: missing.bum");
 
     String md = MarkdownReportWriter.render(envelope(report, null, null, null));
 

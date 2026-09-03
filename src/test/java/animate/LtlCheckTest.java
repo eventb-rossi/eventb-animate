@@ -81,7 +81,7 @@ public class LtlCheckTest {
 
       TestCli.Result result = TestCli.execute("--ltl-file", formula.toString(), TRAFFIC_LIGHT_M0);
 
-      assertEquals("An undecodable file exits 1:\n" + result.output(), 1, result.exitCode());
+      assertEquals("An undecodable file exits 66:\n" + result.output(), 66, result.exitCode());
       assertTrue(
           "The error should explain the encoding problem:\n" + result.output(),
           result.output().contains("not valid UTF-8"));

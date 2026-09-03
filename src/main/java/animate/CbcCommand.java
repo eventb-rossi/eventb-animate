@@ -157,7 +157,7 @@ class CbcCommand implements Callable<Integer> {
                 + String.join(", ", machineEvents)
                 + ")";
         System.err.println("Error: " + message);
-        return RunReport.singleCheck(RunReport.Status.ERROR, "invariant", message);
+        return RunReport.singleCheck(RunReport.Status.INPUT_ERROR, "invariant", message);
       }
       parts.add(checkInvariantPreservation(stateSpace, scope));
     }

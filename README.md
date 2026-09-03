@@ -229,18 +229,17 @@ machine name is unique across all projects.
   invariant safety, all requested LTSmin passes completed cleanly, all proof
   obligations are discharged (`wd`, `po`), a
   replay was perfect (`replay`), a trace was adapted to the target refinement
-  level (`replay --refine`), an operation-coverage run completed (`testgen`), or
+  level (`replay --refine`), an operation-coverage run completed (`testgen`),
   every requested formula was evaluated (`eval`, including a `--where` query that
-  matched no state)
-- `1` - a definite negative verdict or an input failure: the model could not
-  be loaded, an invariant or assertion was violated, a deadlock was reached (a
-  state with no enabled events, including legitimate terminal states), a
-  `--goal` state was found, an LTL counterexample was found, a `--symbolic` run
-  or LTSmin backend found a reachable violation, a proof obligation was disproved
-  (`po --disprove`), a trace replay was not perfect (`replay`), no adaptation of
-  a trace to the target refinement level was found (`replay --refine`), a dead
-  target operation was found under `testgen --fail-on-infeasible`, or a
-  conversion failed (`convert`)
+  matched no state), or a model was converted (`convert`)
+- `1` - a definite negative verdict **about the model**: an invariant or
+  assertion was violated, a deadlock was reached (a state with no enabled events,
+  including legitimate terminal states), a `--goal` state was found, an LTL
+  counterexample was found, a `--symbolic` run or LTSmin backend found a
+  reachable violation, a proof obligation was disproved (`po --disprove`), a
+  trace replay was not perfect (`replay`), no adaptation of a trace to the target
+  refinement level was found (`replay --refine`), or a dead target operation was
+  found under `testgen --fail-on-infeasible`
 - `2` - no verdict: nothing was proven either way. The check could not
   complete (interrupted or a ProB error), a bounded LTL run hit the
   `--states` limit, a `--symbolic` run was inconclusive (the solver/provers were
@@ -250,10 +249,26 @@ machine name is unique across all projects.
   left uncovered under `testgen --fail-on-uncovered`, an `eval` formula could not
   be evaluated (a query with no answer), or the command line was invalid (usage
   errors, including unparseable `--goal`/`--ltl`/`--eval` formulas)
+- `66` - input failure (`EX_NOINPUT`): the run could not use what it was given.
+  The model could not be loaded (missing, malformed, or an archive that bundles
+  no or several projects), a context was supplied where a machine is required
+  (`cbc`, `testgen`), `--ltl-file` or a `replay` trace could not be read, the
+  Rodin proof database is missing (`po`), `--events`/`--operations` named
+  something the machine does not define, or an output destination is unusable
+  (`convert`, `info`)
+- `70` - internal failure (`EX_SOFTWARE`): the tool itself could not finish.
+  ProB found no feasible constant setup or initialisation, `probcli` failed
+  during `convert`, a test trace could not be written (`testgen`), a requested
+  report could not be written, or an unexpected error escaped a command
+
+Exit 1 therefore means the model is wrong, and 66/70 mean the run never got far
+enough to say. A CI job that fails on any non-zero code needs no change; one that
+distinguishes outcomes can now do so from `$?` alone, without parsing `--json`.
 
 If a requested `--json`/`--junit`/`--markdown` report cannot be written, an
-otherwise clean run exits 1: the report is the artifact CI asked for, so its
-absence must fail the job.
+otherwise clean run exits 70: the report is the artifact CI asked for, so its
+absence must fail the job. A run that already failed keeps the code that says
+why.
 
 ### Machine-Readable Reports
 
@@ -266,7 +281,13 @@ state, and violated invariants; the `--save` trace path as `traceFile`; and,
 when `--eval` or the `eval` subcommand was used, an `evaluations` array of
 per-state `{formula, value}` blocks).
 
-Format version 3 adds `completion` to every top-level `check` report. Its
+Format version 4 splits the failure exit code: `status` still reads `ok`,
+`violation`, `incomplete` or `error`, but an `error` report now carries
+`exitCode` 66 or 70 rather than 1 (see [Exit Codes](#exit-codes)), and a clean
+run whose report could not be written carries 70. Nothing else about the
+document changed, so a consumer that reads `status` needs no update.
+
+Format version 3 added `completion` to every top-level `check` report. Its
 `classification` is `complete`, `counterexample`, `incomplete`, or `error`;
 its `phase` is the terminal phase in which execution stopped (`load`,
 `constant_setup`, `initialization`, or `search`), and its stable `reason`
@@ -310,8 +331,8 @@ counters, so those modes emit `completion` but omit `searchStatistics`.
 Non-check commands omit `completion`, `finding`, and `searchStatistics`. Usage
 errors write no report at all because the run never started.
 
-The document carries `formatVersion: 3`; the key set only changes with a
-version bump. The published [JSON Schema](docs/json-report-v3.schema.json) and
+The document carries `formatVersion: 4`; the key set only changes with a
+version bump. The published [JSON Schema](docs/json-report-v4.schema.json) and
 [examples](docs/examples/) define the complete contract. Report files are
 overwritten on every run (they are per-run telemetry, so no `--force` is
 needed).

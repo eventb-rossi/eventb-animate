@@ -36,19 +36,19 @@ public class JsonReportTest {
   public void testLoadFailureReportIsWrittenWithErrorStatus() throws Exception {
     TestCli.SplitResult result = TestCli.executeSplit("--json", "-", "missing.bum");
 
-    assertEquals("A load failure keeps exit 1:\n" + result.stderr(), 1, result.exitCode());
+    assertEquals("A load failure is an input error:\n" + result.stderr(), 66, result.exitCode());
     assertTrue(
         "The human error stays on stderr:\n" + result.stderr(),
         result.stderr().contains("Error loading model:"));
 
     JsonNode root = TestCli.parseJson(result.stdout());
-    assertEquals(3, root.get("formatVersion").asInt());
+    assertEquals(4, root.get("formatVersion").asInt());
     assertEquals("eventb-animate", root.get("tool").asText());
     assertEquals("check", root.get("command").asText());
     assertEquals("missing.bum", root.get("model").asText());
     assertEquals("error", root.get("status").asText());
     assertCompletion(root, "error", "load", "input_failure");
-    assertEquals(1, root.get("exitCode").asInt());
+    assertEquals(66, root.get("exitCode").asInt());
     assertTrue(root.get("message").asText().contains("Error loading model"));
     assertEquals(0, root.get("checks").size());
     assertTrue(root.get("durationMs").asLong() >= 0);
@@ -95,7 +95,7 @@ public class JsonReportTest {
 
       TestCli.Result result = TestCli.execute("--json", report.toString(), "missing.bum");
 
-      assertEquals(1, result.exitCode());
+      assertEquals(66, result.exitCode());
       JsonNode root = TestCli.parseJson(Files.readString(report));
       assertEquals("error", root.get("status").asText());
       assertEquals(result.command().lastReport.message(), root.get("message").asText());
@@ -329,15 +329,18 @@ public class JsonReportTest {
 
   @Test(timeout = 120000)
   public void testSetupInitializationAndEvaluationFailuresAreStructured() throws Exception {
-    JsonNode constantFailure = runJson(REPORT_OUTCOMES + "/constant-infeasible/M0.bum");
+    // Setup that never yields a state is a tool failure (70); a state error found during
+    // the search is a verdict about the model (1).
+    JsonNode constantFailure = runJson(REPORT_OUTCOMES + "/constant-infeasible/M0.bum", 70);
     assertCompletion(constantFailure, "error", "constant_setup", "infeasible");
     assertNull("constant setup never enters search", constantFailure.get("searchStatistics"));
 
-    JsonNode initializationFailure = runJson(REPORT_OUTCOMES + "/initialization-infeasible/M0.bum");
+    JsonNode initializationFailure =
+        runJson(REPORT_OUTCOMES + "/initialization-infeasible/M0.bum", 70);
     assertCompletion(initializationFailure, "error", "initialization", "infeasible");
     assertNull("initialization never enters search", initializationFailure.get("searchStatistics"));
 
-    JsonNode stateError = runJson(REPORT_OUTCOMES + "/state-evaluation/M0.bum");
+    JsonNode stateError = runJson(REPORT_OUTCOMES + "/state-evaluation/M0.bum", 1);
     assertCompletion(stateError, "error", "search", "evaluation_error");
     assertFinding(stateError, "state_evaluation_error", "state-evaluation");
   }
@@ -353,10 +356,12 @@ public class JsonReportTest {
     assertFinding(root, "assertion_violation", "assertions");
   }
 
-  private static JsonNode runJson(String model) throws Exception {
+  private static JsonNode runJson(String model, int expectedExitCode) throws Exception {
     TestCli.SplitResult result = TestCli.executeSplit("--json", "-", model);
     assertEquals(
-        "The fixture should produce a definite failure:\n" + result.stderr(), 1, result.exitCode());
+        "The fixture should fail with the expected code:\n" + result.stderr(),
+        expectedExitCode,
+        result.exitCode());
     return TestCli.parseJson(result.stdout());
   }
 

@@ -21,10 +21,10 @@ import java.util.stream.Stream;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-/** Validates the published v3 schema against examples and reports emitted by the CLI. */
+/** Validates the published v4 schema against examples and reports emitted by the CLI. */
 public class JsonSchemaTest {
 
-  private static final Path SCHEMA_PATH = Path.of("docs/json-report-v3.schema.json");
+  private static final Path SCHEMA_PATH = Path.of("docs/json-report-v4.schema.json");
   private static final Path EXAMPLES_PATH = Path.of("docs/examples");
   private static final String TRAFFIC_LIGHT_M2 =
       Paths.get("src/test/resources/models/traffic-light/M2.bum").toString();
@@ -55,10 +55,10 @@ public class JsonSchemaTest {
     try (Stream<Path> files = Files.list(EXAMPLES_PATH)) {
       List<Path> examples =
           files
-              .filter(path -> path.getFileName().toString().startsWith("json-report-v3-"))
+              .filter(path -> path.getFileName().toString().startsWith("json-report-v4-"))
               .sorted()
               .toList();
-      assertFalse("at least one v3 example must be published", examples.isEmpty());
+      assertFalse("at least one v4 example must be published", examples.isEmpty());
       for (Path example : examples) {
         assertValid(schema, example.toString(), Files.readString(example));
       }
@@ -184,7 +184,7 @@ public class JsonSchemaTest {
     ObjectNode exhaustive =
         (ObjectNode)
             TestCli.parseJson(
-                Files.readString(EXAMPLES_PATH.resolve("json-report-v3-exhaustive.json")));
+                Files.readString(EXAMPLES_PATH.resolve("json-report-v4-exhaustive.json")));
 
     ObjectNode mismatchedReason = exhaustive.deepCopy();
     ((ObjectNode) mismatchedReason.get("completion")).put("reason", "state_limit");
@@ -203,8 +203,12 @@ public class JsonSchemaTest {
     assertInvalid(schema, "ok check with incomplete exit code", contradictoryExit);
 
     ObjectNode reportWriteFailure = exhaustive.deepCopy();
-    reportWriteFailure.put("exitCode", 1);
+    reportWriteFailure.put("exitCode", 70);
     assertValid(schema, "clean check with report-write failure", reportWriteFailure.toString());
+
+    ObjectNode violationExitOnCleanCheck = exhaustive.deepCopy();
+    violationExitOnCleanCheck.put("exitCode", 1);
+    assertInvalid(schema, "clean check cannot exit as a violation", violationExitOnCleanCheck);
 
     ObjectNode interruptedSuccess = exhaustive.deepCopy();
     ObjectNode interruptedCompletion = (ObjectNode) interruptedSuccess.get("completion");
@@ -224,6 +228,19 @@ public class JsonSchemaTest {
     failureCompletion.put("reason", "engine_failure");
     assertValid(schema, "incomplete checker failure", checkFailure.toString());
 
+    ObjectNode loadFailure =
+        (ObjectNode)
+            TestCli.parseJson(
+                Files.readString(EXAMPLES_PATH.resolve("json-report-v4-load-failure.json")));
+
+    ObjectNode failureExitingAsViolation = loadFailure.deepCopy();
+    failureExitingAsViolation.put("exitCode", 1);
+    assertInvalid(schema, "a failure cannot exit as a violation", failureExitingAsViolation);
+
+    ObjectNode inputFailureAsToolFailure = loadFailure.deepCopy();
+    inputFailureAsToolFailure.put("exitCode", 70);
+    assertValid(schema, "a failure may exit 70", inputFailureAsToolFailure.toString());
+
     ObjectNode missingCompletion = exhaustive.deepCopy();
     missingCompletion.remove("completion");
     assertInvalid(schema, "check without completion", missingCompletion);
@@ -231,21 +248,21 @@ public class JsonSchemaTest {
     ObjectNode nonCheck =
         (ObjectNode)
             TestCli.parseJson(
-                Files.readString(EXAMPLES_PATH.resolve("json-report-v3-non-check.json")));
+                Files.readString(EXAMPLES_PATH.resolve("json-report-v4-non-check.json")));
     nonCheck.set("completion", exhaustive.get("completion"));
     assertInvalid(schema, "non-check with completion", nonCheck);
 
     ObjectNode mismatchedFinding =
         (ObjectNode)
             TestCli.parseJson(
-                Files.readString(EXAMPLES_PATH.resolve("json-report-v3-counterexample.json")));
+                Files.readString(EXAMPLES_PATH.resolve("json-report-v4-counterexample.json")));
     ((ObjectNode) mismatchedFinding.get("finding")).put("check", "deadlock");
     assertInvalid(schema, "finding does not match failed check", mismatchedFinding);
 
     ObjectNode validFinding =
         (ObjectNode)
             TestCli.parseJson(
-                Files.readString(EXAMPLES_PATH.resolve("json-report-v3-counterexample.json")));
+                Files.readString(EXAMPLES_PATH.resolve("json-report-v4-counterexample.json")));
     ObjectNode findingOnSuccess = exhaustive.deepCopy();
     findingOnSuccess.set("finding", validFinding.get("finding"));
     findingOnSuccess.set("checks", validFinding.get("checks"));
@@ -258,7 +275,7 @@ public class JsonSchemaTest {
     ObjectNode unsupportedStatistics =
         (ObjectNode)
             TestCli.parseJson(
-                Files.readString(EXAMPLES_PATH.resolve("json-report-v3-non-check.json")));
+                Files.readString(EXAMPLES_PATH.resolve("json-report-v4-non-check.json")));
     unsupportedStatistics.set("searchStatistics", exhaustive.get("searchStatistics"));
     assertInvalid(schema, "non-check with search statistics", unsupportedStatistics);
   }

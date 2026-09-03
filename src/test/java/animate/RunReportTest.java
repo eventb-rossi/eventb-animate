@@ -1,7 +1,6 @@
 package animate;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThrows;
 
@@ -18,24 +17,48 @@ import de.prob.check.ModelCheckLimitReached;
 import de.prob.check.ModelCheckOk;
 import de.prob.exception.ProBError;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.Test;
 
 public class RunReportTest {
 
+  /** Exit 1 is reserved for a verdict about the model; every failure gets its own code. */
   @Test
   public void testStatusExitCodesFollowReadmeContract() {
     assertEquals(0, RunReport.of(RunReport.Status.OK, "clean").exitCode());
     assertEquals(1, RunReport.of(RunReport.Status.VIOLATION, "violated").exitCode());
-    assertEquals(1, RunReport.of(RunReport.Status.ERROR, "failed").exitCode());
     assertEquals(2, RunReport.of(RunReport.Status.INCOMPLETE, "no verdict").exitCode());
+    assertEquals(66, RunReport.of(RunReport.Status.INPUT_ERROR, "unusable input").exitCode());
+    assertEquals(70, RunReport.of(RunReport.Status.INTERNAL_ERROR, "tool failed").exitCode());
   }
 
+  /** Both failure statuses stay spelled "error" outside the tool, so v4 keeps the v3 vocabulary. */
   @Test
-  public void testExitCodeOverrideWinsOverStatus() {
-    RunReport report = RunReport.of(RunReport.Status.ERROR, "probcli failed").withExitCode(3);
-    assertEquals(3, report.exitCode());
-    assertEquals(RunReport.Status.ERROR, report.status());
+  public void testBothFailureStatusesReportAsError() {
+    assertEquals("error", RunReport.Status.INPUT_ERROR.label());
+    assertEquals("error", RunReport.Status.INTERNAL_ERROR.label());
+    assertEquals("incomplete", RunReport.Status.INCOMPLETE.label());
+  }
+
+  /** The reverse lookup emitReports relies on, and the distinctness that makes it well-defined. */
+  @Test
+  public void testForExitCodeInvertsExitCode() {
+    for (RunReport.Status status : RunReport.Status.values()) {
+      assertEquals(status, RunReport.Status.forExitCode(status.exitCode()));
+    }
+    assertEquals(RunReport.Status.INTERNAL_ERROR, RunReport.Status.forExitCode(99));
+  }
+
+  /** Distinct codes are what lets a caller tell the statuses apart from $? alone. */
+  @Test
+  public void testEveryStatusHasItsOwnExitCode() {
+    long distinct =
+        Arrays.stream(RunReport.Status.values())
+            .mapToInt(RunReport.Status::exitCode)
+            .distinct()
+            .count();
+    assertEquals(RunReport.Status.values().length, distinct);
   }
 
   @Test
@@ -73,7 +96,6 @@ public class RunReportTest {
     assertEquals(Path.of("trace.json"), report.traceFile());
     assertEquals(RunReport.CompletionReason.PROPERTY_VIOLATION, report.completion().reason());
     assertEquals(new RunReport.SearchStatistics(3, 2, 4), report.searchStatistics());
-    assertNull(report.exitCodeOverride());
     assertEquals(1, report.exitCode());
   }
 
@@ -269,7 +291,8 @@ public class RunReportTest {
     assertEquals(RunReport.Outcome.PASSED, singleCheckOutcome(RunReport.Status.OK));
     assertEquals(RunReport.Outcome.FAILED, singleCheckOutcome(RunReport.Status.VIOLATION));
     assertEquals(RunReport.Outcome.ERROR, singleCheckOutcome(RunReport.Status.INCOMPLETE));
-    assertEquals(RunReport.Outcome.ERROR, singleCheckOutcome(RunReport.Status.ERROR));
+    assertEquals(RunReport.Outcome.ERROR, singleCheckOutcome(RunReport.Status.INPUT_ERROR));
+    assertEquals(RunReport.Outcome.ERROR, singleCheckOutcome(RunReport.Status.INTERNAL_ERROR));
   }
 
   private static RunReport.Outcome singleCheckOutcome(RunReport.Status status) {

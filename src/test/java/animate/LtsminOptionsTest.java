@@ -147,10 +147,10 @@ public class LtsminOptionsTest {
           TestCli.execute(
               "--backend", "ltsmin-sequential", "-p", "LTSMIN=" + emptyDirectory, "missing.bum");
 
-      assertEquals(1, result.exitCode());
+      assertEquals(66, result.exitCode());
       assertTrue(result.output().contains("Model file does not exist"));
       assertFalse(result.output().contains("backend unavailable"));
-      assertEquals(RunReport.Status.ERROR, result.command().lastReport.status());
+      assertEquals(RunReport.Status.INPUT_ERROR, result.command().lastReport.status());
     } finally {
       Files.deleteIfExists(emptyDirectory);
     }

@@ -23,8 +23,7 @@ record RunReport(
     List<StateEvaluation> evaluations,
     Path traceFile,
     Completion completion,
-    SearchStatistics searchStatistics,
-    Integer exitCodeOverride) {
+    SearchStatistics searchStatistics) {
 
   /** The lowercase spelling used for enum values in every external report format. */
   private interface Labelled {
@@ -40,26 +39,63 @@ record RunReport(
     evaluations = List.copyOf(evaluations);
   }
 
-  /** Run verdicts, ordered from best to worst; the exit codes follow the README contract. */
+  /**
+   * Run verdicts, ordered from best to worst, each carrying its README exit code. Exit 1 is
+   * reserved for a definite negative verdict about the model; both failure statuses render as
+   * {@code error}, so the external status vocabulary is unchanged.
+   */
   enum Status implements Labelled {
     /** The requested check found nothing wrong (possibly within a stated bound). */
-    OK,
+    OK(0),
     /** A definite negative verdict: violation, disproof, imperfect replay. */
-    VIOLATION,
+    VIOLATION(1),
     /**
      * No verdict: the check could not run to completion or obligations remain unproven, so nothing
      * was shown either way.
      */
-    INCOMPLETE,
-    /** The run failed before producing a verdict: load, input, or conversion failure. */
-    ERROR;
+    INCOMPLETE(2),
+    /**
+     * The run could not use what it was given: an unloadable model, an unreadable trace, LTL file
+     * or proof database, a name no component defines, or an unusable output destination.
+     */
+    INPUT_ERROR(66),
+    /**
+     * The run failed inside the tool: ProB or an external tool failed, or a requested report could
+     * not be written.
+     */
+    INTERNAL_ERROR(70);
+
+    private final int exitCode;
+
+    Status(int exitCode) {
+      this.exitCode = exitCode;
+    }
+
+    /** Whether the run failed before reaching a verdict, whatever kept it from getting there. */
+    boolean isFailure() {
+      return this == INPUT_ERROR || this == INTERNAL_ERROR;
+    }
+
+    @Override
+    public String label() {
+      return isFailure() ? "error" : Labelled.super.label();
+    }
 
     int exitCode() {
-      return switch (this) {
-        case OK -> 0;
-        case VIOLATION, ERROR -> 1;
-        case INCOMPLETE -> 2;
-      };
+      return exitCode;
+    }
+
+    /**
+     * The verdict a bare exit code stands for, for the one caller that has a code and no findings.
+     * The codes are distinct by construction, so the inverse is single-valued.
+     */
+    static Status forExitCode(int exitCode) {
+      for (Status status : values()) {
+        if (status.exitCode == exitCode) {
+          return status;
+        }
+      }
+      return INTERNAL_ERROR;
     }
   }
 
@@ -232,7 +268,7 @@ record RunReport(
   }
 
   static RunReport of(Status status, String message, List<Check> checks) {
-    return new RunReport(status, message, checks, null, null, List.of(), null, null, null, null);
+    return new RunReport(status, message, checks, null, null, List.of(), null, null, null);
   }
 
   /**
@@ -286,7 +322,7 @@ record RunReport(
       evaluations.addAll(part.evaluations());
     }
     return new RunReport(
-        status, message, checks, finding, counterexample, evaluations, traceFile, null, null, null);
+        status, message, checks, finding, counterexample, evaluations, traceFile, null, null);
   }
 
   /**
@@ -299,7 +335,7 @@ record RunReport(
         switch (status) {
           case OK -> Outcome.PASSED;
           case VIOLATION -> Outcome.FAILED;
-          case INCOMPLETE, ERROR -> Outcome.ERROR;
+          case INCOMPLETE, INPUT_ERROR, INTERNAL_ERROR -> Outcome.ERROR;
         };
     return of(status, message, new Check(checkName, outcome, message));
   }
@@ -327,8 +363,7 @@ record RunReport(
         evaluations,
         traceFile,
         completion,
-        searchStatistics,
-        exitCodeOverride);
+        searchStatistics);
   }
 
   /** Attaches the per-state formula evaluations surfaced by --eval and the eval subcommand. */
@@ -342,8 +377,7 @@ record RunReport(
         evaluations,
         traceFile,
         completion,
-        searchStatistics,
-        exitCodeOverride);
+        searchStatistics);
   }
 
   RunReport withTraceFile(Path traceFile) {
@@ -356,8 +390,7 @@ record RunReport(
         evaluations,
         traceFile,
         completion,
-        searchStatistics,
-        exitCodeOverride);
+        searchStatistics);
   }
 
   RunReport withCompletion(CompletionPhase phase, CompletionReason reason) {
@@ -374,8 +407,7 @@ record RunReport(
         evaluations,
         traceFile,
         completion,
-        searchStatistics,
-        exitCodeOverride);
+        searchStatistics);
   }
 
   RunReport withSearchStatistics(SearchStatistics searchStatistics) {
@@ -388,23 +420,7 @@ record RunReport(
         evaluations,
         traceFile,
         completion,
-        searchStatistics,
-        exitCodeOverride);
-  }
-
-  /** For commands that must propagate a foreign exit code (convert passes probcli's through). */
-  RunReport withExitCode(int exitCode) {
-    return new RunReport(
-        status,
-        message,
-        checks,
-        finding,
-        counterexample,
-        evaluations,
-        traceFile,
-        completion,
-        searchStatistics,
-        exitCode);
+        searchStatistics);
   }
 
   RunReport withFinding(FindingCategory category) {
@@ -417,12 +433,11 @@ record RunReport(
         evaluations,
         traceFile,
         completion,
-        searchStatistics,
-        exitCodeOverride);
+        searchStatistics);
   }
 
   int exitCode() {
-    return exitCodeOverride != null ? exitCodeOverride : status.exitCode();
+    return status.exitCode();
   }
 
   /**

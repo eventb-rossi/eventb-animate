@@ -14,8 +14,9 @@ import java.util.List;
  */
 final class JsonReportWriter {
 
-  // v3 adds structured model-check completion and final search statistics.
-  static final int FORMAT_VERSION = 3;
+  // v4: an error report carries exitCode 66 (unusable input) or 70 (tool failure)
+  // instead of 1.
+  static final int FORMAT_VERSION = 4;
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 

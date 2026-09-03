@@ -206,7 +206,7 @@ public class PoCommandTest {
       TestCli.Result result = TestCli.execute("po", dir.resolve("M0.bum").toString());
 
       assertEquals(
-          "A missing proof database is an input error:\n" + result.output(), 1, result.exitCode());
+          "A missing proof database is an input error:\n" + result.output(), 66, result.exitCode());
       assertTrue(
           "The error should name the component and the fix:\n" + result.output(),
           result.output().contains("no proof information for M0 (missing .bpo file"));

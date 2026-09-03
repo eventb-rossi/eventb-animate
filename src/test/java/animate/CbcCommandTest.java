@@ -56,7 +56,7 @@ public class CbcCommandTest {
   public void testUnknownEventIsAnInputError() {
     TestCli.Result result = TestCli.execute("cbc", "--events", "nope", COUNTER_M0);
 
-    assertEquals("An unknown event is an input error:\n" + result.output(), 1, result.exitCode());
+    assertEquals("An unknown event is an input error:\n" + result.output(), 66, result.exitCode());
     assertTrue(
         "The error should list the machine's events:\n" + result.output(),
         result

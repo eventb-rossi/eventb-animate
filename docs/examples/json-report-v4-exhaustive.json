@@ -1,5 +1,5 @@
 {
-  "formatVersion": 3,
+  "formatVersion": 4,
   "tool": "eventb-animate",
   "toolVersion": "6.6",
   "command": "check",

@@ -94,7 +94,7 @@ public class TestgenCommandTest {
     TestCli.Result result = TestCli.execute("testgen", "--operations", "nope", COUNTER);
 
     assertEquals(
-        "An unknown operation is an input error:\n" + result.output(), 1, result.exitCode());
+        "An unknown operation is an input error:\n" + result.output(), 66, result.exitCode());
     assertTrue(
         "The error should list the machine's operations:\n" + result.output(),
         result.output().contains("unknown operation(s): nope (the machine's operations are: "));
@@ -161,7 +161,7 @@ public class TestgenCommandTest {
       TestCli.Result rerun = TestCli.execute("testgen", "--out", dir.toString(), COUNTER);
       assertEquals(
           "Re-running without --force must not clobber traces:\n" + rerun.output(),
-          1,
+          66,
           rerun.exitCode());
       assertTrue(
           "The error should point at --force:\n" + rerun.output(),

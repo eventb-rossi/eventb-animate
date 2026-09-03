@@ -134,7 +134,7 @@ class ReplayCommand implements Callable<Integer> {
       logger.debug("Error replaying trace", e);
       String message = "Error replaying trace: " + e.getMessage();
       System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "replay", message);
+      return RunReport.singleCheck(RunReport.Status.INPUT_ERROR, "replay", message);
     }
     RunReport report = reportFor(trace);
     System.out.println(report.message());
@@ -182,7 +182,7 @@ class ReplayCommand implements Callable<Integer> {
       logger.debug("Error reading source trace", e);
       String message = "Error reading trace: " + e.getMessage();
       System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "refine", message);
+      return RunReport.singleCheck(RunReport.Status.INPUT_ERROR, "refine", message);
     }
 
     String targetName = String.valueOf(target.getMainComponent());

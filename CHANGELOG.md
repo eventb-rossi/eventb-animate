@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- **BREAKING**: Reserve exit 1 for a definite negative verdict about the model.
+  A run that failed before reaching one now exits 66 (`EX_NOINPUT`: the model,
+  trace, LTL file, proof database, or output destination could not be used) or
+  70 (`EX_SOFTWARE`: ProB or an external tool failed, or a requested report
+  could not be written), so a caller can tell a violation from a failure from
+  `$?` alone instead of parsing `--json -`. Jobs that fail on any non-zero code
+  are unaffected
+- **BREAKING**: Bump the JSON report to `formatVersion: 4`. The document shape
+  and the `status` vocabulary are unchanged; an `error` report now carries
+  `exitCode` 66 or 70 rather than 1, and a clean run whose report could not be
+  written carries 70. `convert` no longer passes `probcli`'s own exit code
+  through -- it reports 70 and keeps ProB's code in the message
+
 ### Bug Fixes
 
 - Realign the setup action's `actions/setup-java` pin with the root action,

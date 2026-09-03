@@ -78,7 +78,9 @@ public class ZipModelTest {
       TestCli.Result result = TestCli.execute(zipFile.toString());
 
       assertEquals(
-          "Exit code should be 1 when the archive bundles multiple projects", 1, result.exitCode());
+          "Exit code should be 66 when the archive bundles multiple projects",
+          66,
+          result.exitCode());
     } finally {
       Files.deleteIfExists(zipFile);
     }
@@ -136,7 +138,7 @@ public class ZipModelTest {
       }
 
       TestCli.Result result = TestCli.execute(zipFile.toString());
-      assertEquals("Exit code should be 1 for zip with no .bum file", 1, result.exitCode());
+      assertEquals("Exit code should be 66 for zip with no .bum file", 66, result.exitCode());
     } finally {
       Files.deleteIfExists(zipFile);
     }

@@ -781,7 +781,7 @@ public class Animate implements Callable<Integer> {
   static RunReport notAMachine(String commandName, String checkName) {
     String message = commandName + " requires a machine, but the loaded component is a context";
     System.err.println("Error: " + message);
-    return RunReport.singleCheck(RunReport.Status.ERROR, checkName, message);
+    return RunReport.singleCheck(RunReport.Status.INPUT_ERROR, checkName, message);
   }
 
   /**
@@ -886,7 +886,7 @@ public class Animate implements Callable<Integer> {
     logger.debug("Error loading model", e);
     loadErrorMessage = "Error loading model: " + e.getMessage();
     System.err.println(loadErrorMessage);
-    return RunReport.of(RunReport.Status.ERROR, loadErrorMessage);
+    return RunReport.of(RunReport.Status.INPUT_ERROR, loadErrorMessage);
   }
 
   /**
@@ -918,7 +918,7 @@ public class Animate implements Callable<Integer> {
 
     StateSpace stateSpace = initAndLoadModel();
     if (stateSpace == null) {
-      return RunReport.of(RunReport.Status.ERROR, loadErrorMessage);
+      return RunReport.of(RunReport.Status.INPUT_ERROR, loadErrorMessage);
     }
     try {
       return body.apply(stateSpace);
@@ -1036,11 +1036,7 @@ public class Animate implements Callable<Integer> {
     RunReport report =
         lastReport != null
             ? lastReport
-            : RunReport.of(
-                exitCode == 0
-                    ? RunReport.Status.OK
-                    : exitCode == 2 ? RunReport.Status.INCOMPLETE : RunReport.Status.ERROR,
-                null);
+            : RunReport.of(RunReport.Status.forExitCode(exitCode), null);
     String command = executedCommandName(parseResult);
     Instant timestamp = Instant.now();
     // Each report is written independently: a failed write must not cost the other
@@ -1126,7 +1122,12 @@ public class Animate implements Callable<Integer> {
   private int reportWriteFailed(IOException e, int exitCode) {
     logger.debug("Error writing report", e);
     System.err.println("Error writing report: " + e.getMessage());
-    return Math.max(exitCode, 1);
+    // The report is the artifact CI asked for, so its absence must fail an otherwise
+    // clean run; a run that already failed keeps the code that says why. The codes are
+    // no longer ordered by severity, so this cannot be a max().
+    return exitCode == RunReport.Status.OK.exitCode()
+        ? RunReport.Status.INTERNAL_ERROR.exitCode()
+        : exitCode;
   }
 
   /**
@@ -1367,12 +1368,12 @@ public class Animate implements Callable<Integer> {
               + " is not valid UTF-8 text (re-save the file"
               + " as UTF-8)";
       System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "ltl", message)
+      return RunReport.singleCheck(RunReport.Status.INPUT_ERROR, "ltl", message)
           .withCompletion(RunReport.CompletionPhase.LOAD, RunReport.CompletionReason.INPUT_FAILURE);
     } catch (IOException e) {
       String message = "Error reading --ltl-file: " + e.getMessage();
       System.err.println(message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "ltl", message)
+      return RunReport.singleCheck(RunReport.Status.INPUT_ERROR, "ltl", message)
           .withCompletion(RunReport.CompletionPhase.LOAD, RunReport.CompletionReason.INPUT_FAILURE);
     }
     LTL formula;
@@ -2098,7 +2099,7 @@ public class Animate implements Callable<Integer> {
             ? RunReport.Outcome.FAILED
             : RunReport.Outcome.ERROR;
     return RunReport.of(
-        interrupted ? RunReport.Status.INCOMPLETE : RunReport.Status.ERROR,
+        interrupted ? RunReport.Status.INCOMPLETE : RunReport.Status.INTERNAL_ERROR,
         message,
         new RunReport.Check(check, outcome, message));
   }
@@ -2321,7 +2322,24 @@ public class Animate implements Callable<Integer> {
     CommandLine commandLine = new CommandLine(Animate.class, new LazyGuiceFactory());
     Animate root = commandLine.getCommand();
     commandLine.setExecutionStrategy(root::executeRun);
+    setExecutionExceptionExitCode(commandLine);
     return commandLine;
+  }
+
+  /**
+   * Replaces picocli's per-command default of 1 -- the code this tool reserves for a definite
+   * verdict about the model -- for an exception that escapes a command. Only the code changes, so
+   * picocli's default handler still prints the stack trace an unexpected failure needs. Set per
+   * command because the handler reads the spec of the command that threw; an exit-code mapper is
+   * not usable here because picocli consults it for usage errors too, which must stay 2.
+   */
+  private static void setExecutionExceptionExitCode(CommandLine command) {
+    command
+        .getCommandSpec()
+        .exitCodeOnExecutionException(RunReport.Status.INTERNAL_ERROR.exitCode());
+    for (CommandLine subcommand : command.getSubcommands().values()) {
+      setExecutionExceptionExitCode(subcommand);
+    }
   }
 
   public static int execute(String[] args) {

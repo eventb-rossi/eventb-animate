@@ -57,11 +57,11 @@ class ConvertCommand implements Callable<Integer> {
       try {
         int convertExit = runConversion(eventbPackage);
         if (convertExit != 0) {
-          // runConversion already printed ProB's output and the failure line; the
-          // override keeps propagating probcli's own exit code.
+          // runConversion already printed ProB's output and the failure line; probcli's
+          // own code stays in the message rather than becoming the tool's exit code,
+          // where its 1 would be indistinguishable from a model violation.
           String message = "ProB conversion failed (exit code " + convertExit + ")";
-          return RunReport.singleCheck(RunReport.Status.ERROR, "convert", message)
-              .withExitCode(convertExit);
+          return RunReport.singleCheck(RunReport.Status.INTERNAL_ERROR, "convert", message);
         }
       } finally {
         if (!inputIsPackage) {
@@ -71,22 +71,27 @@ class ConvertCommand implements Callable<Integer> {
       if (!Files.isRegularFile(output) || Files.size(output) == 0) {
         String message = "conversion did not create a non-empty output file: " + output;
         System.err.println("Error: " + message);
-        return RunReport.singleCheck(RunReport.Status.ERROR, "convert", message);
+        return RunReport.singleCheck(RunReport.Status.INTERNAL_ERROR, "convert", message);
       }
 
       String message = "Wrote Classical B machine: " + output;
       System.out.println(message);
       return RunReport.singleCheck(RunReport.Status.OK, "convert", message);
+    } catch (ScratchFailure e) {
+      logger.debug("Conversion failed", e);
+      String message = "could not write the intermediate Event-B package: " + e.getMessage();
+      System.err.println("Error: " + message);
+      return RunReport.singleCheck(RunReport.Status.INTERNAL_ERROR, "convert", message);
     } catch (IllegalArgumentException | IOException e) {
       logger.debug("Conversion failed", e);
       String message = e.getMessage();
       System.err.println("Error: " + message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "convert", message);
+      return RunReport.singleCheck(RunReport.Status.INPUT_ERROR, "convert", message);
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       String message = "interrupted while running ProB CLI";
       System.err.println("Error: " + message);
-      return RunReport.singleCheck(RunReport.Status.ERROR, "convert", message);
+      return RunReport.singleCheck(RunReport.Status.INTERNAL_ERROR, "convert", message);
     }
   }
 
@@ -153,6 +158,16 @@ class ConvertCommand implements Callable<Integer> {
         || Files.isDirectory(path);
   }
 
+  /**
+   * A failure in the tool's own scratch space rather than in the input the user named, so the two
+   * are classified by the operation that failed instead of by the catch block that saw it.
+   */
+  private static final class ScratchFailure extends IOException {
+    ScratchFailure(IOException cause) {
+      super(cause.getMessage(), cause);
+    }
+  }
+
   private Path writeEventBPackage() throws IOException {
     var stateSpace = parent.initAndLoadModel();
     if (stateSpace == null) {
@@ -164,6 +179,8 @@ class ConvertCommand implements Callable<Integer> {
       EventBPackageWriter.write(stateSpace, eventbPackage);
       logger.info("Wrote intermediate ProB Event-B package to {}", eventbPackage);
       return eventbPackage;
+    } catch (IOException e) {
+      throw new ScratchFailure(e);
     } finally {
       parent.releaseStateSpace(stateSpace);
     }

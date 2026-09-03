@@ -3,6 +3,8 @@ package animate;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import com.google.common.io.MoreFiles;
+import com.google.common.io.RecursiveDeleteOption;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,7 +40,7 @@ public class ConvertCommandTest {
     TestCli.Result result = TestCli.execute(MODEL.toString(), "convert", output.toString());
 
     assertEquals(
-        "Existing output should fail without --force:\n" + result.output(), 1, result.exitCode());
+        "Existing output should fail without --force:\n" + result.output(), 66, result.exitCode());
     assertEquals("existing", Files.readString(output, StandardCharsets.UTF_8));
   }
 
@@ -81,7 +83,7 @@ public class ConvertCommandTest {
 
         assertEquals(
             "The derived output should hit the overwrite guard:\n" + result.output(),
-            1,
+            66,
             result.exitCode());
         assertTrue(
             "The error should name the derived output:\n" + result.output(),
@@ -103,6 +105,25 @@ public class ConvertCommandTest {
       assertTrue(
           "The usage error should name the missing parameter:\n" + result.output(),
           result.output().contains("<model>"));
+    }
+  }
+
+  /** An unloadable input is the user's to fix (66), never probcli's own exit code. */
+  @Test(timeout = 60000)
+  public void refusesAnUnloadableInputAsAnInputError() throws Exception {
+    Path directory = Files.createTempDirectory("animate-convert-failure-");
+    Path input = directory.resolve("broken.eventb");
+    Path output = directory.resolve("out.mch");
+    Files.writeString(input, "not a prolog package", StandardCharsets.UTF_8);
+    try {
+      TestCli.Result result = TestCli.execute("convert", input.toString(), output.toString());
+
+      assertEquals(
+          "An unloadable conversion input is not a violation:\n" + result.output(),
+          66,
+          result.exitCode());
+    } finally {
+      MoreFiles.deleteRecursively(directory, RecursiveDeleteOption.ALLOW_INSECURE);
     }
   }
 }

@@ -123,7 +123,7 @@ public class EvalOnCheckTest {
 
     assertEquals(1, result.exitCode());
     JsonNode root = TestCli.parseJson(result.stdout());
-    assertEquals(3, root.get("formatVersion").asInt());
+    assertEquals(4, root.get("formatVersion").asInt());
     JsonNode evaluations = root.get("evaluations");
     assertEquals("one block for the single verdict state", 1, evaluations.size());
     JsonNode block = evaluations.get(0);

@@ -26,7 +26,8 @@ public class InfoCommandTest {
         TestCli.execute(
             "info", "--event-graph", "graph.png", "src/test/resources/models/base-model/M1.bum");
 
-    assertEquals("Unsupported extension should exit 1:\n" + result.output(), 1, result.exitCode());
+    assertEquals(
+        "Unsupported extension should exit 66:\n" + result.output(), 66, result.exitCode());
     assertTrue(
         "Error should use the standard prefix and name the path:\n" + result.output(),
         result
@@ -53,7 +54,7 @@ public class InfoCommandTest {
               "src/test/resources/models/base-model/M1.bum");
 
       assertEquals(
-          "Unwritable graph path should exit 1:\n" + result.output(), 1, result.exitCode());
+          "Unwritable graph path should exit 66:\n" + result.output(), 66, result.exitCode());
       assertTrue(
           "Write failure should be reported with a clean message:\n" + result.output(),
           result.output().contains("Error saving event_hierarchy to " + unwritable + ":"));
@@ -74,7 +75,7 @@ public class InfoCommandTest {
               existing.toString(),
               "src/test/resources/models/base-model/M1.bum");
 
-      assertEquals("Existing output should exit 1:\n" + result.output(), 1, result.exitCode());
+      assertEquals("Existing output should exit 66:\n" + result.output(), 66, result.exitCode());
       assertTrue(
           "Error should point at --force:\n" + result.output(),
           result.output().contains("already exists, use --force to overwrite: " + existing));

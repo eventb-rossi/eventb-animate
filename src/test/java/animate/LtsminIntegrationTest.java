@@ -105,7 +105,7 @@ public class LtsminIntegrationTest {
       assertTrue(Files.isRegularFile(trace));
 
       JsonNode root = TestCli.parseJson(Files.readString(report));
-      assertEquals(3, root.get("formatVersion").asInt());
+      assertEquals(4, root.get("formatVersion").asInt());
       assertEquals("violation", root.get("status").asText());
       assertEquals("counterexample", root.get("completion").get("classification").asText());
       assertEquals("search", root.get("completion").get("phase").asText());

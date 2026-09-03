@@ -127,7 +127,7 @@ class PoCommand implements Callable<Integer> {
               + " after a build)";
       System.err.println("Error: " + message);
       return RunReport.of(
-          RunReport.Status.ERROR,
+          RunReport.Status.INPUT_ERROR,
           message,
           new RunReport.Check("proof-obligations", RunReport.Outcome.ERROR, message));
     }

@@ -151,7 +151,7 @@ public class ReportOptionsTest {
       TestCli.Result result =
           TestCli.execute("wd", "--json", report.toString(), "no-such-model.bum");
 
-      assertEquals("The load failure keeps exit 1:\n" + result.output(), 1, result.exitCode());
+      assertEquals("A load failure is an input error:\n" + result.output(), 66, result.exitCode());
       assertTrue("The report is written for the failed run", Files.exists(report));
       String document = Files.readString(report);
       assertTrue(

@@ -197,7 +197,7 @@ class TestgenCommand implements Callable<Integer> {
             + String.join(", ", allOps)
             + ")";
     System.err.println("Error: " + message);
-    return RunReport.singleCheck(RunReport.Status.ERROR, "coverage", message);
+    return RunReport.singleCheck(RunReport.Status.INPUT_ERROR, "coverage", message);
   }
 
   private RunReport report(
@@ -222,7 +222,7 @@ class TestgenCommand implements Callable<Integer> {
         } catch (IOException e) {
           logger.debug("Cannot write trace file {}", path, e);
           System.err.println("Error: " + e.getMessage());
-          return RunReport.singleCheck(RunReport.Status.ERROR, "coverage", e.getMessage());
+          return RunReport.singleCheck(RunReport.Status.INPUT_ERROR, "coverage", e.getMessage());
         }
       }
       for (Map.Entry<String, Trace> entry : result.covered().entrySet()) {
@@ -247,7 +247,7 @@ class TestgenCommand implements Callable<Integer> {
     RunReport.Status status;
     String message;
     if (writeFailed) {
-      status = RunReport.Status.ERROR;
+      status = RunReport.Status.INTERNAL_ERROR;
       message = "failed to write one or more test traces";
       System.err.println("Error: " + message);
     } else if (failOnInfeasible && !result.infeasible().isEmpty()) {
