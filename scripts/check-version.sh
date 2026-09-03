@@ -112,6 +112,16 @@ if [ -n "$STALE_TAGS" ]; then
   exit 1
 fi
 
+# Matched by format version rather than a pinned one: a format bump renames every
+# example, and a stale glob would silently check nothing instead of failing.
+REPORT_EXAMPLES=$(
+  find docs/examples -type f -name 'json-report-v*-*.json' | LC_ALL=C sort
+)
+if [ -z "$REPORT_EXAMPLES" ]; then
+  echo "ERROR: found no report examples; the extraction in check-version.sh is stale"
+  exit 1
+fi
+
 while IFS= read -r example; do
   EXAMPLE_VERSION=$(
     sed -n 's/.*"toolVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
@@ -121,9 +131,7 @@ while IFS= read -r example; do
     echo "ERROR: $example has toolVersion '$EXAMPLE_VERSION' (expected '$TAG_VERSION')"
     exit 1
   fi
-done < <(
-  find docs/examples -type f -name 'json-report-v3-*.json' | LC_ALL=C sort
-)
+done <<< "$REPORT_EXAMPLES"
 
 CHANGELOG_HEADING=$(grep -F "## [$TAG_VERSION] - " CHANGELOG.md || true)
 if ! printf '%s\n' "$CHANGELOG_HEADING" \

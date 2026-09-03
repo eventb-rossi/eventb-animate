@@ -67,6 +67,8 @@ jobs:
     permissions:
       actions: read
       contents: read
+    outputs:
+      report-format: ${{ steps.stage-common.outputs.report-format }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -130,6 +132,7 @@ jobs:
           cp build/libs/eventb-animate-*.jar .
 
       - name: Stage versioned common assets
+        id: stage-common
         run: |
           version="${RELEASE_TAG#v}"
           source_jars=(eventb-animate-*.jar)
@@ -138,26 +141,44 @@ jobs:
           mv "${source_jars[0]}" \
             "release-bundle/assets/eventb-animate-${version}.jar"
           cp RELEASE_NOTES.md release-bundle/RELEASE_NOTES.md
-          cp docs/json-report-v3.schema.json \
-            "release-bundle/assets/eventb-animate-${version}-json-report-v3.schema.json"
 
-          report_directory="$RUNNER_TEMP/eventb-animate-${version}-report-v3"
+          # Derived from the schema on disk rather than pinned: a report format bump
+          # renames the schema and every example, and a pinned name would fail the
+          # release only after the tag is already published.
+          schemas=(docs/json-report-v*.schema.json)
+          if [ "${#schemas[@]}" -ne 1 ] || [ ! -f "${schemas[0]}" ]; then
+            echo "::error::Expected exactly one docs/json-report-v*.schema.json"
+            exit 1
+          fi
+          schema="${schemas[0]}"
+          report_format=$(basename "$schema" .schema.json)
+          report_format="${report_format#json-report-}"
+          echo "report-format=${report_format}" >> "$GITHUB_OUTPUT"
+
+          cp "$schema" \
+            "release-bundle/assets/eventb-animate-${version}-json-report-${report_format}.schema.json"
+
+          report_directory="$RUNNER_TEMP/eventb-animate-${version}-report-${report_format}"
           mkdir -p "$report_directory/examples"
-          cp docs/json-report-v3.schema.json \
-            "$report_directory/json-report-v3.schema.json"
+          cp "$schema" \
+            "$report_directory/json-report-${report_format}.schema.json"
           example_symlink=$(find docs/examples -type l -print -quit)
           if [ -n "$example_symlink" ]; then
             echo "::error::Release examples must not contain symlinks: $example_symlink"
             exit 1
           fi
-          find docs/examples -maxdepth 1 -type f \
-            -name 'json-report-v3-*.json' \
-            -exec cp {} "$report_directory/examples/" \;
+          examples=$(find docs/examples -maxdepth 1 -type f \
+            -name "json-report-${report_format}-*.json" -print -exec cp {} \
+            "$report_directory/examples/" \;)
+          if [ -z "$examples" ]; then
+            echo "::error::Found no json-report-${report_format}-*.json examples to bundle"
+            exit 1
+          fi
           (
             cd "$RUNNER_TEMP"
             zip -q -r -y \
-              "$GITHUB_WORKSPACE/release-bundle/assets/eventb-animate-${version}-report-v3.zip" \
-              "eventb-animate-${version}-report-v3"
+              "$GITHUB_WORKSPACE/release-bundle/assets/eventb-animate-${version}-report-${report_format}.zip" \
+              "eventb-animate-${version}-report-${report_format}"
           )
 
       - name: Smoke test common release jar
@@ -195,16 +216,22 @@ jobs:
           path: release-bundle/assets
 
       - name: Verify complete release bundle
+        env:
+          REPORT_FORMAT: ${{ needs.prepare-release.outputs.report-format }}
         run: |
           version="${RELEASE_TAG#v}"
+          if [ -z "$REPORT_FORMAT" ]; then
+            echo "::error::prepare-release published no report format"
+            exit 1
+          fi
           assets="release-bundle/assets"
           expected="$RUNNER_TEMP/expected-release-assets"
           actual="$RUNNER_TEMP/actual-release-assets"
 
           printf '%s\n' \
             "eventb-animate-${version}.jar" \
-            "eventb-animate-${version}-json-report-v3.schema.json" \
-            "eventb-animate-${version}-report-v3.zip" \
+            "eventb-animate-${version}-json-report-${REPORT_FORMAT}.schema.json" \
+            "eventb-animate-${version}-report-${REPORT_FORMAT}.zip" \
             eventb-animate-win-x64.zip \
             eventb-animate.msi \
             | LC_ALL=C sort > "$expected"
