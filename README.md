@@ -641,8 +641,9 @@ release that ships no manifest rather than install it unverified. The default
 `latest` is resolved when the job runs, so pin `version` (GitHub) or
 `EVENTB_ANIMATE_VERSION` (GitLab) when a run needs to be reproducible. Both
 GitHub actions cache the jar with `actions/cache`, keyed on the resolved
-release tag; a restored jar is re-verified against `SHA256SUMS` before reuse,
-and `cache: 'false'` opts out.
+release tag and platform; a restored jar is re-verified against `SHA256SUMS`
+before reuse, and `cache: 'false'` opts out. The installers take the jar for the
+runner's platform when the release has one, else the universal jar.
 
 ### GitHub Actions
 
@@ -668,7 +669,7 @@ and `cache: 'false'` opts out.
 | `args` | Extra args appended to the assembled command | No | — |
 | `version` | Release version tag (e.g., `v7.0`); pin it for a reproducible run | No | `latest` |
 | `java-version` | Java version to install (21+) | No | `21` |
-| `cache` | Cache the release jar between runs, keyed on the resolved release tag | No | `true` |
+| `cache` | Cache the release jar between runs, keyed on the resolved release tag and platform | No | `true` |
 
 #### Set up the CLI for later steps
 
@@ -700,7 +701,7 @@ ref to a released tag for a reproducible setup.
 |-------|-------------|----------|---------|
 | `version` | Release version tag (e.g., `v7.0`); pin it for a reproducible install | No | `latest` |
 | `java-version` | Java version to install (21+); set to `''` to use an existing JDK | No | `21` |
-| `cache` | Cache the release jar between runs, keyed on the resolved release tag | No | `true` |
+| `cache` | Cache the release jar between runs, keyed on the resolved release tag and platform | No | `true` |
 
 | Output | Description |
 |--------|-------------|

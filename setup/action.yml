@@ -14,7 +14,7 @@ inputs:
     required: false
     default: '21'
   cache:
-    description: 'Cache the release jar with actions/cache, keyed on the resolved release tag'
+    description: 'Cache the release jar with actions/cache, keyed on the resolved release tag and platform'
     required: false
     default: 'true'
 

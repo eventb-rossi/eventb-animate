@@ -19,6 +19,7 @@
 #   GITHUB_OUTPUT           optional; receives `version`, `jar-path`, and
 #                           `cache-key`
 #   GITHUB_PATH             required when EVENTB_ANIMATE_ADD_TO_PATH is `true`
+#   RUNNER_OS, RUNNER_ARCH  from the runner; select the per-platform jar
 set -euo pipefail
 
 repo="${EVENTB_ANIMATE_REPO:-eventb-rossi/eventb-animate}"
@@ -60,42 +61,21 @@ require_release_tag "$release_tag"
 
 release_version="${release_tag#v}"
 base="https://github.com/${repo}/releases/download/${release_tag}"
-jar="eventb-animate-${release_version}.jar"
 dest="${RUNNER_TEMP:-/tmp}/eventb-animate-${release_tag}"
 
-emit_outputs() {
-  if [ -n "${GITHUB_OUTPUT:-}" ]; then
-    printf 'version=%s\njar-path=%s\ncache-key=%s\n' \
-      "$release_tag" \
-      "$dest/$jar" \
-      "eventb-animate-jar-${release_tag}" >> "$GITHUB_OUTPUT"
-  fi
-}
-
-# The actions' cache step needs the resolved tag, the jar path, and the cache
-# key before anything is downloaded; resolve-only stops here so `latest` is
-# chased once and the cache is keyed on a release, never on the literal word.
-if [ "$resolve_only" = true ]; then
-  emit_outputs
-  printf 'resolved eventb-animate release %s\n' "$release_tag"
-  exit 0
-fi
+# linux64 and windows64 are x86_64 only; the macOS probcli is universal.
+case "${RUNNER_OS:-$(uname -s)}:${RUNNER_ARCH:-$(uname -m)}" in
+  Linux:X64 | Linux:x86_64) platform=linux64 ;;
+  macOS:* | Darwin:*) platform=macos ;;
+  Windows:X64 | MINGW*:x86_64 | MSYS*:x86_64) platform=windows64 ;;
+  *) platform="" ;;
+esac
 
 mkdir -p "$dest"
 
-# Read from stdin so the tool prints no filename: given a path holding a
-# backslash — every path on Windows — GNU coreutils escapes the name and marks
-# the line with a leading `\`, which then never matches the manifest.
-sha256_of() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum < "$1" | cut -d' ' -f1
-  else
-    shasum -a 256 < "$1" | cut -d' ' -f1
-  fi
-}
-
 # The manifest first: a release without one is not a release we can verify, and
 # a missing manifest is also the clearest signal that the release does not exist.
+# Fetched before resolve-only exits: it decides which jar, and so which cache key.
 #
 # The status is read rather than left to `--fail`, because a reset connection
 # and a 404 are different diagnoses: told that a release it can see does not
@@ -115,7 +95,48 @@ if [ "$status" != 200 ]; then
 fi
 
 # Lines are `<sha256>  <asset>`; the binary-mode marker `*` may precede the name.
-expected="$(awk -v want="$jar" '$NF == want || $NF == "*" want { print $1; exit }' "$dest/SHA256SUMS")"
+manifest_sha256() {
+  awk -v want="$1" '$NF == want || $NF == "*" want { print $1; exit }' "$dest/SHA256SUMS"
+}
+
+# Platform jar when the release has one, else the universal jar.
+jar="eventb-animate-${release_version}.jar"
+cache_key="eventb-animate-jar-${release_tag}"
+if [ -n "$platform" ] && [ -n "$(manifest_sha256 "eventb-animate-${release_version}-${platform}.jar")" ]; then
+  jar="eventb-animate-${release_version}-${platform}.jar"
+  cache_key="${cache_key}-${platform}"
+fi
+
+emit_outputs() {
+  if [ -n "${GITHUB_OUTPUT:-}" ]; then
+    printf 'version=%s\njar-path=%s\ncache-key=%s\n' \
+      "$release_tag" \
+      "$dest/$jar" \
+      "$cache_key" >> "$GITHUB_OUTPUT"
+  fi
+}
+
+# The actions' cache step needs the resolved tag, the jar path, and the cache
+# key before the jar is downloaded; resolve-only stops here so `latest` is
+# chased once and the cache is keyed on a release, never on the literal word.
+if [ "$resolve_only" = true ]; then
+  emit_outputs
+  printf 'resolved eventb-animate release %s (%s)\n' "$release_tag" "$jar"
+  exit 0
+fi
+
+# Read from stdin so the tool prints no filename: given a path holding a
+# backslash — every path on Windows — GNU coreutils escapes the name and marks
+# the line with a leading `\`, which then never matches the manifest.
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum < "$1" | cut -d' ' -f1
+  else
+    shasum -a 256 < "$1" | cut -d' ' -f1
+  fi
+}
+
+expected="$(manifest_sha256 "$jar")"
 if [ -z "$expected" ]; then
   echo "::error::${jar} is not listed in SHA256SUMS for ${release_tag}" >&2
   exit 1
