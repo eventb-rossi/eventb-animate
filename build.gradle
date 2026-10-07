@@ -179,11 +179,24 @@ def verifyShadowServices = tasks.register('verifyShadowServices') {
 	}
 }
 
+// -PprobPlatform=<linux64|macos|windows64> keeps only that platform's probcli.
+def probPlatform = project.findProperty('probPlatform')
+def probPlatforms = ['linux64', 'macos', 'windows64']
+if (probPlatform != null && !probPlatforms.contains(probPlatform)) {
+	throw new GradleException(
+		"probPlatform must be one of ${probPlatforms}, got '${probPlatform}'")
+}
+
 shadowJarTask.configure {
 	archiveClassifier = ''
 	duplicatesStrategy = DuplicatesStrategy.INCLUDE
 	mergeServiceFiles()
 	mergeGroovyExtensionModules()
+	if (probPlatform != null) {
+		probPlatforms.findAll { it != probPlatform }.each {
+			exclude "de/prob/cli/binaries/probcli_${it}.zip"
+		}
+	}
 	finalizedBy verifyShadowServices
 }
 

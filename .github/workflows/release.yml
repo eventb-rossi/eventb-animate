@@ -330,7 +330,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Build fat jar
-        run: ./gradlew shadowJar --no-daemon
+        run: ./gradlew shadowJar -PprobPlatform=windows64 --no-daemon
 
       - name: Stage jar and resolve version
         shell: pwsh
