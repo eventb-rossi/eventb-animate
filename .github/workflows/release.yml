@@ -142,6 +142,17 @@ jobs:
             "release-bundle/assets/eventb-animate-${version}.jar"
           cp RELEASE_NOTES.md release-bundle/RELEASE_NOTES.md
 
+          # Per-platform jars: the universal jar minus the other platforms' probcli.
+          platforms=(linux64 macos windows64)
+          for platform in "${platforms[@]}"; do
+            jar="release-bundle/assets/eventb-animate-${version}-${platform}.jar"
+            cp "release-bundle/assets/eventb-animate-${version}.jar" "$jar"
+            for other in "${platforms[@]}"; do
+              [ "$other" = "$platform" ] || zip -q -d "$jar" \
+                "de/prob/cli/binaries/probcli_${other}.zip"
+            done
+          done
+
           # Derived from the schema on disk rather than pinned: a report format bump
           # renames the schema and every example, and a pinned name would fail the
           # release only after the tag is already published.
@@ -187,6 +198,8 @@ jobs:
           version="${RELEASE_TAG#v}"
           scripts/smoke-release.sh \
             "release-bundle/assets/eventb-animate-${version}.jar"
+          scripts/smoke-release.sh \
+            "release-bundle/assets/eventb-animate-${version}-linux64.jar"
 
       - name: Upload common release assets
         uses: actions/upload-artifact@v7
@@ -230,6 +243,9 @@ jobs:
 
           printf '%s\n' \
             "eventb-animate-${version}.jar" \
+            "eventb-animate-${version}-linux64.jar" \
+            "eventb-animate-${version}-macos.jar" \
+            "eventb-animate-${version}-windows64.jar" \
             "eventb-animate-${version}-json-report-${REPORT_FORMAT}.schema.json" \
             "eventb-animate-${version}-report-${REPORT_FORMAT}.zip" \
             eventb-animate-win-x64.zip \
