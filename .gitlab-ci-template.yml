@@ -32,7 +32,6 @@
       fi
       release_version="${release_tag#v}"
       base="https://github.com/eventb-rossi/eventb-animate/releases/download/${release_tag}"
-      jar="eventb-animate-${release_version}.jar"
 
       # Private to this job, because a shell or ssh executor shares /tmp with
       # every other job and with every other user on the host: a fixed path
@@ -56,8 +55,16 @@
       fi
 
       # Lines are `<sha256>  <asset>`; the binary-mode marker `*` may precede
-      # the name.
-      expected=$(awk -v want="$jar" '$NF == want || $NF == "*" want { print $1; exit }' "$dest/SHA256SUMS")
+      # the name. Platform jar when the release has one, else the universal jar.
+      manifest_sha256() {
+        awk -v want="$1" '$NF == want || $NF == "*" want { print $1; exit }' "$dest/SHA256SUMS"
+      }
+      jar="eventb-animate-${release_version}-linux64.jar"
+      expected=$(manifest_sha256 "$jar")
+      if [ -z "$expected" ]; then
+        jar="eventb-animate-${release_version}.jar"
+        expected=$(manifest_sha256 "$jar")
+      fi
       if [ -z "$expected" ]; then
         echo "ERROR: ${jar} is not listed in SHA256SUMS for ${release_tag}" >&2
         exit 1
