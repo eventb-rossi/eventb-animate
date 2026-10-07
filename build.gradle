@@ -38,7 +38,7 @@ configurations.all {
 }
 
 dependencies {
-	implementation 'ch.qos.logback:logback-classic:1.6.4'
+	implementation 'ch.qos.logback:logback-classic:1.6.5'
 	implementation 'info.picocli:picocli:4.7.7'
 	implementation "de.hhu.stups:prob-java:${prob_version}"
 	// Used directly by the --json report writer; pinned to the version the kernel
