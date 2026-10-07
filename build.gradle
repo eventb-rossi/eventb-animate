@@ -40,7 +40,7 @@ configurations.all {
 dependencies {
 	implementation 'ch.qos.logback:logback-classic:1.6.4'
 	implementation 'info.picocli:picocli:4.7.7'
-	implementation "de.hhu.stups:de.prob2.kernel:${prob_version}"
+	implementation "de.hhu.stups:prob-java:${prob_version}"
 	// Used directly by the --json report writer; pinned to the version the kernel
 	// already resolves transitively (re-check `gradlew dependencies` when bumping
 	// prob_version so the two stay aligned).
@@ -86,27 +86,11 @@ jar {
 }
 
 def servicePrefix = 'META-INF/services/'
-def groovyExtensionPaths = [
-	'META-INF/groovy/org.codehaus.groovy.runtime.ExtensionModule',
-	'META-INF/services/org.codehaus.groovy.runtime.ExtensionModule'
-]
-def groovyExtensionKeys = ['extensionClasses', 'staticExtensionClasses']
 def serviceProviders = { zip, entry ->
 	zip.getInputStream(entry).withCloseable { stream ->
 		stream.getText('UTF-8').readLines()
 			.collect { it.replaceFirst(/#.*/, '').trim() }
 			.findAll { !it.isEmpty() }
-	}
-}
-def groovyExtensionClasses = { zip, entry ->
-	zip.getInputStream(entry).withCloseable { stream ->
-		def properties = new Properties()
-		properties.load(stream)
-		groovyExtensionKeys.collectMany { key ->
-			properties.getProperty(key, '').split(',')
-				.collect { it.trim() }
-				.findAll { !it.isEmpty() }
-		}
 	}
 }
 
@@ -120,19 +104,14 @@ def verifyShadowServices = tasks.register('verifyShadowServices') {
 
 	doLast {
 		def expected = [:].withDefault { new LinkedHashSet<String>() }
-		def expectedGroovyExtensions = new LinkedHashSet<String>()
 		configurations.runtimeClasspath.files
 			.findAll { it.isFile() && it.name.endsWith('.jar') }
 			.sort()
 			.each { dependency ->
 				new java.util.zip.ZipFile(dependency).withCloseable { zip ->
 					zip.entries().each { entry ->
-						if (!entry.directory && entry.name.startsWith(servicePrefix)
-							&& !groovyExtensionPaths.contains(entry.name)) {
+						if (!entry.directory && entry.name.startsWith(servicePrefix)) {
 							expected[entry.name].addAll(serviceProviders(zip, entry))
-						}
-						if (!entry.directory && groovyExtensionPaths.contains(entry.name)) {
-							expectedGroovyExtensions.addAll(groovyExtensionClasses(zip, entry))
 						}
 					}
 				}
@@ -140,19 +119,12 @@ def verifyShadowServices = tasks.register('verifyShadowServices') {
 
 		def actual = [:].withDefault { new LinkedHashSet<String>() }
 		def entryCounts = [:].withDefault { 0 }
-		def actualGroovyExtensions = new LinkedHashSet<String>()
-		def groovyExtensionCount = 0
 		new java.util.zip.ZipFile(shadowJarTask.get().archiveFile.get().asFile)
 			.withCloseable { zip ->
 				zip.entries().each { entry ->
-					if (!entry.directory && entry.name.startsWith(servicePrefix)
-						&& !groovyExtensionPaths.contains(entry.name)) {
+					if (!entry.directory && entry.name.startsWith(servicePrefix)) {
 						entryCounts[entry.name]++
 						actual[entry.name].addAll(serviceProviders(zip, entry))
-					}
-					if (!entry.directory && groovyExtensionPaths.contains(entry.name)) {
-						groovyExtensionCount++
-						actualGroovyExtensions.addAll(groovyExtensionClasses(zip, entry))
 					}
 				}
 			}
@@ -167,22 +139,12 @@ def verifyShadowServices = tasks.register('verifyShadowServices') {
 				failures.add("${service}: missing providers ${missing.sort().join(', ')}")
 			}
 		}
-		if (groovyExtensionCount != 1) {
-			failures.add(
-				"Groovy extension module: expected one merged entry, found ${groovyExtensionCount}")
-		}
-		def missingGroovyExtensions = expectedGroovyExtensions - actualGroovyExtensions
-		if (!missingGroovyExtensions.isEmpty()) {
-			failures.add(
-				"Groovy extension module: missing classes ${missingGroovyExtensions.sort().join(', ')}")
-		}
 		if (!failures.isEmpty()) {
 			throw new GradleException(
 				'Shaded service verification failed:\n- ' + failures.join('\n- '))
 		}
 		logger.lifecycle(
-			"Verified ${expected.size()} merged service descriptors and " +
-				"${expectedGroovyExtensions.size()} Groovy extension classes in " +
+			"Verified ${expected.size()} merged service descriptors in " +
 				shadowJarTask.get().archiveFileName.get())
 	}
 }
@@ -199,7 +161,6 @@ shadowJarTask.configure {
 	archiveClassifier = ''
 	duplicatesStrategy = DuplicatesStrategy.INCLUDE
 	mergeServiceFiles()
-	mergeGroovyExtensionModules()
 	if (probPlatform != null) {
 		probPlatforms.findAll { it != probPlatform }.each {
 			exclude "de/prob/cli/binaries/probcli_${it}.zip"

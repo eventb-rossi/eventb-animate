@@ -357,7 +357,7 @@ jobs:
           Copy-Item build/libs/eventb-animate-*.jar staging/eventb-animate.jar
 
       # Static module needs come from jdeps; the fixed tail covers what the
-      # ProB2/Groovy/logback stack loads reflectively. The smoke test below runs
+      # ProB2/logback stack loads reflectively. The smoke test below runs
       # the real app image, so a missing module fails the release.
       - name: Resolve JDK modules
         shell: pwsh
