@@ -29,6 +29,14 @@ repositories {
 	}
 }
 
+configurations.all {
+	// Kernel front ends for other formalisms; eventb-animate only loads Event-B.
+	exclude group: 'de.hhu.stups', module: 'tlc4b'
+	exclude group: 'de.hhu.stups', module: 'tlatools'
+	exclude group: 'de.hhu.stups', module: 'alloy-core'
+	exclude group: 'org.apache.velocity', module: 'velocity-engine-core'
+}
+
 dependencies {
 	implementation 'ch.qos.logback:logback-classic:1.6.4'
 	implementation 'info.picocli:picocli:4.7.7'
