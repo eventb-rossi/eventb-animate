@@ -357,14 +357,15 @@ jobs:
           Copy-Item build/libs/eventb-animate-*.jar staging/eventb-animate.jar
 
       # Build the app-image once; the ZIP and the MSI are both derived from it.
-      # --add-modules ALL-MODULE-PATH bundles the full runtime so the reflection-
-      # heavy ProB2/Groovy/Jackson stack cannot hit a missing JDK module at runtime.
+      # Modules: jdeps output plus those the ProB2/Groovy/logback stack loads
+      # reflectively; every CLI command was verified against this set.
       # --win-console keeps the launcher a console app so CLI output is visible.
       - name: Build app-image (jpackage)
         run: >
           jpackage --type app-image --name eventb-animate
           --input staging --main-jar eventb-animate.jar --main-class animate.Animate
-          --app-version $env:APP_VERSION --add-modules ALL-MODULE-PATH
+          --app-version $env:APP_VERSION
+          --add-modules java.base,java.compiler,java.desktop,java.management,java.naming,java.prefs,java.scripting,java.sql,java.xml,java.logging,jdk.unsupported,jdk.localedata,jdk.charsets,jdk.zipfs
           --win-console --vendor "Event-B Rossi"
           --description "Animate Event-B models using the ProB model checker"
           --dest dist
