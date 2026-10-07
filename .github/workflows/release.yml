@@ -356,19 +356,31 @@ jobs:
           New-Item -ItemType Directory staging | Out-Null
           Copy-Item build/libs/eventb-animate-*.jar staging/eventb-animate.jar
 
+      # Static module needs come from jdeps; the fixed tail covers what the
+      # ProB2/Groovy/logback stack loads reflectively. The smoke test below runs
+      # the real app image, so a missing module fails the release.
+      - name: Resolve JDK modules
+        shell: pwsh
+        run: |
+          $static = jdeps --multi-release 21 --ignore-missing-deps --print-module-deps staging/eventb-animate.jar
+          $reflective = "java.xml,java.logging,jdk.localedata,jdk.charsets,jdk.zipfs"
+          "JDK_MODULES=$($static.Trim()),$reflective" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       # Build the app-image once; the ZIP and the MSI are both derived from it.
-      # Modules: jdeps output plus those the ProB2/Groovy/logback stack loads
-      # reflectively; every CLI command was verified against this set.
       # --win-console keeps the launcher a console app so CLI output is visible.
       - name: Build app-image (jpackage)
         run: >
           jpackage --type app-image --name eventb-animate
           --input staging --main-jar eventb-animate.jar --main-class animate.Animate
-          --app-version $env:APP_VERSION
-          --add-modules java.base,java.compiler,java.desktop,java.management,java.naming,java.prefs,java.scripting,java.sql,java.xml,java.logging,jdk.unsupported,jdk.localedata,jdk.charsets,jdk.zipfs
+          --app-version $env:APP_VERSION --add-modules $env:JDK_MODULES
           --win-console --vendor "Event-B Rossi"
           --description "Animate Event-B models using the ProB model checker"
           --dest dist
+
+      - name: Smoke test app image
+        shell: bash
+        timeout-minutes: 10
+        run: scripts/smoke-release.sh dist/eventb-animate/eventb-animate.exe
 
       - name: Package portable ZIP
         shell: pwsh

@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-JAR_PATH="${1:?Usage: smoke-release.sh <eventb-animate.jar>}"
-if [ ! -f "$JAR_PATH" ]; then
-  echo "ERROR: release jar not found: $JAR_PATH"
+APP_PATH="${1:?Usage: smoke-release.sh <eventb-animate.jar | app-image launcher>}"
+if [ ! -f "$APP_PATH" ]; then
+  echo "ERROR: release artifact not found: $APP_PATH"
   exit 1
 fi
 
-JAVA_BIN="${JAVA:-java}"
+case "$APP_PATH" in
+  *.jar) APP=("${JAVA:-java}" -jar "$APP_PATH") ;;
+  *) APP=("$APP_PATH") ;;
+esac
 SMOKE_TIMEOUT_SECONDS="${SMOKE_TIMEOUT_SECONDS:-120}"
 CLEAN_MODEL="src/test/resources/models/traffic-light/M2.bum"
 VIOLATING_MODEL="src/test/resources/models/base-model/M1.bum"
@@ -27,17 +30,17 @@ run_bounded() {
   "${TIMEOUT_COMMAND[@]}" "$@"
 }
 
-VERSION_OUTPUT=$(run_bounded "$JAVA_BIN" -jar "$JAR_PATH" --version)
+VERSION_OUTPUT=$(run_bounded "${APP[@]}" --version)
 VERSION="${VERSION_OUTPUT#eventb-animate }"
 if [ -z "$VERSION" ] || [ "$VERSION_OUTPUT" != "eventb-animate $VERSION" ]; then
   echo "ERROR: unexpected --version output: $VERSION_OUTPUT"
   exit 1
 fi
 
-run_bounded "$JAVA_BIN" -jar "$JAR_PATH" "$CLEAN_MODEL"
+run_bounded "${APP[@]}" "$CLEAN_MODEL"
 
 REPORT="$SMOKE_DIRECTORY/report.json"
-run_bounded "$JAVA_BIN" -jar "$JAR_PATH" \
+run_bounded "${APP[@]}" \
   --states 1 --json "$REPORT" "$CLEAN_MODEL"
 
 REPORT_VERSION=$(
@@ -56,7 +59,7 @@ fi
 
 TRACE="$SMOKE_DIRECTORY/trace.json"
 set +e
-run_bounded "$JAVA_BIN" -jar "$JAR_PATH" --save "$TRACE" "$VIOLATING_MODEL"
+run_bounded "${APP[@]}" --save "$TRACE" "$VIOLATING_MODEL"
 SAVE_EXIT=$?
 set -e
 if [ "$SAVE_EXIT" -ne 1 ]; then
@@ -68,5 +71,5 @@ if [ ! -s "$TRACE" ]; then
   exit 1
 fi
 
-run_bounded "$JAVA_BIN" -jar "$JAR_PATH" replay -t "$TRACE" "$VIOLATING_MODEL"
+run_bounded "${APP[@]}" replay -t "$TRACE" "$VIOLATING_MODEL"
 echo "Release smoke tests passed for eventb-animate $VERSION"
