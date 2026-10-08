@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [7.1] - 2026-10-09
+
+### Build
+
+- Depend on prob-java instead of de.prob2.kernel, dropping the Groovy scripting
+  console and Groovy itself from the jar (~4 MB)
+- Drop TLA+, TLC, Alloy core and Velocity from the jar; they back front ends
+  eventb-animate never loads (~5 MB)
+- Ship only the Windows probcli in the Windows MSI and portable zip (~45 MB
+  smaller)
+
+### CI/CD
+
+- Publish per-platform jars (`-linux64`, `-macos`, `-windows64`), each carrying
+  only its own platform's probcli, in place of the universal jar, which is no
+  longer a release asset
+- Install the jar for the runner's platform in the GitHub actions and the
+  linux64 jar in the GitLab template, falling back to the universal jar for
+  older releases; the GitHub installer reports an unsupported runner (such as
+  ARM Linux or Windows) as such
+- Bundle only the JDK modules the app uses, derived with jdeps, in the Windows
+  runtime (~45 MB smaller app image), and smoke test the app image before
+  publishing it
+- Stop building and uploading the jar in Build and Test; the release workflow
+  builds it itself, overlapping the build with the CI run it waits for
+
+### Dependencies
+
+- Bump com.diffplug.spotless from 8.10.1 to 8.10.2
+- Bump com.fasterxml.jackson.core:jackson-databind
+- Bump com.diffplug.spotless from 8.10.2 to 8.10.3
+- Bump gradle-wrapper from 9.7.1 to 9.8.0
+- Bump com.github.spotbugs from 6.5.11 to 6.5.12
+- Bump ch.qos.logback:logback-classic from 1.6.3 to 1.6.4
+- Bump ch.qos.logback:logback-classic from 1.6.4 to 1.6.5
+- Bump com.networknt:json-schema-validator
+
 ## [7.0] - 2026-09-03
 
 ### Features

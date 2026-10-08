@@ -1,7 +1,7 @@
 {
   "formatVersion": 4,
   "tool": "eventb-animate",
-  "toolVersion": "7.0",
+  "toolVersion": "7.1",
   "command": "check",
   "model": "missing.bum",
   "timestamp": "2026-07-20T10:03:00Z",
