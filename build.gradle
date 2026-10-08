@@ -169,7 +169,7 @@ shadowJarTask.configure {
 	finalizedBy verifyShadowServices
 }
 
-// Only the shadow jar is consumed (CI verifies and uploads build/libs/*.jar);
+// Only the shadow jar is consumed (the release workflow builds and ships it);
 // the distribution archives are ~100 MB each, and the plain ones cannot even
 // run with the jar task disabled. Keep all of them out of assemble.
 distZip.enabled = false

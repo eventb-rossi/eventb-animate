@@ -93,40 +93,10 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Gradle for recovery
-        if: github.event_name == 'workflow_dispatch'
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Download JAR from build workflow
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          target_sha=$(git rev-parse HEAD)
-          for attempt in $(seq 1 15); do
-            run_id=$(gh run list \
-              --workflow build-gradle-project.yml \
-              --commit "$target_sha" \
-              --status success \
-              --json databaseId \
-              --jq '.[0].databaseId')
-
-            if [ -n "$run_id" ]; then
-              echo "Found successful Build and Test run: $run_id"
-              gh run download "$run_id" --name eventb-animate.jar
-              exit 0
-            fi
-
-            echo "Attempt $attempt/15: no successful Build and Test run found yet..."
-            sleep 30
-          done
-
-          echo "::error::No successful Build and Test run found for commit $target_sha."
-          echo "::error::Push the branch and wait for Build and Test to pass before tagging."
-          exit 1
-
-      - name: Rebuild JAR for recovery
-        if: github.event_name == 'workflow_dispatch'
+      - name: Build fat jar
         run: |
           ./gradlew shadowJar --no-daemon
           cp build/libs/eventb-animate-*.jar .
@@ -200,6 +170,34 @@ jobs:
             "release-bundle/assets/eventb-animate-${version}.jar"
           scripts/smoke-release.sh \
             "release-bundle/assets/eventb-animate-${version}-linux64.jar"
+
+      # Last before upload, so the jar is built while Build and Test still runs.
+      - name: Wait for a successful build workflow
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          target_sha=$(git rev-parse HEAD)
+          for attempt in $(seq 1 15); do
+            run_id=$(gh run list \
+              --workflow build-gradle-project.yml \
+              --commit "$target_sha" \
+              --status success \
+              --json databaseId \
+              --jq '.[0].databaseId')
+
+            if [ -n "$run_id" ]; then
+              echo "Found successful Build and Test run: $run_id"
+              exit 0
+            fi
+
+            echo "Attempt $attempt/15: no successful Build and Test run found yet..."
+            sleep 30
+          done
+
+          echo "::error::No successful Build and Test run found for commit $target_sha."
+          echo "::error::Push the branch and wait for Build and Test to pass before tagging."
+          exit 1
 
       - name: Upload common release assets
         uses: actions/upload-artifact@v7
