@@ -64,7 +64,8 @@ base="https://github.com/${repo}/releases/download/${release_tag}"
 dest="${RUNNER_TEMP:-/tmp}/eventb-animate-${release_tag}"
 
 # linux64 and windows64 are x86_64 only; the macOS probcli is universal.
-case "${RUNNER_OS:-$(uname -s)}:${RUNNER_ARCH:-$(uname -m)}" in
+runner="${RUNNER_OS:-$(uname -s)}:${RUNNER_ARCH:-$(uname -m)}"
+case "$runner" in
   Linux:X64 | Linux:x86_64) platform=linux64 ;;
   macOS:* | Darwin:*) platform=macos ;;
   Windows:X64 | MINGW*:x86_64 | MSYS*:x86_64) platform=windows64 ;;
@@ -99,12 +100,28 @@ manifest_sha256() {
   awk -v want="$1" '$NF == want || $NF == "*" want { print $1; exit }' "$dest/SHA256SUMS"
 }
 
-# Platform jar when the release has one, else the universal jar.
+# Platform jar when the release has one, else the universal jar that releases
+# before the per-platform jars shipped instead. Settled before resolve-only
+# exits, so a release with no usable jar fails before the cache step keys on it.
 jar="eventb-animate-${release_version}.jar"
 cache_key="eventb-animate-jar-${release_tag}"
-if [ -n "$platform" ] && [ -n "$(manifest_sha256 "eventb-animate-${release_version}-${platform}.jar")" ]; then
+expected=""
+if [ -n "$platform" ]; then
+  expected="$(manifest_sha256 "eventb-animate-${release_version}-${platform}.jar")"
+fi
+if [ -n "$expected" ]; then
   jar="eventb-animate-${release_version}-${platform}.jar"
   cache_key="${cache_key}-${platform}"
+else
+  expected="$(manifest_sha256 "$jar")"
+fi
+if [ -z "$expected" ]; then
+  if [ -z "$platform" ]; then
+    echo "::error::eventb-animate ${release_tag} has no jar for ${runner}; supported runners are Linux x64, macOS and Windows x64" >&2
+  else
+    echo "::error::${jar} is not listed in SHA256SUMS for ${release_tag}" >&2
+  fi
+  exit 1
 fi
 
 emit_outputs() {
@@ -135,12 +152,6 @@ sha256_of() {
     shasum -a 256 < "$1" | cut -d' ' -f1
   fi
 }
-
-expected="$(manifest_sha256 "$jar")"
-if [ -z "$expected" ]; then
-  echo "::error::${jar} is not listed in SHA256SUMS for ${release_tag}" >&2
-  exit 1
-fi
 
 # A jar already at the destination — typically restored by the actions' cache
 # step — is reused only once the manifest vouches for it; anything else is

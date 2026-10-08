@@ -643,7 +643,8 @@ release that ships no manifest rather than install it unverified. The default
 GitHub actions cache the jar with `actions/cache`, keyed on the resolved
 release tag and platform; a restored jar is re-verified against `SHA256SUMS`
 before reuse, and `cache: 'false'` opts out. The installers take the jar for the
-runner's platform when the release has one, else the universal jar.
+runner's platform (Linux x64, macOS or Windows x64); releases that predate the
+per-platform jars fall back to the universal jar.
 
 ### GitHub Actions
 

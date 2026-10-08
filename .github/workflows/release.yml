@@ -97,30 +97,29 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       - name: Build fat jar
-        run: |
-          ./gradlew shadowJar --no-daemon
-          cp build/libs/eventb-animate-*.jar .
+        run: ./gradlew shadowJar --no-daemon
 
       - name: Stage versioned common assets
         id: stage-common
         run: |
           version="${RELEASE_TAG#v}"
-          source_jars=(eventb-animate-*.jar)
+          source_jars=(build/libs/eventb-animate-*.jar)
           test "${#source_jars[@]}" -eq 1
           mkdir -p release-bundle/assets
-          mv "${source_jars[0]}" \
-            "release-bundle/assets/eventb-animate-${version}.jar"
           cp RELEASE_NOTES.md release-bundle/RELEASE_NOTES.md
 
-          # Per-platform jars: the universal jar minus the other platforms' probcli.
+          # Only per-platform jars are published: each is the fat jar minus the
+          # other platforms' probcli.
           platforms=(linux64 macos windows64)
           for platform in "${platforms[@]}"; do
             jar="release-bundle/assets/eventb-animate-${version}-${platform}.jar"
-            cp "release-bundle/assets/eventb-animate-${version}.jar" "$jar"
+            cp "${source_jars[0]}" "$jar"
+            others=()
             for other in "${platforms[@]}"; do
-              [ "$other" = "$platform" ] || zip -q -d "$jar" \
-                "de/prob/cli/binaries/probcli_${other}.zip"
+              [ "$other" = "$platform" ] \
+                || others+=("de/prob/cli/binaries/probcli_${other}.zip")
             done
+            zip -q -d "$jar" "${others[@]}"
           done
 
           # Derived from the schema on disk rather than pinned: a report format bump
@@ -162,12 +161,10 @@ jobs:
               "eventb-animate-${version}-report-${report_format}"
           )
 
-      - name: Smoke test common release jar
+      - name: Smoke test linux64 release jar
         timeout-minutes: 10
         run: |
           version="${RELEASE_TAG#v}"
-          scripts/smoke-release.sh \
-            "release-bundle/assets/eventb-animate-${version}.jar"
           scripts/smoke-release.sh \
             "release-bundle/assets/eventb-animate-${version}-linux64.jar"
 
@@ -240,7 +237,6 @@ jobs:
           actual="$RUNNER_TEMP/actual-release-assets"
 
           printf '%s\n' \
-            "eventb-animate-${version}.jar" \
             "eventb-animate-${version}-linux64.jar" \
             "eventb-animate-${version}-macos.jar" \
             "eventb-animate-${version}-windows64.jar" \
