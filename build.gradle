@@ -44,7 +44,7 @@ dependencies {
 	// Used directly by the --json report writer; pinned to the version the kernel
 	// already resolves transitively (re-check `gradlew dependencies` when bumping
 	// prob_version so the two stay aligned).
-	implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.3'
+	implementation 'com.fasterxml.jackson.core:jackson-databind:2.22.4'
 
 	testImplementation 'junit:junit:4.13.2'
 	testImplementation 'org.hamcrest:hamcrest:3.0'
